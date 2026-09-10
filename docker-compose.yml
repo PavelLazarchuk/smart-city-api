@@ -1,5 +1,3 @@
-# Development stack: the API and a MailHog inbox. MongoDB is NOT run locally —
-# every environment connects to a remote replica set through MONGO_URI.
 services:
     api:
         build:
@@ -18,10 +16,37 @@ services:
             - .:/app
             - /app/node_modules
         depends_on:
-            - mailhog
+            mailhog:
+                condition: service_started
+            mongo:
+                condition: service_healthy
+                required: false
 
     mailhog:
         image: mailhog/mailhog:v1.0.1
         ports:
             - '1025:1025'
             - '8025:8025'
+
+    # Optional local database: `docker compose --profile local-db up`.
+    mongo:
+        image: mongo:8.0
+        profiles: ['local-db']
+        command: ['--replSet', 'rs0', '--bind_ip_all']
+        ports:
+            - '27017:27017'
+        volumes:
+            - mongo-data:/data/db
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: \"rs0\", members: [{ _id: 0, host: \"mongo:27017\" }] }).ok }" | grep -q 1',
+                ]
+            interval: 5s
+            timeout: 5s
+            retries: 20
+            start_period: 10s
+
+volumes:
+    mongo-data:

@@ -10,7 +10,7 @@ The rest of the documentation is indexed in [docs/README.md](docs/README.md).
 | -------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Runtime                    | Node 22 LTS (`.nvmrc`), npm only                                                                           |
 | Framework                  | NestJS 11, Express 5                                                                                       |
-| Database                   | MongoDB replica set (Atlas-style, remote in every environment) via Mongoose 8                              |
+| Database                   | MongoDB replica set (remote, or the local `local-db` Compose profile) via Mongoose 8                       |
 | Validation / serialization | zod 4 — request **and** response schemas (`nestjs-zod` for pipes, DTOs and OpenAPI)                        |
 | Auth                       | argon2id passwords, access + refresh JWT pair with rotation and reuse detection, hashed one-time SMS codes |
 | Logging                    | pino (`nestjs-pino`), request id on every line and in every error response                                 |
@@ -32,9 +32,24 @@ npm run start:dev
 The API listens on `PORT` (default 3000) under `API_PREFIX` (default `api/v1`):
 `http://localhost:3000/api/v1/health/ready`, Swagger at `http://localhost:3000/api/docs`.
 
-MongoDB is **not** run locally. Every environment, including development, connects to a remote
-replica set through `MONGO_URI` (transactions require a replica set). Docker Compose starts only the
-API and a MailHog inbox (`docker compose up`, inbox at `http://localhost:8025`).
+MongoDB is reached through `MONGO_URI` and must be a **replica set** — transactions are used for
+every multi-document write. In development either point `MONGO_URI` at a remote replica set (Atlas or
+self-managed) or start a local one:
+
+```bash
+docker compose --profile local-db up          # API + MailHog + a single-node replica set on :27017
+```
+
+The `local-db` profile is optional: `docker compose up` alone still starts only the API and MailHog
+(inbox at `http://localhost:8025`). With the local database, set in `.env`
+
+```
+MONGO_URI=mongodb://localhost:27017/smart-city?directConnection=true   # API on the host
+MONGO_URI=mongodb://mongo:27017/smart-city?directConnection=true       # API in Compose
+```
+
+The replica set is initiated automatically by the container healthcheck on first boot; data lives in
+the `mongo-data` volume (`docker compose --profile local-db down -v` wipes it).
 
 ## Scripts
 
