@@ -1,0 +1,53 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    ci:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - name: Install
+              run: npm ci --no-audit --no-fund
+            - name: Lint
+              run: npm run lint
+            - name: Format check
+              run: npm run format:check
+            - name: Typecheck
+              run: npm run typecheck
+            - name: Test (with coverage)
+              run: npm run test:cov -- --ci
+            - name: Verify migrations (up → status → down)
+              run: npm run migrate:verify
+            - name: Build
+              run: npm run build
+            - name: Docker build (runtime and dev stages)
+              run: |
+                  docker build --target runtime -t smart-city-api:runtime .
+                  docker build --target dev -t smart-city-api:dev .
+            - name: Docker smoke test (container answers /health/live)
+              run: |
+                  docker run -d --name smart-city-api-smoke -p 8080:8080 \
+                    -e MONGO_URI='mongodb://127.0.0.1:27017/smoke' \
+                    -e JWT_ACCESS_SECRET='ci-access-secret-ci-access-secret-000000' \
+                    -e JWT_REFRESH_SECRET='ci-refresh-secret-ci-refresh-secret-0000' \
+                    -e SMS_PROVIDER=smpp -e SMPP_URL='smpp://localhost:2775' \
+                    -e SMPP_SYSTEM_ID=ci -e SMPP_PASSWORD=ci \
+                    -e MAIL_PROVIDER=smtp -e SMTP_HOST=localhost \
+                    smart-city-api:runtime
+                  for i in $(seq 1 30); do
+                    if curl -fsS http://localhost:8080/api/v1/health/live; then ok=1; break; fi
+                    sleep 2
+                  done
+                  docker logs smart-city-api-smoke
+                  docker rm -f smart-city-api-smoke
+                  test "${ok:-0}" = 1
+            - name: Audit
+              run: npm run audit

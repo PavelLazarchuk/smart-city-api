@@ -1,0 +1,184 @@
+/**
+ * Message catalogue. Every user-facing text lives here so that localisation later is a data change,
+ * not a code change. Keys are stable error codes returned to clients.
+ */
+export const ERROR_CODES = {
+    VALIDATION_ERROR: 'VALIDATION_ERROR',
+    UNAUTHENTICATED: 'UNAUTHENTICATED',
+    TOKEN_INVALID: 'TOKEN_INVALID',
+    TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+    SESSION_REVOKED: 'SESSION_REVOKED',
+    REFRESH_TOKEN_REUSED: 'REFRESH_TOKEN_REUSED',
+    FORBIDDEN: 'FORBIDDEN',
+    NOT_FOUND: 'NOT_FOUND',
+    CONFLICT: 'CONFLICT',
+    RATE_LIMITED: 'RATE_LIMITED',
+    INTERNAL_ERROR: 'INTERNAL_ERROR',
+    SERIALIZATION_ERROR: 'SERIALIZATION_ERROR',
+    PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+    UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
+    PAGE_OUT_OF_RANGE: 'PAGE_OUT_OF_RANGE',
+
+    INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+    LOGIN_METHOD_DISABLED: 'LOGIN_METHOD_DISABLED',
+    LOGIN_IDENTIFIER_REQUIRED: 'LOGIN_IDENTIFIER_REQUIRED',
+    OTP_INVALID: 'OTP_INVALID',
+    OTP_EXPIRED: 'OTP_EXPIRED',
+    OTP_ATTEMPTS_EXCEEDED: 'OTP_ATTEMPTS_EXCEEDED',
+    PHONE_COUNTRY_NOT_SUPPORTED: 'PHONE_COUNTRY_NOT_SUPPORTED',
+    PASSWORD_TOO_SHORT: 'PASSWORD_TOO_SHORT',
+    PASSWORD_UNCHANGED: 'PASSWORD_UNCHANGED',
+    LOGIN_TOO_SHORT: 'LOGIN_TOO_SHORT',
+    ACCOUNT_HAS_NO_PASSWORD: 'ACCOUNT_HAS_NO_PASSWORD',
+
+    USER_NOT_FOUND: 'USER_NOT_FOUND',
+    LOGIN_TAKEN: 'LOGIN_TAKEN',
+    PHONE_TAKEN: 'PHONE_TAKEN',
+    ADMIN_IDENTIFIER_REQUIRED: 'ADMIN_IDENTIFIER_REQUIRED',
+    CITIZEN_PHONE_REQUIRED: 'CITIZEN_PHONE_REQUIRED',
+    ADMIN_PASSWORD_REQUIRED: 'ADMIN_PASSWORD_REQUIRED',
+    ADMIN_PHONE_REQUIRED: 'ADMIN_PHONE_REQUIRED',
+    LAST_SUPER_ADMIN: 'LAST_SUPER_ADMIN',
+    SELF_ROLE_CHANGE: 'SELF_ROLE_CHANGE',
+
+    ORGANIZATION_NOT_FOUND: 'ORGANIZATION_NOT_FOUND',
+    CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
+    SERVICE_NOT_FOUND: 'SERVICE_NOT_FOUND',
+    NEWS_NOT_FOUND: 'NEWS_NOT_FOUND',
+    INFOSECTION_NOT_FOUND: 'INFOSECTION_NOT_FOUND',
+    IMAGE_NOT_FOUND: 'IMAGE_NOT_FOUND',
+    ARCHIVE_NOT_FOUND: 'ARCHIVE_NOT_FOUND',
+    CATEGORY_ORGANIZATION_MISMATCH: 'CATEGORY_ORGANIZATION_MISMATCH',
+    REORDER_MISMATCH: 'REORDER_MISMATCH',
+    INCLUDE_NOT_ALLOWED: 'INCLUDE_NOT_ALLOWED',
+
+    SLOT_NOT_FOUND: 'SLOT_NOT_FOUND',
+    SLOT_NOT_BOOKABLE: 'SLOT_NOT_BOOKABLE',
+    SLOT_TIME_REQUIRED: 'SLOT_TIME_REQUIRED',
+    SLOT_FULL: 'SLOT_FULL',
+    SLOT_EXPIRED: 'SLOT_EXPIRED',
+    BOOKING_NOT_FOUND: 'BOOKING_NOT_FOUND',
+    BOOKING_ALREADY_EXISTS: 'BOOKING_ALREADY_EXISTS',
+    OPTION_DISABLED: 'OPTION_DISABLED',
+    SERVICE_MODIFIED: 'SERVICE_MODIFIED',
+    SLOT_TIME_BOOKED: 'SLOT_TIME_BOOKED',
+
+    FILE_REQUIRED: 'FILE_REQUIRED',
+    FILE_TYPE_NOT_ALLOWED: 'FILE_TYPE_NOT_ALLOWED',
+    FILE_TOO_LARGE: 'FILE_TOO_LARGE',
+    SMS_DELIVERY_FAILED: 'SMS_DELIVERY_FAILED',
+    ARCHIVE_SERVICE_MISMATCH: 'ARCHIVE_SERVICE_MISMATCH',
+} as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
+
+export const errorMessages: Record<ErrorCode, string> = {
+    VALIDATION_ERROR: 'The request is invalid.',
+    UNAUTHENTICATED: 'Authentication is required.',
+    TOKEN_INVALID: 'The token is invalid.',
+    TOKEN_EXPIRED: 'The token has expired.',
+    SESSION_REVOKED: 'The session has been revoked.',
+    REFRESH_TOKEN_REUSED:
+        'The refresh token was already used. All sessions of this device family were revoked.',
+    FORBIDDEN: 'You are not allowed to perform this action.',
+    NOT_FOUND: 'The requested resource was not found.',
+    CONFLICT: 'The request conflicts with the current state.',
+    RATE_LIMITED: 'Too many requests. Please try again later.',
+    INTERNAL_ERROR: 'An unexpected error occurred.',
+    SERIALIZATION_ERROR: 'The response could not be serialized.',
+    PAYLOAD_TOO_LARGE: 'The request payload is too large.',
+    UNSUPPORTED_MEDIA_TYPE: 'The request media type is not supported.',
+    PAGE_OUT_OF_RANGE: 'The requested page is beyond the supported depth. Narrow the query instead.',
+
+    INVALID_CREDENTIALS: 'Incorrect login or password.',
+    LOGIN_METHOD_DISABLED: 'This login method is disabled for your account type.',
+    LOGIN_IDENTIFIER_REQUIRED: 'Provide either a login or a phone number.',
+    OTP_INVALID: 'The verification code is incorrect.',
+    OTP_EXPIRED: 'The verification code has expired. Request a new one.',
+    OTP_ATTEMPTS_EXCEEDED: 'Too many incorrect attempts. Request a new verification code.',
+    PHONE_COUNTRY_NOT_SUPPORTED: 'The phone number must belong to the supported country.',
+    PASSWORD_TOO_SHORT: 'The password is too short.',
+    PASSWORD_UNCHANGED: 'The new password must differ from the current one.',
+    LOGIN_TOO_SHORT: 'The login is too short.',
+    ACCOUNT_HAS_NO_PASSWORD: 'This account has no password. Use the one-time code login.',
+
+    USER_NOT_FOUND: 'User not found.',
+    LOGIN_TAKEN: 'This login is already taken.',
+    PHONE_TAKEN: 'This phone number is already registered.',
+    ADMIN_IDENTIFIER_REQUIRED: 'An admin account needs a login with a password or a phone number.',
+    CITIZEN_PHONE_REQUIRED: 'A citizen account needs a phone number.',
+    ADMIN_PASSWORD_REQUIRED: 'Admins sign in with a password, so the account needs a login and a password.',
+    ADMIN_PHONE_REQUIRED: 'Admins sign in with a one-time code, so the account needs a phone number.',
+    LAST_SUPER_ADMIN: 'The last super-admin account cannot be removed or demoted.',
+    SELF_ROLE_CHANGE: 'You cannot change your own role.',
+
+    ORGANIZATION_NOT_FOUND: 'Organization not found.',
+    CATEGORY_NOT_FOUND: 'Category not found.',
+    SERVICE_NOT_FOUND: 'Service not found.',
+    NEWS_NOT_FOUND: 'News item not found.',
+    INFOSECTION_NOT_FOUND: 'Info section not found.',
+    IMAGE_NOT_FOUND: 'Image not found.',
+    ARCHIVE_NOT_FOUND: 'Archive entry not found.',
+    CATEGORY_ORGANIZATION_MISMATCH: 'The category belongs to a different organization.',
+    REORDER_MISMATCH: 'The list of ids must contain every child exactly once.',
+    INCLUDE_NOT_ALLOWED: 'One of the requested includes is not supported.',
+
+    SLOT_NOT_FOUND: 'The requested slot does not exist.',
+    SLOT_NOT_BOOKABLE: 'This slot type cannot be booked.',
+    SLOT_TIME_REQUIRED: 'A time is required for this slot.',
+    SLOT_FULL: 'The slot is fully booked.',
+    SLOT_EXPIRED: 'The slot date has passed.',
+    BOOKING_NOT_FOUND: 'Booking not found.',
+    BOOKING_ALREADY_EXISTS: 'You already have a booking for this slot.',
+    OPTION_DISABLED: 'This service option is disabled.',
+    SERVICE_MODIFIED: 'The service changed while you were editing it. Reload and try again.',
+    SLOT_TIME_BOOKED: 'A time that already has bookings cannot be renamed or removed.',
+
+    FILE_REQUIRED: 'A file is required.',
+    FILE_TYPE_NOT_ALLOWED: 'The file type is not allowed.',
+    FILE_TOO_LARGE: 'The file is too large.',
+    SMS_DELIVERY_FAILED: 'The SMS could not be delivered.',
+    ARCHIVE_SERVICE_MISMATCH: 'The service belongs to a different organization.',
+};
+
+export const texts = {
+    sms: {
+        otp: (code: string): string => `${code} is your Smart City verification code.`,
+        test: (code: string): string => `${code} is a Smart City test message.`,
+    },
+    mail: {
+        bookingSubject: 'Smart City: new booking',
+        bookingBody: (data: {
+            service: string;
+            date?: string;
+            time?: string;
+            phone: string;
+            name: string;
+        }): string =>
+            [
+                `Service: ${data.service}`,
+                `Date: ${data.date ?? 'not specified'}`,
+                `Time: ${data.time ?? 'not specified'}`,
+                `Phone: ${data.phone}`,
+                `Name: ${data.name}`,
+            ].join('\n'),
+        reportSubject: 'Smart City: services without upcoming slots',
+        reportBody: (count: number): string =>
+            `The attached report lists ${count} service(s) that currently have no upcoming booking slots.`,
+        reportFileName: 'services-without-slots.xlsx',
+    },
+    report: {
+        sheetName: 'Services',
+        columns: { organization: 'Organization', service: 'Service' },
+        untitledService: 'Untitled service',
+    },
+    defaults: {
+        serviceLabel: 'Service',
+        optionLabel: 'Online booking',
+        slotLabel: 'Booking',
+        dateSlotLabel: 'Booking by date',
+    },
+    bookings: {
+        reservedStatus: 'reserved',
+    },
+} as const;

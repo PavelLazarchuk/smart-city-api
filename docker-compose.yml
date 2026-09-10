@@ -1,0 +1,27 @@
+# Development stack: the API and a MailHog inbox. MongoDB is NOT run locally —
+# every environment connects to a remote replica set through MONGO_URI.
+services:
+    api:
+        build:
+            context: .
+            target: dev
+        env_file: .env
+        environment:
+            NODE_ENV: development
+            MAIL_PROVIDER: smtp
+            SMTP_HOST: mailhog
+            SMTP_PORT: 1025
+            SMTP_SECURE: 'false'
+        ports:
+            - '8080:8080'
+        volumes:
+            - .:/app
+            - /app/node_modules
+        depends_on:
+            - mailhog
+
+    mailhog:
+        image: mailhog/mailhog:v1.0.1
+        ports:
+            - '1025:1025'
+            - '8025:8025'

@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Tests
+coverage/
+.jest-cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Uploads / local storage
+uploads/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

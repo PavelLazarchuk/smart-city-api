@@ -1,0 +1,21 @@
+import { SetMetadata } from '@nestjs/common';
+import { type ZodType } from 'zod';
+
+export const SERIALIZE_METADATA = 'smart_city:serialize';
+
+export type SerializeKind = 'single' | 'list' | 'paginated';
+
+export interface SerializeOptions {
+    schema: ZodType;
+    kind: SerializeKind;
+}
+
+/**
+ * Declares the zod output schema for a handler. `ResponseInterceptor` parses the return value through
+ * it and strips unknown keys, so a field absent from the schema can never reach a client.
+ */
+export const Serialize = (schema: ZodType, kind: SerializeKind = 'single'): MethodDecorator =>
+    SetMetadata<string, SerializeOptions>(SERIALIZE_METADATA, { schema, kind });
+
+export const SerializeList = (schema: ZodType): MethodDecorator => Serialize(schema, 'list');
+export const SerializePaginated = (schema: ZodType): MethodDecorator => Serialize(schema, 'paginated');

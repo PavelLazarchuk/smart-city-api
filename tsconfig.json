@@ -1,0 +1,30 @@
+{
+    "compilerOptions": {
+        "target": "es2023",
+        "lib": ["es2023"],
+        "module": "node20",
+        "moduleResolution": "node16",
+        "outDir": "./dist",
+        "rootDir": ".",
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitReturns": true,
+        "forceConsistentCasingInFileNames": true,
+        "isolatedModules": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "sourceMap": true,
+        "declaration": false,
+        "removeComments": false,
+        "incremental": true,
+        "tsBuildInfoFile": "./dist/.tsbuildinfo",
+        "types": ["node", "jest"]
+    },
+    "include": ["src/**/*", "test/**/*", "scripts/**/*", "jest.config.ts"],
+    "exclude": ["node_modules", "dist"]
+}
