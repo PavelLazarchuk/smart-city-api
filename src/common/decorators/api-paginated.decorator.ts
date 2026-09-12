@@ -19,8 +19,8 @@ export function ApiPaginated(model: Type<unknown>, cursor = false): MethodDecora
                         properties: {
                             page: { type: 'integer' },
                             limit: { type: 'integer' },
-                            total: { type: 'integer' },
-                            total_pages: { type: 'integer' },
+                            total: { type: 'integer', nullable: cursor },
+                            total_pages: { type: 'integer', nullable: cursor },
                             has_next: { type: 'boolean' },
                             ...(cursor ? { next_cursor: { type: 'string', nullable: true } } : {}),
                         },
@@ -30,7 +30,12 @@ export function ApiPaginated(model: Type<unknown>, cursor = false): MethodDecora
         }),
     ];
 
-    if (cursor) decorators.push(ApiQuery({ name: 'cursor', required: false, type: String }));
+    if (cursor) {
+        decorators.push(
+            ApiQuery({ name: 'cursor', required: false, type: String }),
+            ApiQuery({ name: 'with_total', required: false, type: Boolean }),
+        );
+    }
 
     return applyDecorators(...decorators);
 }

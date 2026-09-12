@@ -53,16 +53,16 @@ the `mongo-data` volume (`docker compose --profile local-db down -v` wipes it).
 
 ## Scripts
 
-| Script                            | Purpose                                                        |
-| --------------------------------- | -------------------------------------------------------------- |
-| `npm run start:dev` / `npm start` | watch mode / run `dist/main`                                   |
-| `npm run build`                   | `nest build` into `dist/`                                      |
-| `npm run lint`, `npm run format`  | ESLint 9 flat config, Prettier                                 |
-| `npm run typecheck`               | `tsc --noEmit` over `src`, `test` and `scripts`                |
-| `npm test`, `npm run test:cov`    | Jest (unit + e2e projects); e2e boots an in-memory replica set |
-| `npm run migrate:up               | down                                                           | status | create` | migrate-mongo against `MONGO_URI` |
-| `npm run migrate:verify`          | CI guard: `up` → `status` → `down` on an in-memory replica set |
-| `npm run seed`                    | development seed (idempotent; refuses `NODE_ENV=production`)   |
+| Script                                                 | Purpose                                                        |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| `npm run start:dev` / `npm start`                      | watch mode / run `dist/main`                                   |
+| `npm run build`                                        | `nest build` into `dist/`                                      |
+| `npm run lint`, `npm run format`                       | ESLint 9 flat config, Prettier                                 |
+| `npm run typecheck`                                    | `tsc --noEmit` over `src`, `test` and `scripts`                |
+| `npm test`, `npm run test:cov`                         | Jest (unit + e2e projects); e2e boots an in-memory replica set |
+| `npm run migrate:up` / `:down` / `:status` / `:create` | migrate-mongo against `MONGO_URI`                              |
+| `npm run migrate:verify`                               | CI guard: `up` → `status` → `down` on an in-memory replica set |
+| `npm run seed`                                         | development seed (idempotent; refuses `NODE_ENV=production`)   |
 
 ## Configuration
 
@@ -81,6 +81,11 @@ Notable switches:
 - `ARCHIVE_RETENTION_DAYS` / `ANALYTICS_RETENTION_DAYS` — TTL of archived snapshots and analytics events;
   the value is applied by the migration, not by the schema (see [docs/deployment.md](docs/deployment.md)).
 - `JOBS_ENABLED` — whether _this_ process schedules jobs; mutual exclusion is the `job_locks` lease, not the flag.
+- `METRICS_TOKEN` — bearer for `/metrics`. With none configured the route answers a super-admin token only;
+  it never falls back to anonymous.
+- `AUTH_FAILED_ATTEMPT_WINDOW_SECONDS` — how long a failed login keeps counting towards the per-account
+  lock. The window is what stops the lock from being usable as a denial of service against one account.
+- `STORAGE_GC_MIN_AGE` — how long a stored file is left alone before `storage_gc` may call it an orphan.
 - `PHONE_COUNTRY_CODE` — phone numbers are E.164 digits without `+` and must start with this code.
 
 > The old repository's `.env.example` and git history contain live credentials (Mongo Atlas, SMPP, SMTP,
@@ -95,10 +100,15 @@ Notable switches:
   403 unauthorised, 404 missing, 409 conflict, 422 business rule, 429 rate limit.
 - Pagination: `page` (default 1, capped by `PAGINATION_MAX_PAGE`), `limit` (default 30, max 100), `sort`, `order`;
   `sms` and `analytics/events` also accept `cursor` and an explicit `mode=cursor|page` (they default to `cursor`).
+  A cursor page leaves `total` and `total_pages` `null` unless `with_total=true` asks for the count.
 - Reads return the complete entity; creates write only the entity; updates touch only the entity's own fields;
   deletes cascade inside a transaction.
 - Bookings require a session; slots enforce capacity (`422 SLOT_FULL`); booking details are visible only to the
-  organization's admins and super-admins, everyone else sees `{ "status": "reserved" }`.
+  organization's admins and super-admins, everyone else sees `{ "status": "reserved" }`. Bookings are stored
+  in their own collection, so a service document carries occupancy counters and no personal data.
+- Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
+  `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
+  `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.
 - `GET /organizations/:id` returns the tree with every child list capped at `INCLUDE_MAX_ITEMS` and with
   anonymised bookings for every audience; the full booking lists come from `GET /services/:id` and
   `GET /organizations/:id/services`.
@@ -111,17 +121,19 @@ Swagger document generated from the zod schemas.
 ```
 src/
   main.ts, app.module.ts, app.setup.ts   bootstrap; app.setup is shared with the e2e harness
-  common/        config, database (transaction runner, base repository), logging, http (errors, envelope),
-                 pagination, zod primitives, decorators, guards, cascade registry, message catalogue
-  modules/       auth, users, organizations, categories, services (+bookings), news, infosections,
+  common/        config, database (transaction runner, base repository), logging, metrics (/metrics),
+                 http (errors, envelope), pagination, zod primitives, decorators, guards, cascade registry,
+                 message catalogue
+  modules/       auth, users, organizations, categories, services, bookings, news, infosections,
                  images, archives, sms, analytics, health — each: controller / service / repository / schemas / dto
   integrations/  sms (console, smpp), mail (console, smtp), storage (local, s3) behind provider interfaces
-  jobs/          recurrent slots, news expiry, slot expiry, stale bookings, debtor report; job_locks lease
+  jobs/          recurrent slots, news expiry, slot expiry, stale bookings, cascade reconcile, storage gc,
+                 debtor report, unreferenced images; job_locks lease carrying each job's last outcome
                  (what each one does and when: docs/jobs.md)
 migrations/      migrate-mongo migrations (indexes)
 scripts/         seed, migration verification
 test/            e2e specs + fixtures (support/), unit specs live next to the code as *.spec.ts
-docs/            ADRs, deployment notes, scheduled jobs
+docs/            architecture, auth, errors, data model, migrations, jobs, deployment notes
 ```
 
 Layering rules: controllers never touch a model; services never touch `req`/`res`; repositories return lean

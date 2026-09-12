@@ -26,19 +26,21 @@ export const userResponseSchema = z.object({
 export type UserResponse = z.infer<typeof userResponseSchema>;
 export class UserResponseDto extends createZodDto(userResponseSchema) {}
 
-export const bookingRefResponseSchema = z.object({
+/** One row of `GET /users/:id/bookings`, read from the `bookings` collection. */
+export const userBookingResponseSchema = z.object({
     id: z.string(),
     service_id: idOutputSchema,
     organization_id: idOutputSchema,
     option_id: z.string(),
     slot_id: z.string(),
     child_type: z.string(),
-    service_label: z.string().optional(),
+    service_label: z.string().catch(''),
     date: z.string().optional(),
     time: z.string().optional(),
+    info: z.string().catch(''),
     created_at: isoDateTimeSchema,
 });
-export class BookingRefResponseDto extends createZodDto(bookingRefResponseSchema) {}
+export class UserBookingResponseDto extends createZodDto(userBookingResponseSchema) {}
 
 export const createUserSchema = z.object({
     login: loginSchema.optional(),

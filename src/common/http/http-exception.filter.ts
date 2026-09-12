@@ -33,6 +33,17 @@ function issuesOf(error: unknown): ApiErrorDetail[] {
     }));
 }
 
+/**
+ * Multer reports its own limits through generic HTTP exceptions, so the upload routes would answer
+ * `PAYLOAD_TOO_LARGE` where the rest of the API answers `FILE_TOO_LARGE`. The messages are multer's
+ * own constants.
+ */
+const MULTER_CODES: Record<string, ErrorCode> = {
+    'File too large': 'FILE_TOO_LARGE',
+    'Too many files': 'FILE_TOO_LARGE',
+    'Unexpected field': 'FILE_REQUIRED',
+};
+
 const STATUS_CODES: Partial<Record<number, ErrorCode>> = {
     [HttpStatus.BAD_REQUEST]: 'VALIDATION_ERROR',
     [HttpStatus.UNAUTHORIZED]: 'UNAUTHENTICATED',
@@ -111,9 +122,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
         if (exception instanceof HttpException) {
             const status = exception.getStatus();
-            const code = STATUS_CODES[status] ?? (status >= 500 ? 'INTERNAL_ERROR' : 'VALIDATION_ERROR');
             const raw = exception.getResponse();
             const rawMessage = typeof raw === 'object' && raw && 'message' in raw ? raw.message : undefined;
+            const multer = typeof rawMessage === 'string' ? MULTER_CODES[rawMessage] : undefined;
+
+            if (multer) {
+                return {
+                    status: HttpStatus.BAD_REQUEST,
+                    body: { error: { code: multer, message: errorMessages[multer] } },
+                };
+            }
+
+            const code = STATUS_CODES[status] ?? (status >= 500 ? 'INTERNAL_ERROR' : 'VALIDATION_ERROR');
             const message =
                 status < 500
                     ? Array.isArray(rawMessage)

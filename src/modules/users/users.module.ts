@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 
 import { AUTH_USER_RESOLVER } from '../../common/guards/auth-user.resolver';
 import { AuthStoreModule } from '../auth/store/auth-store.module';
+import { BookingsModule } from '../bookings/bookings.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { User, UserSchema } from './schemas/user.schema';
 import { UsersController } from './users.controller';
@@ -13,6 +14,7 @@ import { UsersService } from './users.service';
     imports: [
         MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
         AuthStoreModule,
+        BookingsModule,
         OrganizationsModule,
     ],
     controllers: [UsersController],

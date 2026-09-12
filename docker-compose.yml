@@ -30,7 +30,7 @@ services:
 
     # Optional local database: `docker compose --profile local-db up`.
     mongo:
-        image: mongo:8.0
+        image: mongo:8.2
         profiles: ['local-db']
         command: ['--replSet', 'rs0', '--bind_ip_all']
         ports:

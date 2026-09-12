@@ -5,7 +5,7 @@ import { type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { type ResolvedPagination } from '../../common/pagination/pagination.service';
-import { type BookingRef, User } from './schemas/user.schema';
+import { User } from './schemas/user.schema';
 
 export type UserEntity = Lean<User>;
 
@@ -91,64 +91,63 @@ export class UsersRepository extends BaseRepository<User> {
         return result.modifiedCount;
     }
 
-    async addBooking(userId: string, booking: BookingRef, session?: ClientSession): Promise<void> {
+    /**
+     * Counts one failure and returns the new total, or `null` when the account is gone. A failure
+     * whose predecessor is older than `windowStart` starts the count at one again — the decision is
+     * part of the update itself, so two concurrent attempts cannot both read the stale counter.
+     */
+    async incrementFailedLogins(
+        id: string,
+        windowStart: Date,
+        now: Date,
+        session?: ClientSession,
+    ): Promise<number | null> {
+        const updated = await this.model
+            .findByIdAndUpdate(
+                id,
+                [
+                    {
+                        $set: {
+                            failed_login_attempts: {
+                                $cond: [
+                                    {
+                                        $gte: [
+                                            { $ifNull: ['$last_failed_login_at', new Date(0)] },
+                                            windowStart,
+                                        ],
+                                    },
+                                    { $add: [{ $ifNull: ['$failed_login_attempts', 0] }, 1] },
+                                    1,
+                                ],
+                            },
+                            last_failed_login_at: now,
+                        },
+                    },
+                ],
+                { new: true },
+            )
+            .session(session ?? null)
+            .lean<{ failed_login_attempts: number }>()
+            .exec();
+
+        return updated?.failed_login_attempts ?? null;
+    }
+
+    async lockUntil(id: string, until: Date, session?: ClientSession): Promise<void> {
         await this.model
-            .updateOne({ _id: userId }, { $push: { bookings: booking } })
+            .updateOne({ _id: new Types.ObjectId(id) }, { $set: { locked_until: until } })
             .session(session ?? null)
             .exec();
     }
 
-    async removeBooking(userId: string, bookingId: string, session?: ClientSession): Promise<void> {
+    async clearFailedLogins(id: string, session?: ClientSession): Promise<void> {
         await this.model
-            .updateOne({ _id: userId }, { $pull: { bookings: { id: bookingId } } })
-            .session(session ?? null)
-            .exec();
-    }
-
-    async removeBookingsByOrganization(organizationId: string, session?: ClientSession): Promise<number> {
-        const result = await this.model
-            .updateMany(
-                { 'bookings.organization_id': new Types.ObjectId(organizationId) },
-                { $pull: { bookings: { organization_id: new Types.ObjectId(organizationId) } } },
+            .updateOne(
+                { _id: new Types.ObjectId(id) },
+                { $set: { failed_login_attempts: 0 }, $unset: { locked_until: 1, last_failed_login_at: 1 } },
             )
             .session(session ?? null)
             .exec();
-
-        return result.modifiedCount;
-    }
-
-    async removeBookingsByService(serviceId: string, session?: ClientSession): Promise<number> {
-        const result = await this.model
-            .updateMany(
-                { 'bookings.service_id': new Types.ObjectId(serviceId) },
-                { $pull: { bookings: { service_id: new Types.ObjectId(serviceId) } } },
-            )
-            .session(session ?? null)
-            .exec();
-
-        return result.modifiedCount;
-    }
-
-    async removeBookingsByIds(bookingIds: string[], session?: ClientSession): Promise<number> {
-        if (bookingIds.length === 0) return 0;
-
-        const result = await this.model
-            .updateMany(
-                { 'bookings.id': { $in: bookingIds } },
-                { $pull: { bookings: { id: { $in: bookingIds } } } },
-            )
-            .session(session ?? null)
-            .exec();
-
-        return result.modifiedCount;
-    }
-
-    /** Streams accounts that hold bookings, ids only: the nightly job must not load whole user documents. */
-    iterateWithBookings(): AsyncIterable<{ _id: Types.ObjectId; bookings: { id: string }[] }> {
-        return this.model
-            .find({ 'bookings.0': { $exists: true } }, { 'bookings.id': 1 })
-            .lean<{ _id: Types.ObjectId; bookings: { id: string }[] }>()
-            .cursor({ batchSize: 200 });
     }
 
     async updateFields(

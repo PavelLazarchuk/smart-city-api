@@ -196,19 +196,20 @@ describe('organizations (e2e)', () => {
             const organization = await fx.organization();
             const category = await fx.category(organization.id);
             const option = fx.bookableOption(2);
-            option.slots[0]!.value.time![0]!.bookings.push({
-                id: '11111111-1111-4111-8111-111111111111',
-                user_id: new Types.ObjectId(),
-                person: 'Secret Person',
-                phone: '375291112233',
-                info: '',
-                created_at: new Date(),
-            });
-            option.slots[0]!.value.time![0]!.booked_count = 1;
-            await fx.service(organization.id, {
+            const booked = await fx.service(organization.id, {
                 category_id: category.id,
                 options: [option],
                 value: { subscribe: 'internal@example.com' },
+            });
+            await fx.booking({
+                service_id: booked.id,
+                organization_id: organization.id,
+                option_id: option.id,
+                slot_id: option.slot_id,
+                user_id: (await fx.citizen()).id,
+                time: '10:00',
+                person: 'Secret Person',
+                phone: '375291112233',
             });
             await fx.service(organization.id);
             await fx.news(organization.id);

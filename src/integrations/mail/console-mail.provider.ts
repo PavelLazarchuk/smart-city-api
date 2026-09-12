@@ -21,4 +21,8 @@ export class ConsoleMailProvider implements MailProvider {
 
         return Promise.resolve();
     }
+
+    check(): Promise<void> {
+        return Promise.resolve();
+    }
 }

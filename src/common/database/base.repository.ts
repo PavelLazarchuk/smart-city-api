@@ -116,11 +116,15 @@ export abstract class BaseRepository<TDoc> {
         return { items, total, page: pagination.page, limit: pagination.limit };
     }
 
-    /** Cursor pagination on `_id` descending for high-volume collections. */
+    /**
+     * Cursor pagination on `_id` descending for high-volume collections. `countDocuments` over the
+     * whole match is the most expensive query of the page, so it runs only when `withTotal` asks.
+     */
     async paginateByCursor(
         filter: FilterQuery<TDoc>,
         cursor: string | undefined,
         limit: number,
+        withTotal = false,
     ): Promise<PaginatedResult<Lean<TDoc>>> {
         const cursorFilter = cursor ? { ...filter, _id: { $lt: new Types.ObjectId(cursor) } } : filter;
         const [rows, total] = await Promise.all([
@@ -130,7 +134,7 @@ export abstract class BaseRepository<TDoc> {
                 .limit(limit + 1)
                 .lean<Lean<TDoc>[]>()
                 .exec(),
-            this.model.countDocuments(filter).exec(),
+            withTotal ? this.model.countDocuments(filter).exec() : Promise.resolve(null),
         ]);
         const hasMore = rows.length > limit;
         const items = hasMore ? rows.slice(0, limit) : rows;

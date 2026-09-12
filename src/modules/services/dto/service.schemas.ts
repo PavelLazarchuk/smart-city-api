@@ -41,12 +41,17 @@ export const bookingResponseSchema = z.object({
 /** Anonymised booking for everyone else. */
 export const maskedBookingSchema = z.object({ status: z.literal('reserved') });
 
-const bookingsOutput = z.array(z.union([bookingResponseSchema, maskedBookingSchema]));
+/**
+ * Bookings live in their own collection, so a slot document carries none: the array is grafted on
+ * for admins and rebuilt as markers for everyone else. Defaulting to `[]` keeps a slot nobody has
+ * booked serializable instead of turning it into a 500.
+ */
+const bookingsOutput = z.array(z.union([bookingResponseSchema, maskedBookingSchema])).default([]);
 /**
  * Public routes serialize through this instead: the union above would happily pass a full booking, so a
  * forgotten `masker.mask()` would be the only thing standing between a client and leaked PII.
  */
-const maskedBookingsOutput = z.array(maskedBookingSchema);
+const maskedBookingsOutput = z.array(maskedBookingSchema).default([]);
 
 // ----- slots -----
 
@@ -266,6 +271,46 @@ export const listServicesQuerySchema = paginationQuerySchema.extend({
 });
 export type ListServicesQuery = z.infer<typeof listServicesQuerySchema>;
 export class ListServicesQueryDto extends createZodDto(listServicesQuerySchema) {}
+
+// ----- options and slots as sub-resources -----
+
+export const updateOptionSchema = z
+    .object({
+        label: labelSchema,
+        service_type: z.enum(SERVICE_TYPES),
+        enabled: enabledSchema,
+    })
+    .partial();
+export type UpdateOptionInput = z.infer<typeof updateOptionSchema>;
+export class UpdateOptionDto extends createZodDto(updateOptionSchema) {}
+
+export const createOptionSchema = serviceOptionInputSchema;
+export class CreateOptionDto extends createZodDto(createOptionSchema) {}
+
+/** Discriminated by `child_type`, so it is parsed with `parseBody` rather than a DTO class. */
+export const createSlotSchema = slotInputSchema;
+
+/**
+ * A slot patch names only what changes. `time` is the full list for a `date_time` slot: entries it
+ * omits are removed, and removing one that still holds bookings is refused rather than silently
+ * stranding them.
+ */
+export const updateSlotSchema = z
+    .object({
+        label: labelSchema,
+        date: dateOnlySchema,
+        limit: limitSchema,
+        time: z.array(timeEntryInput).max(200),
+    })
+    .partial();
+export type UpdateSlotInput = z.infer<typeof updateSlotSchema>;
+export class UpdateSlotDto extends createZodDto(updateSlotSchema) {}
+
+export const recurrenceSchema = z.object({
+    recurrent_dates: z.array(recurrentDateSchema).max(7).nullable(),
+});
+export type RecurrenceInput = z.infer<typeof recurrenceSchema>;
+export class RecurrenceDto extends createZodDto(recurrenceSchema) {}
 
 // ----- bookings (input) -----
 

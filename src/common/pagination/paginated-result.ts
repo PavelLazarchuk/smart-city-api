@@ -1,6 +1,7 @@
 export interface PaginatedResult<T> {
     items: T[];
-    total: number;
+    /** `null` when the caller did not ask for a count (cursor pages default to that). */
+    total: number | null;
     page: number;
     limit: number;
     next_cursor?: string | null;
@@ -10,30 +11,35 @@ export interface PaginatedResult<T> {
 export interface PaginationMeta {
     page: number;
     limit: number;
-    total: number;
-    total_pages: number;
+    total: number | null;
+    total_pages: number | null;
     has_next: boolean;
     next_cursor?: string | null;
     [key: string]: unknown;
 }
 
 export function isPaginatedResult(value: unknown): value is PaginatedResult<unknown> {
+    if (typeof value !== 'object' || value === null) return false;
+
+    const candidate = value as PaginatedResult<unknown>;
+
     return (
-        typeof value === 'object' &&
-        value !== null &&
-        Array.isArray((value as PaginatedResult<unknown>).items) &&
-        typeof (value as PaginatedResult<unknown>).total === 'number'
+        Array.isArray(candidate.items) && (typeof candidate.total === 'number' || candidate.total === null)
     );
 }
 
 export function paginationMeta(result: PaginatedResult<unknown>): PaginationMeta {
-    const totalPages = result.limit > 0 ? Math.ceil(result.total / result.limit) : 0;
+    const totalPages =
+        result.total === null ? null : result.limit > 0 ? Math.ceil(result.total / result.limit) : 0;
     const meta: PaginationMeta = {
         page: result.page,
         limit: result.limit,
         total: result.total,
         total_pages: totalPages,
-        has_next: result.next_cursor !== undefined ? result.next_cursor !== null : result.page < totalPages,
+        has_next:
+            result.next_cursor !== undefined
+                ? result.next_cursor !== null
+                : totalPages !== null && result.page < totalPages,
         ...(result.meta_extra ?? {}),
     };
 

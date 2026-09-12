@@ -23,6 +23,11 @@ export const cursorQuerySchema = z.object({
         .regex(/^[a-f0-9]{24}$/)
         .optional(),
     mode: z.enum(['cursor', 'page']).optional(),
+    /**
+     * Counting the whole match is the most expensive query of a cursor page on `analytics_events` and
+     * `sms`, and a scrolling client never reads it — so `total` is only computed when asked for.
+     */
+    with_total: z.stringbool().optional(),
 });
 
 export type CursorQuery = z.infer<typeof cursorQuerySchema>;

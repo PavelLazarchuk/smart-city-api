@@ -21,24 +21,15 @@ export const WEEKDAYS = [
 ] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
 
-@Schema(subSchemaOptions)
-export class Booking {
-    @Prop({ type: String, required: true }) id!: string;
-    @Prop({ type: SchemaTypes.ObjectId, required: true }) user_id!: Types.ObjectId;
-    @Prop({ type: String, default: '' }) person!: string;
-    @Prop({ type: String, default: '' }) phone!: string;
-    @Prop({ type: String, default: '' }) info!: string;
-    @Prop({ type: Date, required: true }) created_at!: Date;
-}
-export const BookingSchema = SchemaFactory.createForClass(Booking);
-
-/** One bookable time inside a `date_time` slot. */
+/**
+ * One bookable time inside a `date_time` slot. The bookings themselves live in the `bookings`
+ * collection; only the counter stays here, because the capacity guard is a conditional `$inc`.
+ */
 @Schema(subSchemaOptions)
 export class TimeEntry {
     @Prop({ type: String, required: true }) time!: string;
     @Prop({ type: Number, default: null }) limit!: number | null;
     @Prop({ type: Number, required: true, default: 0 }) booked_count!: number;
-    @Prop({ type: [BookingSchema], default: [] }) bookings!: Booking[];
 }
 export const TimeEntrySchema = SchemaFactory.createForClass(TimeEntry);
 
@@ -49,7 +40,6 @@ export class SlotValue {
     @Prop({ type: [TimeEntrySchema] }) time?: TimeEntry[];
     @Prop({ type: Number, default: undefined }) limit?: number | null;
     @Prop({ type: Number }) booked_count?: number;
-    @Prop({ type: [BookingSchema] }) bookings?: Booking[];
     @Prop({ type: String }) description?: string;
     @Prop({ type: String }) link?: string;
     @Prop({ type: String }) price?: string;
@@ -136,3 +126,4 @@ export type ServiceDocument = HydratedDocument<Service>;
 export const ServiceSchema = SchemaFactory.createForClass(Service);
 ServiceSchema.index({ organization_id: 1, category_id: 1, position: 1 });
 ServiceSchema.index({ category_id: 1 });
+ServiceSchema.index({ organization_id: 1, enabled: 1, position: 1 });

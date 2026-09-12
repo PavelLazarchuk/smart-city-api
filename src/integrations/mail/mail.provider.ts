@@ -15,4 +15,6 @@ export const MAIL_PROVIDER = Symbol('MAIL_PROVIDER');
 
 export interface MailProvider {
     send(message: MailMessage): Promise<void>;
+    /** Readiness probe: resolves when the transport is usable, rejects otherwise. */
+    check(): Promise<void>;
 }

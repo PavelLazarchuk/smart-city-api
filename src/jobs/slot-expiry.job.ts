@@ -2,20 +2,20 @@ import { Injectable } from '@nestjs/common';
 
 import { TransactionRunner } from '../common/database/transaction-runner';
 import { ArchivesService } from '../modules/archives/archives.service';
+import { BookingsRepository } from '../modules/bookings/bookings.repository';
 import { ServicesService } from '../modules/services/services.service';
-import { UsersService } from '../modules/users/users.service';
-import { collectBookingIds, formatDateOnly, isSlotExpired } from '../modules/services/slot.logic';
+import { formatDateOnly, isSlotExpired } from '../modules/services/slot.logic';
 import { JobRunner } from './job-runner';
 
 export const SLOT_EXPIRY_JOB = 'slot_expiry';
 
-/** Archives expired dated slots and removes them from services and users, transactionally. */
+/** Archives expired dated slots with their bookings, then removes both, transactionally. */
 @Injectable()
 export class SlotExpiryJob {
     constructor(
         private readonly services: ServicesService,
         private readonly archives: ArchivesService,
-        private readonly users: UsersService,
+        private readonly bookings: BookingsRepository,
         private readonly tx: TransactionRunner,
         private readonly runner: JobRunner,
     ) {}
@@ -46,12 +46,13 @@ export class SlotExpiryJob {
                 if (expired.length === 0) return 0;
 
                 for (const { option, slot } of expired) {
+                    const bookings = await this.bookings.findBySlots(id, option.id, [slot.id], ctx.session);
                     await this.archives.createSnapshot(
                         {
                             organization_id: service.organization_id,
                             service_id: service._id,
                             type: 'service',
-                            data: { service_id: id, option_id: option.id, slot },
+                            data: { service_id: id, option_id: option.id, slot, bookings },
                         },
                         ctx.session,
                     );
@@ -65,12 +66,8 @@ export class SlotExpiryJob {
 
                 for (const [optionId, slotIds] of byOption) {
                     await this.services.pullSlots(id, optionId, slotIds, ctx.session);
+                    await this.bookings.deleteBySlots(id, optionId, slotIds, ctx.session);
                 }
-
-                const bookingIds = collectBookingIds(
-                    expired.map(({ option, slot }) => ({ ...option, slots: [slot] })),
-                );
-                await this.users.removeBookingRefsByIds(bookingIds, ctx);
 
                 return expired.length;
             });

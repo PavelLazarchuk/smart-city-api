@@ -14,29 +14,28 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiTags } from '@nestjs/swagger';
 import { type Response } from 'express';
-import { type ZodType } from 'zod';
 
 import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
+import { parseBody } from '../../common/http/parse-body';
 import { Serialize, SerializeList, SerializePaginated } from '../../common/http/serialize.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { objectIdSchema } from '../../common/zod/primitives';
 import {
-    BookingRefResponseDto,
-    bookingRefResponseSchema,
     CreateUserDto,
     ListUsersQueryDto,
     SetUserOrganizationsDto,
     updateSelfSchema,
     updateUserAdminSchema,
+    UserBookingResponseDto,
+    userBookingResponseSchema,
     UserResponseDto,
     userResponseSchema,
 } from './dto/user.schemas';
-import { type BookingRef } from './schemas/user.schema';
 import { type UserEntity } from './users.repository';
-import { UsersService } from './users.service';
+import { type UserBookingView, UsersService } from './users.service';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -86,10 +85,10 @@ export class UsersController {
         this.assertSelfOrSuperAdmin(id, user);
 
         if (user.role === ROLES.SUPER_ADMIN) {
-            return this.users.updateByAdmin(id, this.parse(updateUserAdminSchema, body), user);
+            return this.users.updateByAdmin(id, parseBody(updateUserAdminSchema, body), user);
         }
 
-        return this.users.updateSelf(id, this.parse(updateSelfSchema, body));
+        return this.users.updateSelf(id, parseBody(updateSelfSchema, body));
     }
 
     @Delete(':id')
@@ -108,27 +107,12 @@ export class UsersController {
     }
 
     @Get(':id/bookings')
-    @ApiData(BookingRefResponseDto)
-    @SerializeList(bookingRefResponseSchema)
-    bookings(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<BookingRef[]> {
+    @ApiData(UserBookingResponseDto)
+    @SerializeList(userBookingResponseSchema)
+    bookings(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<UserBookingView[]> {
         this.assertSelfOrSuperAdmin(id, user);
 
         return this.users.getBookings(id);
-    }
-
-    private parse<T>(schema: ZodType<T>, body: unknown): T {
-        const result = schema.safeParse(body);
-
-        if (result.success) return result.data;
-
-        throw ApiError.badRequest(
-            'VALIDATION_ERROR',
-            result.error.issues.map((issue) => ({
-                path: issue.path.map(String).join('.'),
-                message: issue.message,
-                code: issue.code,
-            })),
-        );
     }
 
     private assertSelfOrSuperAdmin(id: string, user: AuthUser): void {

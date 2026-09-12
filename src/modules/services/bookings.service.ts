@@ -1,31 +1,32 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Types } from 'mongoose';
+import { type ClientSession, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { MailService } from '../../integrations/mail/mail.service';
-import { UsersService } from '../users/users.service';
+import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
+import { type Booking } from '../bookings/schemas/booking.schema';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
-import { type Booking, BOOKABLE_SLOT_TYPES } from './schemas/service.schema';
+import { BOOKABLE_SLOT_TYPES } from './schemas/service.schema';
 import { ServicesMasker } from './services.masker';
 import { ServicesRepository } from './services.repository';
-import { ServicesService } from './services.service';
-import { findBookingsOfUser, formatDateOnly } from './slot.logic';
+import { formatDateOnly } from './slot.logic';
+
+const DUPLICATE_KEY = 11000;
 
 /**
- * Booking creation and cancellation: service slot and user booking list change in one transaction,
- * capacity is enforced by the conditional update, and the notification e-mail is sent only after
- * the commit.
+ * Booking creation and cancellation. The booking row and the slot's occupancy counter change in one
+ * transaction: the counter is what enforces capacity (a conditional `$inc`), the unique index on the
+ * booking row is what refuses duplicates, and the notification e-mail is sent only after the commit.
  */
 @Injectable()
 export class BookingsService implements OnModuleInit {
     constructor(
-        private readonly services: ServicesService,
         private readonly repository: ServicesRepository,
-        private readonly users: UsersService,
+        private readonly bookings: BookingsRepository,
         private readonly mail: MailService,
         private readonly masker: ServicesMasker,
         private readonly tx: TransactionRunner,
@@ -33,31 +34,18 @@ export class BookingsService implements OnModuleInit {
     ) {}
 
     onModuleInit(): void {
-        this.cascade.register('user', 'services.remove_user_bookings', async (userId, ctx) => {
-            const services = await this.repository.findWithBookingsOfUser(userId, ctx.session);
+        this.cascade.register('user', 'bookings.delete', async (userId, ctx) => {
+            const bookings = await this.bookings.findByUser(userId, ctx.session);
 
-            for (const service of services) {
-                for (const found of findBookingsOfUser(service.options, userId)) {
-                    if (found.time) {
-                        await this.repository.pullTimeBooking(
-                            service._id.toHexString(),
-                            found.option_id,
-                            found.slot_id,
-                            found.time,
-                            found.booking.id,
-                            ctx.session,
-                        );
-                    } else {
-                        await this.repository.pullSlotBooking(
-                            service._id.toHexString(),
-                            found.option_id,
-                            found.slot_id,
-                            found.booking.id,
-                            ctx.session,
-                        );
-                    }
-                }
-            }
+            for (const booking of bookings) await this.releaseCapacity(booking, ctx.session);
+
+            await this.bookings.deleteByUser(userId, ctx.session);
+        });
+        this.cascade.register('service', 'bookings.delete', async (serviceId, ctx) => {
+            await this.bookings.deleteByService(serviceId, ctx.session);
+        });
+        this.cascade.register('organization', 'bookings.delete', async (organizationId, ctx) => {
+            await this.bookings.deleteByOrganization(organizationId, ctx.session);
         });
     }
 
@@ -84,27 +72,8 @@ export class BookingsService implements OnModuleInit {
             if (typeof slot.value.date === 'string' && slot.value.date < today)
                 throw ApiError.unprocessable('SLOT_EXPIRED');
 
-            const requestedTime = slot.child_type === 'date_time' ? input.time : undefined;
-
-            if (
-                findBookingsOfUser([option], actor.id).some(
-                    (found) => found.slot_id === slot.id && found.time === requestedTime,
-                )
-            ) {
-                throw ApiError.conflict('BOOKING_ALREADY_EXISTS');
-            }
-
-            const booking: Booking = {
-                id: bookingId,
-                user_id: new Types.ObjectId(actor.id),
-                person: actor.name ?? '',
-                phone: actor.phone ?? '',
-                info: input.info ?? '',
-                created_at: createdAt,
-            };
-
-            let accepted: boolean;
             let time: string | undefined;
+            let limit: number | null;
 
             if (slot.child_type === 'date_time') {
                 if (!input.time) throw ApiError.unprocessable('SLOT_TIME_REQUIRED');
@@ -114,55 +83,55 @@ export class BookingsService implements OnModuleInit {
                 if (!entry) throw ApiError.notFound('SLOT_NOT_FOUND');
 
                 time = entry.time;
-                accepted = await this.repository.pushTimeBooking(
-                    serviceId,
-                    option.id,
-                    slot.id,
-                    entry.time,
-                    entry.limit,
-                    booking,
-                    ctx.session,
-                );
+                limit = entry.limit;
             } else {
-                accepted = await this.repository.pushSlotBooking(
-                    serviceId,
-                    option.id,
-                    slot.id,
-                    slot.value.limit ?? null,
-                    booking,
-                    ctx.session,
-                );
+                limit = slot.value.limit ?? null;
             }
 
-            if (!accepted) throw ApiError.unprocessable('SLOT_FULL');
-
-            const result: BookingCreated = {
-                booking_id: bookingId,
-                service_id: serviceId,
-                organization_id: service.organization_id.toHexString(),
+            const booking: Booking = {
+                id: bookingId,
+                service_id: service._id,
+                organization_id: service.organization_id,
                 option_id: option.id,
                 slot_id: slot.id,
                 child_type: slot.child_type,
-                date: slot.value.date,
-                time,
-                created_at: createdAt.toISOString(),
+                slot_date: slot.value.date ?? null,
+                slot_time: time ?? null,
+                service_label: service.value.heading_value ?? service.label,
+                user_id: new Types.ObjectId(actor.id),
+                person: actor.name ?? '',
+                phone: actor.phone ?? '',
+                info: input.info ?? '',
             };
-            await this.users.addBookingRef(
-                actor.id,
-                {
-                    id: bookingId,
-                    service_id: service._id,
-                    organization_id: service.organization_id,
-                    option_id: option.id,
-                    slot_id: slot.id,
-                    child_type: slot.child_type,
-                    service_label: service.value.heading_value ?? service.label,
-                    date: slot.value.date,
-                    time,
-                    created_at: createdAt,
-                },
-                ctx,
-            );
+
+            try {
+                await this.bookings.create(booking, ctx.session);
+            } catch (error) {
+                if ((error as { code?: number }).code === DUPLICATE_KEY)
+                    throw ApiError.conflict('BOOKING_ALREADY_EXISTS');
+
+                throw error;
+            }
+
+            const accepted =
+                time === undefined
+                    ? await this.repository.incrementSlotCount(
+                          serviceId,
+                          option.id,
+                          slot.id,
+                          limit,
+                          ctx.session,
+                      )
+                    : await this.repository.incrementTimeCount(
+                          serviceId,
+                          option.id,
+                          slot.id,
+                          time,
+                          limit,
+                          ctx.session,
+                      );
+
+            if (!accepted) throw ApiError.unprocessable('SLOT_FULL');
 
             const subscribe = service.value.subscribe;
 
@@ -178,114 +147,73 @@ export class BookingsService implements OnModuleInit {
                 );
             }
 
-            return result;
+            return {
+                booking_id: bookingId,
+                service_id: serviceId,
+                organization_id: service.organization_id.toHexString(),
+                option_id: option.id,
+                slot_id: slot.id,
+                child_type: slot.child_type,
+                date: slot.value.date,
+                time,
+                created_at: createdAt.toISOString(),
+            };
         });
     }
 
-    /** The booking's owner or an admin of the service's organization may cancel. */
+    /**
+     * The booking's owner or an admin of the service's organization may cancel. The booking row
+     * carries its organization, so neither check needs the service document any more.
+     */
     async cancel(
         serviceId: string,
         bookingId: string,
         actor: AuthUser,
     ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
         return this.tx.run(async (ctx) => {
-            const service = await this.repository.findById(serviceId, ctx.session);
+            const booking = await this.bookings.findByPublicId(bookingId, ctx.session);
 
-            if (!service) throw ApiError.notFound('SERVICE_NOT_FOUND');
+            if (!booking || booking.service_id.toHexString() !== serviceId)
+                throw ApiError.notFound('BOOKING_NOT_FOUND');
 
-            const location = this.locate(service.options, bookingId);
+            const ownerId = booking.user_id.toHexString();
 
-            if (!location) throw ApiError.notFound('BOOKING_NOT_FOUND');
-
-            const ownerId = location.booking.user_id.toHexString();
-            const isOwner = ownerId === actor.id;
-
-            if (!isOwner && !this.masker.canSeeDetails(actor, service.organization_id.toHexString())) {
+            if (
+                ownerId !== actor.id &&
+                !this.masker.canSeeDetails(actor, booking.organization_id.toHexString())
+            ) {
                 throw ApiError.forbidden('FORBIDDEN');
             }
 
-            const removed = location.time
-                ? await this.repository.pullTimeBooking(
-                      serviceId,
-                      location.option_id,
-                      location.slot_id,
-                      location.time,
-                      bookingId,
-                      ctx.session,
-                  )
-                : await this.repository.pullSlotBooking(
-                      serviceId,
-                      location.option_id,
-                      location.slot_id,
-                      bookingId,
-                      ctx.session,
-                  );
+            if (!(await this.bookings.deleteByPublicId(bookingId, ctx.session)))
+                throw ApiError.notFound('BOOKING_NOT_FOUND');
 
-            if (!removed) throw ApiError.notFound('BOOKING_NOT_FOUND');
-
-            await this.users.removeBookingRef(ownerId, bookingId, ctx);
+            await this.releaseCapacity(booking, ctx.session);
 
             return {
                 user_id: ownerId,
-                date: location.date,
-                time: location.time,
-                child_type: location.child_type,
+                date: booking.slot_date ?? undefined,
+                time: booking.slot_time ?? undefined,
+                child_type: booking.child_type,
             };
         });
     }
 
-    private locate(
-        options: {
-            id: string;
-            slots: {
-                id: string;
-                child_type: string;
-                value: {
-                    date?: string;
-                    bookings?: Booking[];
-                    time?: { time: string; bookings: Booking[] }[];
-                };
-            }[];
-        }[],
-        bookingId: string,
-    ): {
-        option_id: string;
-        slot_id: string;
-        child_type: string;
-        date?: string;
-        time?: string;
-        booking: Booking;
-    } | null {
-        for (const option of options) {
-            for (const slot of option.slots) {
-                const direct = (slot.value.bookings ?? []).find((booking) => booking.id === bookingId);
+    private async releaseCapacity(booking: BookingEntity, session?: ClientSession): Promise<void> {
+        const serviceId = booking.service_id.toHexString();
 
-                if (direct)
-                    return {
-                        option_id: option.id,
-                        slot_id: slot.id,
-                        child_type: slot.child_type,
-                        date: slot.value.date,
-                        booking: direct,
-                    };
+        if (booking.slot_time) {
+            await this.repository.decrementTimeCount(
+                serviceId,
+                booking.option_id,
+                booking.slot_id,
+                booking.slot_time,
+                session,
+            );
 
-                for (const entry of slot.value.time ?? []) {
-                    const found = entry.bookings.find((booking) => booking.id === bookingId);
-
-                    if (found) {
-                        return {
-                            option_id: option.id,
-                            slot_id: slot.id,
-                            child_type: slot.child_type,
-                            date: slot.value.date,
-                            time: entry.time,
-                            booking: found,
-                        };
-                    }
-                }
-            }
+            return;
         }
 
-        return null;
+        await this.repository.decrementSlotCount(serviceId, booking.option_id, booking.slot_id, session);
     }
 }

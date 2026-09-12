@@ -18,6 +18,7 @@ export const ERROR_CODES = {
     PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
     UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
     PAGE_OUT_OF_RANGE: 'PAGE_OUT_OF_RANGE',
+    DEPENDENCY_UNAVAILABLE: 'DEPENDENCY_UNAVAILABLE',
 
     INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
     LOGIN_METHOD_DISABLED: 'LOGIN_METHOD_DISABLED',
@@ -52,7 +53,13 @@ export const ERROR_CODES = {
     REORDER_MISMATCH: 'REORDER_MISMATCH',
     INCLUDE_NOT_ALLOWED: 'INCLUDE_NOT_ALLOWED',
 
+    OPTION_NOT_FOUND: 'OPTION_NOT_FOUND',
+    OPTION_HAS_BOOKINGS: 'OPTION_HAS_BOOKINGS',
     SLOT_NOT_FOUND: 'SLOT_NOT_FOUND',
+    SLOT_HAS_BOOKINGS: 'SLOT_HAS_BOOKINGS',
+    SLOT_NOT_DATED: 'SLOT_NOT_DATED',
+    SLOT_NOT_LIMITED: 'SLOT_NOT_LIMITED',
+    SLOT_NOT_TIMED: 'SLOT_NOT_TIMED',
     SLOT_NOT_BOOKABLE: 'SLOT_NOT_BOOKABLE',
     SLOT_TIME_REQUIRED: 'SLOT_TIME_REQUIRED',
     SLOT_FULL: 'SLOT_FULL',
@@ -67,6 +74,7 @@ export const ERROR_CODES = {
     FILE_TYPE_NOT_ALLOWED: 'FILE_TYPE_NOT_ALLOWED',
     FILE_TOO_LARGE: 'FILE_TOO_LARGE',
     SMS_DELIVERY_FAILED: 'SMS_DELIVERY_FAILED',
+    SMS_BUDGET_EXCEEDED: 'SMS_BUDGET_EXCEEDED',
     ARCHIVE_SERVICE_MISMATCH: 'ARCHIVE_SERVICE_MISMATCH',
 } as const;
 
@@ -89,6 +97,7 @@ export const errorMessages: Record<ErrorCode, string> = {
     PAYLOAD_TOO_LARGE: 'The request payload is too large.',
     UNSUPPORTED_MEDIA_TYPE: 'The request media type is not supported.',
     PAGE_OUT_OF_RANGE: 'The requested page is beyond the supported depth. Narrow the query instead.',
+    DEPENDENCY_UNAVAILABLE: 'A dependency of this service is unavailable.',
 
     INVALID_CREDENTIALS: 'Incorrect login or password.',
     LOGIN_METHOD_DISABLED: 'This login method is disabled for your account type.',
@@ -123,7 +132,13 @@ export const errorMessages: Record<ErrorCode, string> = {
     REORDER_MISMATCH: 'The list of ids must contain every child exactly once.',
     INCLUDE_NOT_ALLOWED: 'One of the requested includes is not supported.',
 
+    OPTION_NOT_FOUND: 'The requested service option does not exist.',
+    OPTION_HAS_BOOKINGS: 'This option still has bookings. Cancel them before removing it.',
     SLOT_NOT_FOUND: 'The requested slot does not exist.',
+    SLOT_HAS_BOOKINGS: 'This slot still has bookings. Cancel them before removing it.',
+    SLOT_NOT_DATED: 'This slot type has no date.',
+    SLOT_NOT_LIMITED: 'This slot type has no capacity limit.',
+    SLOT_NOT_TIMED: 'This slot type has no time entries.',
     SLOT_NOT_BOOKABLE: 'This slot type cannot be booked.',
     SLOT_TIME_REQUIRED: 'A time is required for this slot.',
     SLOT_FULL: 'The slot is fully booked.',
@@ -138,6 +153,7 @@ export const errorMessages: Record<ErrorCode, string> = {
     FILE_TYPE_NOT_ALLOWED: 'The file type is not allowed.',
     FILE_TOO_LARGE: 'The file is too large.',
     SMS_DELIVERY_FAILED: 'The SMS could not be delivered.',
+    SMS_BUDGET_EXCEEDED: 'The SMS sending budget for this period is exhausted. Try again later.',
     ARCHIVE_SERVICE_MISMATCH: 'The service belongs to a different organization.',
 };
 
@@ -166,11 +182,29 @@ export const texts = {
         reportBody: (count: number): string =>
             `The attached report lists ${count} service(s) that currently have no upcoming booking slots.`,
         reportFileName: 'services-without-slots.xlsx',
+        unreferencedImagesSubject: 'Smart City: images nothing points at',
+        unreferencedImagesBody: (count: number, bytes: number): string =>
+            [
+                `The attached report lists ${count} uploaded image(s) that no organization, news item or`,
+                `service refers to, holding ${Math.round(bytes / 1024)} KiB in total.`,
+                'Nothing has been deleted: review the list and remove what is no longer wanted.',
+            ].join(' '),
+        unreferencedImagesFileName: 'unreferenced-images.xlsx',
     },
     report: {
         sheetName: 'Services',
         columns: { organization: 'Organization', service: 'Service' },
         untitledService: 'Untitled service',
+        unreferencedImages: {
+            sheetName: 'Images',
+            columns: {
+                organization: 'Organization',
+                src: 'URL',
+                size: 'Size, bytes',
+                uploaded: 'Uploaded',
+            },
+            unknownOrganization: 'Deleted organization',
+        },
     },
     defaults: {
         serviceLabel: 'Service',

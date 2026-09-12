@@ -31,6 +31,10 @@ export class NewsRepository extends BaseRepository<News> {
         return this.deleteMany({ organization_id: new Types.ObjectId(organizationId) }, session);
     }
 
+    imageReferences(): Promise<string[]> {
+        return this.model.distinct('value.image_value').exec();
+    }
+
     findExpired(now: Date, limit: number): Promise<NewsEntity[]> {
         return this.model
             .find({ expires_at: { $lte: now } })

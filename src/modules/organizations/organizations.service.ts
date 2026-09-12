@@ -8,6 +8,8 @@ import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
+import { BookingsRepository } from '../bookings/bookings.repository';
+import { attachBookings } from '../services/slot.logic';
 import { type ServiceView, ServicesMasker } from '../services/services.masker';
 import {
     type CreateOrganizationInput,
@@ -39,6 +41,7 @@ export class OrganizationsService {
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
         private readonly masker: ServicesMasker,
+        private readonly bookings: BookingsRepository,
     ) {}
 
     async list(
@@ -61,16 +64,56 @@ export class OrganizationsService {
             includeLimit: this.config.pagination.includeMaxItems,
         });
 
-        if (query.include.includes('services')) {
-            result.items = result.items.map((row) => ({
-                ...row,
-                services: (row.services ?? []).map((service) =>
-                    this.masker.mask(service as ServiceView, viewer, row._id.toHexString()),
-                ),
-            }));
-        }
+        if (query.include.includes('services'))
+            result.items = await this.presentServices(result.items, viewer);
 
         return result;
+    }
+
+    /**
+     * Included services carry bookings only for the organization's own admins, and those are read
+     * from the `bookings` collection for exactly those rows — a public list issues no such query.
+     */
+    private async presentServices(
+        rows: OrganizationListRow[],
+        viewer?: AuthUser,
+    ): Promise<OrganizationListRow[]> {
+        const visible = rows.filter((row) => this.masker.canSeeDetails(viewer, row._id.toHexString()));
+        const serviceIds = visible.flatMap((row) =>
+            (row.services ?? []).map((service) => String((service as { _id: unknown })._id)),
+        );
+        const bookings = await this.bookings.findByServices(serviceIds);
+        const byService = new Map<string, typeof bookings>();
+
+        for (const booking of bookings) {
+            const key = booking.service_id.toHexString();
+            byService.set(key, [...(byService.get(key) ?? []), booking]);
+        }
+
+        return rows.map((row) => {
+            const organizationId = row._id.toHexString();
+            const privileged = this.masker.canSeeDetails(viewer, organizationId);
+
+            return {
+                ...row,
+                services: (row.services ?? []).map((service) => {
+                    const view = service as ServiceView & {
+                        _id: Types.ObjectId;
+                        options?: { id: string; slots: never[] }[];
+                    };
+
+                    if (!privileged) return this.masker.maskCounts(view);
+
+                    return {
+                        ...view,
+                        options: attachBookings(
+                            view.options ?? [],
+                            byService.get(view._id.toHexString()) ?? [],
+                        ),
+                    };
+                }),
+            };
+        });
     }
 
     async getById(id: string): Promise<OrganizationEntity> {
@@ -176,5 +219,18 @@ export class OrganizationsService {
 
     findAllForReport(): Promise<OrganizationEntity[]> {
         return this.organizations.findAllForReport();
+    }
+
+    existingIds(ids: string[]): Promise<Set<string>> {
+        return this.organizations.existingIds(ids);
+    }
+
+    /** Logo URLs in use; one of the sources `unreferenced_images` counts as a reference. */
+    imageReferences(): Promise<string[]> {
+        return this.organizations.imageReferences();
+    }
+
+    labels(): Promise<Map<string, string>> {
+        return this.organizations.labels();
     }
 }

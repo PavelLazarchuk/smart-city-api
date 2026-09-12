@@ -126,6 +126,11 @@ export class NewsService implements OnModuleInit {
         await this.tx.run(({ session }) => this.news.reorder(organizationId, ids, session));
     }
 
+    /** Image URLs used by news items; one of the sources `unreferenced_images` counts as a reference. */
+    imageReferences(): Promise<string[]> {
+        return this.news.imageReferences();
+    }
+
     findExpired(now: Date, limit = 500): Promise<NewsEntity[]> {
         return this.news.findExpired(now, limit);
     }

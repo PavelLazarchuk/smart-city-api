@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
-import { JobLockService } from './job-lock.service';
+import { MetricsService } from '../common/metrics/metrics.service';
+import { JobLockService, type JobRunOutcome } from './job-lock.service';
 
 export interface JobOutcome {
     ran: boolean;
@@ -9,11 +10,16 @@ export interface JobOutcome {
     result?: unknown;
 }
 
-/** Runs a job under the distributed lock, renewing the lease while it executes, with structured logs. */
+/**
+ * Runs a job under the distributed lock, renewing the lease while it executes, with structured logs.
+ * Every finished run also leaves its outcome on the lease document, which is what `GET /health/jobs`
+ * reads: without it a job that throws every night is visible only to whoever reads the logs.
+ */
 @Injectable()
 export class JobRunner {
     constructor(
         private readonly locks: JobLockService,
+        private readonly metrics: MetricsService,
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(JobRunner.name);
@@ -24,9 +30,11 @@ export class JobRunner {
         const lease = await this.locks.acquire(job);
 
         if (!lease) {
+            const duration = Date.now() - started;
             this.logger.info({ job }, 'job skipped: lock held elsewhere');
+            this.metrics.observeJob(job, 'skipped', duration);
 
-            return { ran: false, duration_ms: Date.now() - started };
+            return { ran: false, duration_ms: duration };
         }
 
         this.logger.info({ job, holder: lease.holder }, 'job started');
@@ -40,16 +48,34 @@ export class JobRunner {
             const result = await work();
             const duration = Date.now() - started;
             this.logger.info({ job, duration_ms: duration, result }, 'job finished');
+            this.metrics.observeJob(job, 'ok', duration);
+            await this.record(job, { status: 'ok', durationMs: duration });
 
             return { ran: true, duration_ms: duration, result };
         } catch (error) {
-            this.logger.error({ err: error, job, duration_ms: Date.now() - started }, 'job failed');
+            const duration = Date.now() - started;
+            this.logger.error({ err: error, job, duration_ms: duration }, 'job failed');
+            this.metrics.observeJob(job, 'failed', duration);
+            await this.record(job, {
+                status: 'failed',
+                durationMs: duration,
+                error: error instanceof Error ? error.message : String(error),
+            });
             throw error;
         } finally {
             clearInterval(timer);
             await lease
                 .release()
                 .catch((error: unknown) => this.logger.warn({ err: error, job }, 'lease release failed'));
+        }
+    }
+
+    /** Bookkeeping must never become the reason a job reports failure, so its own error only logs. */
+    private async record(job: string, outcome: JobRunOutcome): Promise<void> {
+        try {
+            await this.locks.markFinished(job, outcome);
+        } catch (error) {
+            this.logger.warn({ err: error, job }, 'job outcome could not be recorded');
         }
     }
 }

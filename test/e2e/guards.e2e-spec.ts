@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { Types } from 'mongoose';
+import { type Types } from 'mongoose';
 
 import { collectKeys, expectNoSensitiveKeys } from '../support/assertions';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
@@ -131,21 +131,23 @@ describe('cross-cutting guards (e2e)', () => {
             stranger = await fx.citizen({ phone: '375297654321' });
             admin = await fx.admin([organization.id]);
             const option = fx.bookableOption(3);
-            option.slots[0]!.value.time![0]!.bookings.push({
-                id: '11111111-1111-4111-8111-111111111111',
-                user_id: new Types.ObjectId(citizen.id),
-                person: 'Private Citizen',
-                phone: '375291234567',
-                info: 'allergy',
-                created_at: new Date(),
-            });
-            option.slots[0]!.value.time![0]!.booked_count = 1;
             serviceId = (
                 await fx.service(organization.id, {
                     options: [option],
                     value: { subscribe: 'internal@example.com' },
                 })
             ).id;
+            await fx.booking({
+                service_id: serviceId,
+                organization_id: organization.id,
+                option_id: option.id,
+                slot_id: option.slot_id,
+                user_id: citizen.id,
+                time: '10:00',
+                person: 'Private Citizen',
+                phone: '375291234567',
+                info: 'allergy',
+            });
             await fx.news(organization.id);
             await fx.infoSection(organization.id);
         });

@@ -3,6 +3,8 @@ import { InjectConnection } from '@nestjs/mongoose';
 import { type ClientSession, Connection } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
+import { MetricsService } from '../metrics/metrics.service';
+
 export type AfterCommitCallback = () => void | Promise<void>;
 
 export interface TransactionContext {
@@ -18,6 +20,7 @@ export interface TransactionContext {
 export class TransactionRunner {
     constructor(
         @InjectConnection() private readonly connection: Connection,
+        private readonly metrics: MetricsService,
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(TransactionRunner.name);
@@ -30,6 +33,7 @@ export class TransactionRunner {
         try {
             await session.withTransaction(async () => {
                 callbacks = [];
+                this.metrics.countTransactionAttempt();
                 result = await work({
                     session,
                     afterCommit: (callback) => {
@@ -37,6 +41,10 @@ export class TransactionRunner {
                     },
                 });
             });
+            this.metrics.countTransaction('committed');
+        } catch (error) {
+            this.metrics.countTransaction('failed');
+            throw error;
         } finally {
             await session.endSession();
         }

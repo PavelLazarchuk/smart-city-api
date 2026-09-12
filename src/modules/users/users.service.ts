@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { type ClientSession, Types } from 'mongoose';
+import { Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
@@ -10,6 +10,7 @@ import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { AuthStoreService } from '../auth/store/auth-store.service';
+import { BookingsRepository } from '../bookings/bookings.repository';
 import { PasswordService } from '../auth/password.service';
 import { PhonePolicy } from '../auth/phone.policy';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -19,15 +20,30 @@ import {
     type UpdateSelfInput,
     type UpdateUserAdminInput,
 } from './dto/user.schemas';
-import { type BookingRef } from './schemas/user.schema';
 import { type UserEntity, UsersRepository } from './users.repository';
 
 const USER_SORTABLE = ['created_at', 'name', 'login', 'role'] as const;
+
+/** `GET /users/:id/bookings` keeps the field names it had while bookings lived on the account. */
+export interface UserBookingView {
+    id: string;
+    service_id: Types.ObjectId;
+    organization_id: Types.ObjectId;
+    option_id: string;
+    slot_id: string;
+    child_type: string;
+    service_label: string;
+    date?: string;
+    time?: string;
+    info: string;
+    created_at: Date;
+}
 
 @Injectable()
 export class UsersService implements OnModuleInit {
     constructor(
         private readonly users: UsersRepository,
+        private readonly bookings: BookingsRepository,
         private readonly passwords: PasswordService,
         private readonly phonePolicy: PhonePolicy,
         private readonly authStore: AuthStoreService,
@@ -41,12 +57,6 @@ export class UsersService implements OnModuleInit {
     onModuleInit(): void {
         this.cascade.register('organization', 'users.detach_organization', async (organizationId, ctx) => {
             await this.users.detachOrganization(organizationId, ctx.session);
-        });
-        this.cascade.register('service', 'users.remove_bookings', async (serviceId, ctx) => {
-            await this.users.removeBookingsByService(serviceId, ctx.session);
-        });
-        this.cascade.register('organization', 'users.remove_bookings', async (organizationId, ctx) => {
-            await this.users.removeBookingsByOrganization(organizationId, ctx.session);
         });
     }
 
@@ -111,7 +121,6 @@ export class UsersService implements OnModuleInit {
             phone: input.phone,
             role: input.role,
             organization_ids: (input.organization_ids ?? []).map((id) => new Types.ObjectId(id)),
-            bookings: [],
         });
     }
 
@@ -128,7 +137,6 @@ export class UsersService implements OnModuleInit {
             password_hash: input.password ? await this.passwords.hash(input.password) : undefined,
             role: ROLES.COMMON_USER,
             organization_ids: [],
-            bookings: [],
         });
     }
 
@@ -236,10 +244,24 @@ export class UsersService implements OnModuleInit {
         });
     }
 
-    async getBookings(id: string): Promise<BookingRef[]> {
-        const user = await this.getById(id);
+    /** Reads the account's bookings from their own collection, newest first. */
+    async getBookings(id: string): Promise<UserBookingView[]> {
+        await this.getById(id);
+        const bookings = await this.bookings.findByUser(id);
 
-        return user.bookings;
+        return bookings.map((booking) => ({
+            id: booking.id,
+            service_id: booking.service_id,
+            organization_id: booking.organization_id,
+            option_id: booking.option_id,
+            slot_id: booking.slot_id,
+            child_type: booking.child_type,
+            service_label: booking.service_label,
+            date: booking.slot_date ?? undefined,
+            time: booking.slot_time ?? undefined,
+            info: booking.info,
+            created_at: booking.created_at,
+        }));
     }
 
     /** Changing the password ends every other session: a stolen refresh token must stop working. */
@@ -277,6 +299,18 @@ export class UsersService implements OnModuleInit {
         return this.users.findByPhoneWithPassword(phone);
     }
 
+    registerFailedLogin(id: string, windowStart: Date, now: Date): Promise<number | null> {
+        return this.users.incrementFailedLogins(id, windowStart, now);
+    }
+
+    lockAccount(id: string, until: Date): Promise<void> {
+        return this.users.lockUntil(id, until);
+    }
+
+    clearFailedLogins(id: string): Promise<void> {
+        return this.users.clearFailedLogins(id);
+    }
+
     findByPhone(phone: string): Promise<UserEntity | null> {
         return this.users.findByPhone(phone);
     }
@@ -287,22 +321,6 @@ export class UsersService implements OnModuleInit {
 
     async updateName(id: string, name: string): Promise<void> {
         await this.users.updateFields(id, { name });
-    }
-
-    addBookingRef(userId: string, booking: BookingRef, ctx: { session: ClientSession }): Promise<void> {
-        return this.users.addBooking(userId, booking, ctx.session);
-    }
-
-    removeBookingRef(userId: string, bookingId: string, ctx: { session: ClientSession }): Promise<void> {
-        return this.users.removeBooking(userId, bookingId, ctx.session);
-    }
-
-    removeBookingRefsByIds(bookingIds: string[], ctx: { session: ClientSession }): Promise<number> {
-        return this.users.removeBookingsByIds(bookingIds, ctx.session);
-    }
-
-    iterateUsersWithBookings(): AsyncIterable<{ _id: Types.ObjectId; bookings: { id: string }[] }> {
-        return this.users.iterateWithBookings();
     }
 
     /**

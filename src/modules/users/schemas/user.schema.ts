@@ -1,44 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { type HydratedDocument, Types, SchemaTypes } from 'mongoose';
 
-import { baseSchemaOptions, subSchemaOptions } from '../../../common/database/schema-options';
+import { baseSchemaOptions } from '../../../common/database/schema-options';
 import { type Role, ROLE_VALUES, ROLES } from '../../../common/decorators/roles.decorator';
-
-/** A user's reference to a booking that lives inside a service slot. */
-@Schema(subSchemaOptions)
-export class BookingRef {
-    @Prop({ type: String, required: true })
-    id!: string;
-
-    @Prop({ type: SchemaTypes.ObjectId, required: true })
-    service_id!: Types.ObjectId;
-
-    @Prop({ type: SchemaTypes.ObjectId, required: true })
-    organization_id!: Types.ObjectId;
-
-    @Prop({ type: String, required: true })
-    option_id!: string;
-
-    @Prop({ type: String, required: true })
-    slot_id!: string;
-
-    @Prop({ type: String, required: true })
-    child_type!: string;
-
-    @Prop({ type: String })
-    service_label?: string;
-
-    @Prop({ type: String })
-    date?: string;
-
-    @Prop({ type: String })
-    time?: string;
-
-    @Prop({ type: Date, required: true })
-    created_at!: Date;
-}
-
-export const BookingRefSchema = SchemaFactory.createForClass(BookingRef);
 
 @Schema(baseSchemaOptions('users'))
 export class User {
@@ -64,8 +28,17 @@ export class User {
     @Prop({ type: [SchemaTypes.ObjectId], default: [] })
     organization_ids!: Types.ObjectId[];
 
-    @Prop({ type: [BookingRefSchema], default: [] })
-    bookings!: BookingRef[];
+    /** Failed password logins inside the current window; reset by a successful one or by the window. */
+    @Prop({ type: Number, required: true, default: 0 })
+    failed_login_attempts!: number;
+
+    /** When the counter was last raised; anything older than the window starts the count over. */
+    @Prop({ type: Date })
+    last_failed_login_at?: Date;
+
+    /** Set once the failure budget is spent; password login is refused until it passes. */
+    @Prop({ type: Date })
+    locked_until?: Date;
 }
 
 export type UserDocument = HydratedDocument<User>;

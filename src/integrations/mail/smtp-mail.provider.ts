@@ -19,6 +19,10 @@ export class SmtpMailProvider implements MailProvider {
         });
     }
 
+    async check(): Promise<void> {
+        await this.transporter.verify();
+    }
+
     async send(message: MailMessage): Promise<void> {
         const { from } = this.config.mail;
         await this.transporter.sendMail({

@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Workbook } from 'exceljs';
 
 import { AppConfig } from '../common/config/app-config';
 import { texts } from '../common/i18n/messages';
@@ -9,6 +8,7 @@ import { type ServiceEntity } from '../modules/services/services.repository';
 import { ServicesService } from '../modules/services/services.service';
 import { formatDateOnly } from '../modules/services/slot.logic';
 import { JobRunner } from './job-runner';
+import { buildReportWorkbook, REPORT_CONTENT_TYPE } from './report.workbook';
 
 export const DEBTOR_REPORT_JOB = 'debtor_report';
 
@@ -38,7 +38,14 @@ export class DebtorReportJob {
 
         if (recipients.length === 0) return { rows: rows.length, recipients: 0 };
 
-        const workbook = await this.buildWorkbook(rows);
+        const workbook = await buildReportWorkbook<DebtorRow>(
+            texts.report.sheetName,
+            [
+                { header: texts.report.columns.organization, key: 'organization', width: 60 },
+                { header: texts.report.columns.service, key: 'service', width: 60 },
+            ],
+            rows,
+        );
         await this.mail.send({
             to: recipients,
             subject: texts.mail.reportSubject,
@@ -47,7 +54,7 @@ export class DebtorReportJob {
                 {
                     filename: texts.mail.reportFileName,
                     content: workbook,
-                    content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    content_type: REPORT_CONTENT_TYPE,
                 },
             ],
         });
@@ -102,21 +109,5 @@ export class DebtorReportJob {
         }
 
         return false;
-    }
-
-    private async buildWorkbook(rows: DebtorRow[]): Promise<Buffer> {
-        const workbook = new Workbook();
-        const sheet = workbook.addWorksheet(texts.report.sheetName);
-        sheet.columns = [
-            { header: texts.report.columns.organization, key: 'organization', width: 60 },
-            { header: texts.report.columns.service, key: 'service', width: 60 },
-        ];
-        sheet.getRow(1).font = { bold: true, size: 14 };
-
-        for (const row of rows) sheet.addRow(row);
-
-        const buffer = await workbook.xlsx.writeBuffer();
-
-        return Buffer.from(buffer);
     }
 }

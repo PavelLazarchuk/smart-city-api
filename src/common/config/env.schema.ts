@@ -45,6 +45,21 @@ export const envSchema = z
         TRUST_PROXY: z.stringbool().default(false),
 
         MONGO_URI: z.string().min(1),
+        MONGO_MAX_POOL_SIZE: positiveInt(20),
+        MONGO_MIN_POOL_SIZE: z.coerce.number().int().min(0).default(0),
+        MONGO_SERVER_SELECTION_TIMEOUT_MS: positiveInt(10_000),
+        MONGO_SOCKET_TIMEOUT_MS: positiveInt(45_000),
+        MONGO_RETRY_WRITES: z.stringbool().default(true),
+        MONGO_WRITE_CONCERN: z.enum(['majority', '1']).default('majority'),
+        MONGO_READ_PREFERENCE: z
+            .enum(['primary', 'primaryPreferred', 'secondary', 'secondaryPreferred', 'nearest'])
+            .default('primary'),
+
+        METRICS_ENABLED: z.stringbool().default(true),
+        METRICS_TOKEN: optionalString,
+
+        BUILD_VERSION: optionalString,
+        BUILD_SHA: optionalString,
 
         JWT_ACCESS_SECRET: z.string().min(32),
         JWT_REFRESH_SECRET: z.string().min(32),
@@ -57,6 +72,10 @@ export const envSchema = z
         ARGON2_PARALLELISM: positiveInt(1),
         PASSWORD_MIN_LENGTH: positiveInt(8),
         LOGIN_MIN_LENGTH: positiveInt(5),
+        AUTH_MAX_FAILED_ATTEMPTS: positiveInt(5),
+        AUTH_LOCKOUT_SECONDS: positiveInt(300),
+        AUTH_LOCKOUT_MAX_SECONDS: positiveInt(3600),
+        AUTH_FAILED_ATTEMPT_WINDOW_SECONDS: positiveInt(3600),
 
         OTP_LENGTH: z.coerce.number().int().min(4).max(10).default(6),
         OTP_TTL_SECONDS: positiveInt(300),
@@ -83,6 +102,8 @@ export const envSchema = z
         SMPP_SYSTEM_ID: optionalString,
         SMPP_PASSWORD: optionalString,
         SMPP_SOURCE_ADDR: z.string().default('SmartCity'),
+        SMS_HOURLY_LIMIT: z.coerce.number().int().min(0).default(200),
+        SMS_DAILY_LIMIT: z.coerce.number().int().min(0).default(1000),
 
         MAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
         SMTP_HOST: optionalString,
@@ -115,6 +136,7 @@ export const envSchema = z
 
         ARCHIVE_RETENTION_DAYS: positiveInt(30),
         ANALYTICS_RETENTION_DAYS: positiveInt(365),
+        SMS_RETENTION_DAYS: positiveInt(365),
         RECURRENT_HORIZON_DAYS: positiveInt(30),
 
         JOBS_ENABLED: z.stringbool().default(false),
@@ -124,7 +146,14 @@ export const envSchema = z
         JOB_NEWS_EXPIRY_CRON: z.string().default('0 */2 * * *'),
         JOB_SLOT_EXPIRY_CRON: z.string().default('30 3 * * *'),
         JOB_STALE_BOOKINGS_CRON: z.string().default('0 4 * * *'),
+        JOB_CASCADE_RECONCILE_CRON: z.string().default('30 4 * * *'),
+        /** Above this many dangling organizations `cascade_reconcile` reports and deletes nothing. */
+        JOB_CASCADE_RECONCILE_LIMIT: positiveInt(25),
+        JOB_STORAGE_GC_CRON: z.string().default('0 5 * * *'),
         JOB_DEBTOR_REPORT_CRON: z.string().default('0 12 * * *'),
+        JOB_UNREFERENCED_IMAGES_CRON: z.string().default('30 12 * * *'),
+        /** How long a stored file is left alone before `storage_gc` may treat it as an orphan. */
+        STORAGE_GC_MIN_AGE: durationSchema.default(24 * 3600),
         REPORT_RECIPIENTS: csv,
     })
     .superRefine((env, ctx) => {
@@ -166,7 +195,33 @@ export const envSchema = z
             });
         }
 
+        if (env.AUTH_LOCKOUT_MAX_SECONDS < env.AUTH_LOCKOUT_SECONDS) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['AUTH_LOCKOUT_MAX_SECONDS'],
+                message: 'AUTH_LOCKOUT_MAX_SECONDS must not be below AUTH_LOCKOUT_SECONDS',
+            });
+        }
+
+        // A window shorter than one lock would reset the counter while the account is still locked,
+        // so the escalation — and with it AUTH_LOCKOUT_MAX_SECONDS — could never be reached.
+        if (env.AUTH_FAILED_ATTEMPT_WINDOW_SECONDS < env.AUTH_LOCKOUT_SECONDS) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['AUTH_FAILED_ATTEMPT_WINDOW_SECONDS'],
+                message: 'AUTH_FAILED_ATTEMPT_WINDOW_SECONDS must not be below AUTH_LOCKOUT_SECONDS',
+            });
+        }
+
         if (env.NODE_ENV === 'production') {
+            if (env.METRICS_ENABLED && !env.METRICS_TOKEN) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['METRICS_TOKEN'],
+                    message: 'METRICS_TOKEN is required when metrics are exposed in production',
+                });
+            }
+
             if (env.SMS_PROVIDER === 'console') {
                 ctx.addIssue({
                     code: 'custom',

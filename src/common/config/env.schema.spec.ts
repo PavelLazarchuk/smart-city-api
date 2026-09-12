@@ -51,6 +51,7 @@ describe('env schema', () => {
                 SMPP_PASSWORD: 'secret',
                 MAIL_PROVIDER: 'smtp',
                 SMTP_HOST: 'mail.example.com',
+                METRICS_TOKEN: 'metrics-token',
             }),
         ).toMatchObject({ SMS_PROVIDER: 'smpp', MAIL_PROVIDER: 'smtp' });
         expect(validateEnv(base).SMS_PROVIDER).toBe('console');
@@ -67,11 +68,48 @@ describe('env schema', () => {
             SMPP_PASSWORD: 'secret',
             MAIL_PROVIDER: 'smtp',
             SMTP_HOST: 'mail.example.com',
+            METRICS_TOKEN: 'metrics-token',
         };
         expect(new AppConfig(validateEnv(production)).http.swaggerEnabled).toBe(false);
         expect(
             new AppConfig(validateEnv({ ...production, SWAGGER_ENABLED: 'true' })).http.swaggerEnabled,
         ).toBe(true);
+    });
+
+    it('refuses an unprotected metrics endpoint in production, and allows it when switched off', () => {
+        const production = {
+            ...base,
+            NODE_ENV: 'production',
+            SMS_PROVIDER: 'smpp',
+            SMPP_URL: 'smpp://host:2775',
+            SMPP_SYSTEM_ID: 'id',
+            SMPP_PASSWORD: 'secret',
+            MAIL_PROVIDER: 'smtp',
+            SMTP_HOST: 'mail.example.com',
+        };
+        expect(() => validateEnv(production)).toThrow(/METRICS_TOKEN/);
+        expect(validateEnv({ ...production, METRICS_ENABLED: 'false' }).METRICS_ENABLED).toBe(false);
+        expect(validateEnv(base).METRICS_TOKEN).toBeUndefined();
+    });
+
+    it('keeps the lockout window ordered and pins the Mongo connection defaults', () => {
+        expect(() => validateEnv({ ...base, AUTH_LOCKOUT_MAX_SECONDS: '60' })).toThrow(
+            /AUTH_LOCKOUT_MAX_SECONDS/,
+        );
+
+        // A decay window shorter than one lock would reset the counter while the account is still locked.
+        expect(() =>
+            validateEnv({ ...base, AUTH_LOCKOUT_SECONDS: '600', AUTH_FAILED_ATTEMPT_WINDOW_SECONDS: '300' }),
+        ).toThrow(/AUTH_FAILED_ATTEMPT_WINDOW_SECONDS/);
+        expect(new AppConfig(validateEnv(base)).auth.failedAttemptWindowSeconds).toBe(3600);
+
+        const mongo = new AppConfig(validateEnv(base)).mongo;
+        expect(mongo).toMatchObject({
+            maxPoolSize: 20,
+            retryWrites: true,
+            writeConcern: 'majority',
+            readPreference: 'primary',
+        });
     });
 
     it('refuses to boot on missing or malformed values with a readable message', () => {

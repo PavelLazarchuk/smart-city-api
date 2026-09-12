@@ -250,8 +250,21 @@ describe('images, archives, sms, analytics (e2e)', () => {
                 'failed',
                 'sent',
             ]);
-            expect(list.body.meta.summary.total).toBe(2);
             expect(list.body.meta.next_cursor).toBeNull();
+
+            // A cursor page does not count the whole match unless asked to.
+            expect(list.body.meta.summary.total).toBeNull();
+            expect(list.body.meta.total).toBeNull();
+            expect(list.body.meta.total_pages).toBeNull();
+            const counted = await t.http
+                .get(`${t.prefix}/sms?period=this_month&with_total=true`)
+                .set('Authorization', bearer);
+            expect(counted.body.meta.summary.total).toBe(2);
+            expect(counted.body.meta.total).toBe(2);
+            const offset = await t.http
+                .get(`${t.prefix}/sms?period=this_month&mode=page`)
+                .set('Authorization', bearer);
+            expect(offset.body.meta.total).toBe(2);
 
             const paged = await t.http.get(`${t.prefix}/sms?limit=1`).set('Authorization', bearer);
             expect(paged.body.data).toHaveLength(1);
@@ -278,7 +291,7 @@ describe('images, archives, sms, analytics (e2e)', () => {
                 403,
             );
             const all = await t.http
-                .get(`${t.prefix}/analytics/events`)
+                .get(`${t.prefix}/analytics/events?with_total=true`)
                 .set('Authorization', await fx.bearer(superAdmin));
             expect(all.status).toBe(200);
             expect(all.body.meta.total).toBeGreaterThanOrEqual(2);

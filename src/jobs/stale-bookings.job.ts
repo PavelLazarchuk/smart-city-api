@@ -1,21 +1,24 @@
 import { Injectable } from '@nestjs/common';
 
 import { TransactionRunner } from '../common/database/transaction-runner';
+import { BookingsRepository } from '../modules/bookings/bookings.repository';
 import { ServicesService } from '../modules/services/services.service';
-import { collectBookingIds } from '../modules/services/slot.logic';
-import { UsersService } from '../modules/users/users.service';
 import { JobRunner } from './job-runner';
 
 export const STALE_BOOKINGS_JOB = 'stale_bookings';
 
+const BATCH = 200;
+
 /**
- * Drops a user's booking references whose underlying slot no longer exists. Both sides are read with
- * a booking-ids-only projection and stale references removed with a targeted `$pull`, never a rewrite.
+ * Drops bookings whose slot no longer exists. With bookings in their own collection there is no
+ * second copy to reconcile any more; what remains is the slot an admin removed by hand or a service
+ * that went away outside a cascade. Slots are read as coordinates only and stale rows are deleted
+ * by id, so the job never loads a whole service or booking document.
  */
 @Injectable()
 export class StaleBookingsJob {
     constructor(
-        private readonly users: UsersService,
+        private readonly bookings: BookingsRepository,
         private readonly services: ServicesService,
         private readonly tx: TransactionRunner,
         private readonly runner: JobRunner,
@@ -25,22 +28,66 @@ export class StaleBookingsJob {
         return this.runner.run(STALE_BOOKINGS_JOB, () => this.execute());
     }
 
-    async execute(): Promise<{ users_updated: number; references_removed: number }> {
-        const services = await this.services.findAllBookingIds();
-        const liveBookingIds = new Set(services.flatMap((service) => collectBookingIds(service.options)));
-        let usersUpdated = 0;
+    async execute(): Promise<{ bookings_removed: number }> {
+        const live = await this.liveSlots();
+        let stale: string[] = [];
         let removed = 0;
 
-        for await (const user of this.users.iterateUsersWithBookings()) {
-            const stale = user.bookings.filter((booking) => !liveBookingIds.has(booking.id)).map((b) => b.id);
+        for await (const booking of this.bookings.iterateAll()) {
+            const key = this.keyOf(
+                booking.service_id.toHexString(),
+                booking.option_id,
+                booking.slot_id,
+                booking.slot_time,
+            );
 
-            if (stale.length === 0) continue;
+            if (live.has(key)) continue;
 
-            await this.tx.run((ctx) => this.users.removeBookingRefsByIds(stale, ctx));
-            usersUpdated += 1;
-            removed += stale.length;
+            stale.push(booking.id);
+
+            if (stale.length < BATCH) continue;
+
+            removed += await this.remove(stale);
+            stale = [];
         }
 
-        return { users_updated: usersUpdated, references_removed: removed };
+        removed += await this.remove(stale);
+
+        return { bookings_removed: removed };
+    }
+
+    private async remove(ids: string[]): Promise<number> {
+        if (ids.length === 0) return 0;
+
+        return this.tx.run((ctx) => this.bookings.deleteByIds(ids, ctx.session));
+    }
+
+    private async liveSlots(): Promise<Set<string>> {
+        const services = await this.services.findAllSlotIds();
+        const live = new Set<string>();
+
+        for (const service of services) {
+            const serviceId = service._id.toHexString();
+
+            for (const option of service.options ?? []) {
+                for (const slot of option.slots ?? []) {
+                    const times = slot.value?.time ?? [];
+
+                    if (times.length === 0) {
+                        live.add(this.keyOf(serviceId, option.id, slot.id, null));
+                        continue;
+                    }
+
+                    for (const entry of times)
+                        live.add(this.keyOf(serviceId, option.id, slot.id, entry.time));
+                }
+            }
+        }
+
+        return live;
+    }
+
+    private keyOf(serviceId: string, optionId: string, slotId: string, time: string | null): string {
+        return `${serviceId}|${optionId}|${slotId}|${time ?? ''}`;
     }
 }

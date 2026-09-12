@@ -192,7 +192,31 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         return this.count({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } });
     }
 
+    /** Which of these ids still name an organization; the complement is what `cascade_reconcile` cleans. */
+    async existingIds(ids: string[]): Promise<Set<string>> {
+        const rows = await this.model
+            .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } }, { _id: 1 })
+            .lean<{ _id: Types.ObjectId }[]>()
+            .exec();
+
+        return new Set(rows.map((row) => row._id.toHexString()));
+    }
+
     findAllForReport(): Promise<OrganizationEntity[]> {
         return this.findMany({ main_category: { $exists: true, $nin: [null, ''] } }, { _id: 1 });
+    }
+
+    imageReferences(): Promise<string[]> {
+        return this.model.distinct('main_image').exec();
+    }
+
+    /** Every organization's display name, for reports that have to name one per row. */
+    async labels(): Promise<Map<string, string>> {
+        const rows = await this.model
+            .find({}, { main_label: 1 })
+            .lean<{ _id: Types.ObjectId; main_label: string }[]>()
+            .exec();
+
+        return new Map(rows.map((row) => [row._id.toHexString(), row.main_label]));
     }
 }

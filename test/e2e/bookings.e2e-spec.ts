@@ -1,4 +1,4 @@
-import { type Types } from 'mongoose';
+import { Types } from 'mongoose';
 
 import { ConsoleMailProvider } from '../../src/integrations/mail/console-mail.provider';
 import { expectError } from '../support/assertions';
@@ -11,6 +11,17 @@ describe('bookings (e2e)', () => {
     let organization: { id: string };
     let admin: FixtureUser;
     let mailSpy: jest.SpyInstance;
+
+    const timeEntry = async (serviceId: string, index = 0) => {
+        const stored = await fx
+            .collection<{ options: { slots: { value: { time: { booked_count: number }[] } }[] }[] }>(
+                'Service',
+            )
+            .findById(serviceId)
+            .lean();
+
+        return stored!.options[0]!.slots[0]!.value.time[index]!;
+    };
 
     beforeAll(async () => {
         t = await createTestApp();
@@ -59,21 +70,18 @@ describe('bookings (e2e)', () => {
             child_type: 'date_time',
         });
 
-        const stored = await fx
-            .collection<{
-                options: {
-                    slots: {
-                        value: {
-                            time: { booked_count: number; bookings: { person: string; info: string }[] }[];
-                        };
-                    }[];
-                }[];
-            }>('Service')
+        expect(await timeEntry(service.id)).toMatchObject({ booked_count: 1 });
+        const rows = await fx
+            .collection<{ person: string; info: string; slot_time: string }>('Booking')
+            .find({ service_id: new Types.ObjectId(service.id) })
+            .lean();
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ person: 'Anna', info: 'first visit', slot_time: '10:00' });
+        const embedded = await fx
+            .collection<{ options: { slots: { value: Record<string, unknown> }[] }[] }>('Service')
             .findById(service.id)
             .lean();
-        const entry = stored!.options[0]!.slots[0]!.value.time[0]!;
-        expect(entry.booked_count).toBe(1);
-        expect(entry.bookings[0]).toMatchObject({ person: 'Anna', info: 'first visit' });
+        expect(JSON.stringify(embedded!.options)).not.toContain('Anna');
 
         const refs = await t.http
             .get(`${t.prefix}/users/${citizen.id}/bookings`)
@@ -134,19 +142,8 @@ describe('bookings (e2e)', () => {
         expect(accepted).toHaveLength(k);
         expect(full).toHaveLength(n - k);
 
-        const stored = await fx
-            .collection<{
-                options: { slots: { value: { time: { booked_count: number; bookings: unknown[] }[] } }[] }[];
-            }>('Service')
-            .findById(service.id)
-            .lean();
-        const entry = stored!.options[0]!.slots[0]!.value.time[0]!;
-        expect(entry.booked_count).toBe(k);
-        expect(entry.bookings).toHaveLength(k);
-        const refs = await fx
-            .collection<{ bookings: unknown[] }>('User')
-            .countDocuments({ 'bookings.0': { $exists: true } });
-        expect(refs).toBe(k);
+        expect(await timeEntry(service.id)).toMatchObject({ booked_count: k });
+        expect(await fx.collection('Booking').countDocuments({})).toBe(k);
         expect(mailSpy).toHaveBeenCalledTimes(k);
     });
 
@@ -169,19 +166,19 @@ describe('bookings (e2e)', () => {
                             id: applyId,
                             label: 'a',
                             child_type: 'apply',
-                            value: { limit: null, booked_count: 0, bookings: [] },
+                            value: { limit: null, booked_count: 0 },
                         },
                         {
                             id: dateId,
                             label: 'd',
                             child_type: 'date',
-                            value: { date: '2999-01-01', limit: 1, booked_count: 0, bookings: [] },
+                            value: { date: '2999-01-01', limit: 1, booked_count: 0 },
                         },
                         {
                             id: expiredId,
                             label: 'e',
                             child_type: 'date',
-                            value: { date: '2000-01-01', limit: 1, booked_count: 0, bookings: [] },
+                            value: { date: '2000-01-01', limit: 1, booked_count: 0 },
                         },
                         { id: infoId, label: 'i', child_type: 'delivery', value: { description: 'x' } },
                     ],
@@ -196,7 +193,7 @@ describe('bookings (e2e)', () => {
                             id: '88888888-8888-4888-8888-888888888888',
                             label: 'a',
                             child_type: 'apply',
-                            value: { limit: null, booked_count: 0, bookings: [] },
+                            value: { limit: null, booked_count: 0 },
                         },
                     ],
                 },
@@ -270,13 +267,8 @@ describe('bookings (e2e)', () => {
             .delete(`${t.prefix}/services/${service.id}/bookings/${bookingId}`)
             .set('Authorization', await fx.bearer(admin));
         expect(cancelled.status).toBe(204);
-        const stored = await fx
-            .collection<{
-                options: { slots: { value: { time: { booked_count: number; bookings: unknown[] }[] } }[] }[];
-            }>('Service')
-            .findById(service.id)
-            .lean();
-        expect(stored!.options[0]!.slots[0]!.value.time[0]).toMatchObject({ booked_count: 0, bookings: [] });
+        expect(await timeEntry(service.id)).toMatchObject({ booked_count: 0 });
+        expect(await fx.collection('Booking').countDocuments({})).toBe(0);
         const refs = await t.http
             .get(`${t.prefix}/users/${owner.id}/bookings`)
             .set('Authorization', ownerBearer);
@@ -300,18 +292,7 @@ describe('bookings (e2e)', () => {
                 .post(`${t.prefix}/services/${service.id}/bookings`)
                 .set('Authorization', bearer)
                 .send({ option_id: option.id, slot_id: option.slot_id, time: '10:00' });
-        const entry = async () => {
-            const stored = await fx
-                .collection<{
-                    options: {
-                        slots: { value: { time: { booked_count: number; bookings: unknown[] }[] } }[];
-                    }[];
-                }>('Service')
-                .findById(service.id)
-                .lean();
-
-            return stored!.options[0]!.slots[0]!.value.time[0]!;
-        };
+        const entry = () => timeEntry(service.id);
 
         const created = await book();
         const bookingId = created.body.data.booking_id as string;
@@ -322,9 +303,9 @@ describe('bookings (e2e)', () => {
                 .delete(`${t.prefix}/services/${service.id}/bookings/${bookingId}`)
                 .set('Authorization', bearer);
         expect((await cancel()).status).toBe(204);
-        expect(await entry()).toMatchObject({ booked_count: 0, bookings: [] });
+        expect(await entry()).toMatchObject({ booked_count: 0 });
         expectError(await cancel(), 404, 'BOOKING_NOT_FOUND');
-        expect(await entry()).toMatchObject({ booked_count: 0, bookings: [] });
+        expect(await entry()).toMatchObject({ booked_count: 0 });
 
         for (let i = 0; i < 2; i += 1) {
             const again = await book();
@@ -338,7 +319,7 @@ describe('bookings (e2e)', () => {
             ).toBe(204);
         }
 
-        expect(await entry()).toMatchObject({ booked_count: 0, bookings: [] });
+        expect(await entry()).toMatchObject({ booked_count: 0 });
     });
 
     it('renaming a booked time in PATCH /services/:id keeps the booking', async () => {
@@ -408,18 +389,10 @@ describe('bookings (e2e)', () => {
                     .set('Authorization', await fx.bearer(superAdmin))
             ).status,
         ).toBe(204);
-        const stored = await fx
-            .collection<{
-                options: {
-                    slots: {
-                        value: { time: { booked_count: number; bookings: { user_id: Types.ObjectId }[] }[] };
-                    }[];
-                }[];
-            }>('Service')
-            .findById(service.id)
-            .lean();
-        expect(stored!.options[0]!.slots[0]!.value.time[0]!.booked_count).toBe(1);
-        expect(stored!.options[0]!.slots[0]!.value.time[0]!.bookings[0]!.user_id.toHexString()).toBe(b.id);
+        expect(await timeEntry(service.id)).toMatchObject({ booked_count: 1 });
+        const remaining = await fx.collection<{ user_id: Types.ObjectId }>('Booking').find({}).lean();
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0]!.user_id.toHexString()).toBe(b.id);
 
         expect(
             (
@@ -429,7 +402,6 @@ describe('bookings (e2e)', () => {
             ).status,
         ).toBe(204);
         expect(await fx.collection('Service').findById(service.id).lean()).toBeNull();
-        const refs = await fx.collection<{ bookings: unknown[] }>('User').findById(b.id).lean();
-        expect(refs!.bookings).toEqual([]);
+        expect(await fx.collection('Booking').countDocuments({})).toBe(0);
     });
 });

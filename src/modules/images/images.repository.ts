@@ -20,4 +20,22 @@ export class ImagesRepository extends BaseRepository<Image> {
     deleteByOrganization(organizationId: string, session?: ClientSession): Promise<number> {
         return this.deleteMany({ organization_id: new Types.ObjectId(organizationId) }, session);
     }
+
+    /** Which of these storage keys still have a row — the `storage_gc` question, asked per batch. */
+    async existingNames(names: string[]): Promise<Set<string>> {
+        const rows = await this.model
+            .find({ name: { $in: names } }, { name: 1, _id: 0 })
+            .lean<{ name: string }[]>()
+            .exec();
+
+        return new Set(rows.map((row) => row.name));
+    }
+
+    /** Streams every image for the job that has to look at all of them. */
+    iterateAll(): AsyncIterable<ImageEntity> {
+        return this.model
+            .find({}, { organization_id: 1, name: 1, src: 1, size: 1, created_at: 1 })
+            .lean<ImageEntity>()
+            .cursor({ batchSize: 200 });
+    }
 }

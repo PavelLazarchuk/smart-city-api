@@ -18,6 +18,7 @@ import {
     type RegisterInput,
     type TokenPairResponse,
 } from './dto/auth.schemas';
+import { LoginAttemptsService } from './login-attempts.service';
 import { OtpService } from './otp.service';
 import { PasswordService } from './password.service';
 import { PhonePolicy } from './phone.policy';
@@ -36,6 +37,7 @@ export class AuthService {
         private readonly sessions: SessionsRepository,
         private readonly tokens: TokenService,
         private readonly passwords: PasswordService,
+        private readonly attempts: LoginAttemptsService,
         private readonly otp: OtpService,
         private readonly sms: SmsService,
         private readonly phonePolicy: PhonePolicy,
@@ -49,7 +51,8 @@ export class AuthService {
     /**
      * Password login for admins (`login`) and citizens (`phone`), gated by the audience switch. Unknown
      * accounts cost the same argon2 verification and answer the same `INVALID_CREDENTIALS`, so the
-     * endpoint does not enumerate accounts; the distinguishing detail stays in the log.
+     * endpoint does not enumerate accounts; the distinguishing detail stays in the log. Failures are
+     * counted on the account, so guessing one login from many addresses still runs out of budget.
      */
     async login(input: LoginInput, client: ClientInfo): Promise<TokenPairResponse> {
         const user = input.login
@@ -71,9 +74,24 @@ export class AuthService {
             throw ApiError.unauthorized('INVALID_CREDENTIALS');
         }
 
-        if (!(await this.passwords.verify(user.password_hash, input.password))) {
+        const userId = user._id.toHexString();
+
+        if (this.attempts.isLocked(user)) {
+            await this.passwords.verifyDummy(input.password);
+            await this.attempts.stall(user.failed_login_attempts);
+            this.logger.warn({ user_id: userId, reason: 'locked' }, 'login rejected');
             throw ApiError.unauthorized('INVALID_CREDENTIALS');
         }
+
+        if (!(await this.passwords.verify(user.password_hash, input.password))) {
+            await this.attempts.registerFailure(userId);
+            throw ApiError.unauthorized('INVALID_CREDENTIALS');
+        }
+
+        await this.attempts.registerSuccess({
+            id: userId,
+            failed_login_attempts: user.failed_login_attempts,
+        });
 
         return this.startSession(user, client);
     }

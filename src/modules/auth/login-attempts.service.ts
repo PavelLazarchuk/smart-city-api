@@ -1,0 +1,65 @@
+import { Injectable } from '@nestjs/common';
+import { setTimeout as delay } from 'node:timers/promises';
+import { PinoLogger } from 'nestjs-pino';
+
+import { AppConfig } from '../../common/config/app-config';
+import { UsersService } from '../users/users.service';
+
+const DELAY_STEP_MS = 100;
+const DELAY_CAP_MS = 2000;
+
+/**
+ * Per-account failure budget. IP and phone throttling cannot see one account attacked from a
+ * thousand addresses; this counter lives on the account itself, so the attempts add up wherever
+ * they come from. The lock window doubles with every further failure up to the configured cap,
+ * and each failed answer is slowed down in proportion — an online guess costs real time.
+ *
+ * The budget is a sliding window, not a running total: a failure that follows the previous one by
+ * more than `AUTH_FAILED_ATTEMPT_WINDOW_SECONDS` starts the count over. Without the decay the
+ * escalation would be one-way, and a single wrong password per hour would be enough to keep a known
+ * account locked out for good — a denial of service against one citizen, at no cost to the attacker.
+ */
+@Injectable()
+export class LoginAttemptsService {
+    constructor(
+        private readonly users: UsersService,
+        private readonly config: AppConfig,
+        private readonly logger: PinoLogger,
+    ) {
+        this.logger.setContext(LoginAttemptsService.name);
+    }
+
+    isLocked(user: { locked_until?: Date }, now = new Date()): boolean {
+        return user.locked_until !== undefined && user.locked_until.getTime() > now.getTime();
+    }
+
+    /** Counts the failure, extends the lock when the budget is spent, then stalls the answer. */
+    async registerFailure(userId: string, now = new Date()): Promise<void> {
+        const { maxFailedAttempts, lockoutSeconds, lockoutMaxSeconds, failedAttemptWindowSeconds } =
+            this.config.auth;
+        const windowStart = new Date(now.getTime() - failedAttemptWindowSeconds * 1000);
+        const attempts = await this.users.registerFailedLogin(userId, windowStart, now);
+
+        if (attempts === null) return;
+
+        if (attempts >= maxFailedAttempts) {
+            const overflow = attempts - maxFailedAttempts;
+            const seconds = Math.min(lockoutSeconds * 2 ** overflow, lockoutMaxSeconds);
+            await this.users.lockAccount(userId, new Date(now.getTime() + seconds * 1000));
+            this.logger.warn({ user_id: userId, attempts, seconds }, 'account locked after failed logins');
+        }
+
+        await this.stall(attempts);
+    }
+
+    async registerSuccess(user: { id: string; failed_login_attempts?: number }): Promise<void> {
+        if (!user.failed_login_attempts) return;
+
+        await this.users.clearFailedLogins(user.id);
+    }
+
+    /** Same stall for a locked account, so a lock is not detectable by a faster answer. */
+    stall(attempts: number): Promise<void> {
+        return delay(Math.min(attempts * DELAY_STEP_MS, DELAY_CAP_MS));
+    }
+}

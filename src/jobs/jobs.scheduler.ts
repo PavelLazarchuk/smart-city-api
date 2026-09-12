@@ -4,11 +4,14 @@ import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
 
 import { AppConfig } from '../common/config/app-config';
+import { CASCADE_RECONCILE_JOB, CascadeReconcileJob } from './cascade-reconcile.job';
 import { DEBTOR_REPORT_JOB, DebtorReportJob } from './debtor-report.job';
 import { NEWS_EXPIRY_JOB, NewsExpiryJob } from './news-expiry.job';
 import { RECURRENT_SLOTS_JOB, RecurrentSlotsJob } from './recurrent-slots.job';
 import { SLOT_EXPIRY_JOB, SlotExpiryJob } from './slot-expiry.job';
 import { STALE_BOOKINGS_JOB, StaleBookingsJob } from './stale-bookings.job';
+import { STORAGE_GC_JOB, StorageGcJob } from './storage-gc.job';
+import { UNREFERENCED_IMAGES_JOB, UnreferencedImagesJob } from './unreferenced-images.job';
 
 /**
  * Registers the cron schedules from config when `JOBS_ENABLED=true`. The flag only decides whether
@@ -25,7 +28,10 @@ export class JobsScheduler implements OnModuleInit, OnModuleDestroy {
         private readonly newsExpiry: NewsExpiryJob,
         private readonly slotExpiry: SlotExpiryJob,
         private readonly staleBookings: StaleBookingsJob,
+        private readonly cascadeReconcile: CascadeReconcileJob,
+        private readonly storageGc: StorageGcJob,
         private readonly debtorReport: DebtorReportJob,
+        private readonly unreferencedImages: UnreferencedImagesJob,
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(JobsScheduler.name);
@@ -43,7 +49,10 @@ export class JobsScheduler implements OnModuleInit, OnModuleDestroy {
         this.schedule(NEWS_EXPIRY_JOB, cron.newsExpiry, () => this.newsExpiry.run());
         this.schedule(SLOT_EXPIRY_JOB, cron.slotExpiry, () => this.slotExpiry.run());
         this.schedule(STALE_BOOKINGS_JOB, cron.staleBookings, () => this.staleBookings.run());
+        this.schedule(CASCADE_RECONCILE_JOB, cron.cascadeReconcile, () => this.cascadeReconcile.run());
+        this.schedule(STORAGE_GC_JOB, cron.storageGc, () => this.storageGc.run());
         this.schedule(DEBTOR_REPORT_JOB, cron.debtorReport, () => this.debtorReport.run());
+        this.schedule(UNREFERENCED_IMAGES_JOB, cron.unreferencedImages, () => this.unreferencedImages.run());
         this.logger.info({ jobs: this.registered, timezone }, 'jobs scheduled');
     }
 

@@ -14,6 +14,8 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/http/http-exception.filter';
 import { ResponseInterceptor } from './common/http/response.interceptor';
 import { LoggingModule } from './common/logging/logging.module';
+import { MetricsMiddleware } from './common/metrics/metrics.middleware';
+import { MetricsModule } from './common/metrics/metrics.module';
 import { JobsModule } from './jobs/jobs.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ArchivesModule } from './modules/archives/archives.module';
@@ -36,6 +38,7 @@ import { UsersModule } from './modules/users/users.module';
     imports: [
         AppConfigModule,
         LoggingModule,
+        MetricsModule,
         DatabaseModule,
         CommonModule,
         JwtModule.register({}),
@@ -69,6 +72,6 @@ import { UsersModule } from './modules/users/users.module';
 })
 export class AppModule implements NestModule {
     configure(consumer: MiddlewareConsumer): void {
-        consumer.apply(RequestContextMiddleware).forRoutes('{*splat}');
+        consumer.apply(MetricsMiddleware, RequestContextMiddleware).forRoutes('{*splat}');
     }
 }

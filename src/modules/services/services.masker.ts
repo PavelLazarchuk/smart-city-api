@@ -22,7 +22,9 @@ export interface ServiceView {
 
 /**
  * Role-aware masking: the owning organization's admins and super-admins see bookings and `subscribe`;
- * everyone else sees `{ status: 'reserved' }` slots and no `subscribe`.
+ * everyone else sees `{ status: 'reserved' }` slots and no `subscribe`. Bookings live in their own
+ * collection now, so an unmasked document simply has none — the markers are rebuilt from the
+ * counters, and a forgotten `mask()` can no longer leak a name or a phone number.
  */
 @Injectable()
 export class ServicesMasker {
@@ -35,8 +37,8 @@ export class ServicesMasker {
     }
 
     /**
-     * Tree variant: `findTree` leaves the booking documents in the database, so markers are rebuilt from
-     * `booked_count` — occupancy without PII, at a size independent of the number of bookings.
+     * Markers are rebuilt from `booked_count`: occupancy without personal data, at a size independent
+     * of the number of bookings.
      */
     maskCounts<T extends ServiceView>(service: T): T {
         const marker = { status: texts.bookings.reservedStatus };
@@ -72,37 +74,6 @@ export class ServicesMasker {
     mask<T extends ServiceView>(service: T, viewer: AuthUser | undefined, organizationId?: string): T {
         const orgId = organizationId ?? String(service.organization_id);
 
-        if (this.canSeeDetails(viewer, orgId)) return service;
-
-        const masked = { status: texts.bookings.reservedStatus };
-        const { subscribe: _subscribe, ...value } = service.value ?? {};
-        const result = {
-            ...service,
-            value,
-            options: (service.options ?? []).map((option) => ({
-                ...option,
-                slots: (option.slots ?? []).map((slot) => ({
-                    ...slot,
-                    value: slot.value
-                        ? {
-                              ...slot.value,
-                              ...(slot.value.bookings
-                                  ? { bookings: slot.value.bookings.map(() => masked) }
-                                  : {}),
-                              ...(slot.value.time
-                                  ? {
-                                        time: slot.value.time.map((entry) => ({
-                                            ...entry,
-                                            bookings: (entry.bookings ?? []).map(() => masked),
-                                        })),
-                                    }
-                                  : {}),
-                          }
-                        : slot.value,
-                })),
-            })),
-        };
-
-        return result;
+        return this.canSeeDetails(viewer, orgId) ? service : this.maskCounts(service);
     }
 }

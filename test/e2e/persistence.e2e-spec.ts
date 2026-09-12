@@ -7,12 +7,28 @@ import { OrganizationsService } from '../../src/modules/organizations/organizati
 import { Fixtures } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const migration = require('../../migrations/20260905000000-initial-indexes.js') as {
+interface Migration {
     INDEXES: Record<string, { key: Record<string, unknown>; name: string; [option: string]: unknown }[]>;
     up(db: unknown): Promise<void>;
     down(db: unknown): Promise<void>;
-};
+}
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+const migrations: Migration[] = [
+    require('../../migrations/20260905000000-initial-indexes.js') as Migration,
+    require('../../migrations/20260911000000-bookings-collection.js') as Migration,
+    require('../../migrations/20260911100000-images-name-index.js') as Migration,
+];
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+/** Every index the migrations declare, merged per collection in the order they are applied. */
+const DECLARED = migrations.reduce<Migration['INDEXES']>((all, migration) => {
+    for (const [collection, indexes] of Object.entries(migration.INDEXES)) {
+        all[collection] = [...(all[collection] ?? []), ...indexes];
+    }
+
+    return all;
+}, {});
 
 const MODEL_BY_COLLECTION: Record<string, string> = {
     organizations: 'Organization',
@@ -29,6 +45,8 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     analytics_events: 'AnalyticsEvent',
     job_locks: 'JobLock',
     rate_limits: 'RateLimit',
+    bookings: 'Booking',
+    sms_counters: 'SmsCounter',
 };
 
 describe('persistence (e2e)', () => {
@@ -107,9 +125,10 @@ describe('persistence (e2e)', () => {
                     collection.dropIndexes().catch(() => undefined),
                 ),
             );
-            await migration.up(db);
 
-            for (const [collection, declared] of Object.entries(migration.INDEXES)) {
+            for (const migration of migrations) await migration.up(db);
+
+            for (const [collection, declared] of Object.entries(DECLARED)) {
                 const actual = await db.collection(collection).indexes();
 
                 for (const index of declared) {
@@ -150,9 +169,12 @@ describe('persistence (e2e)', () => {
                 }
             }
 
-            await migration.down(db);
+            for (const migration of [...migrations].reverse()) await migration.down(db);
 
-            for (const collection of Object.keys(migration.INDEXES)) {
+            for (const collection of Object.keys(DECLARED)) {
+                // `bookings` is dropped whole by its own down(), so there is nothing left to inspect.
+                if ((await db.listCollections({ name: collection }).toArray()).length === 0) continue;
+
                 const remaining = (await db.collection(collection).indexes()).filter(
                     (index) => index.name !== '_id_',
                 );

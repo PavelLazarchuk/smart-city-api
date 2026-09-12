@@ -312,16 +312,16 @@ describe('content resources (e2e)', () => {
 
             const option = fx.bookableOption(2);
             const slot = option.slots[0]!;
-            slot.value.time![0]!.bookings.push({
-                id: '11111111-1111-4111-8111-111111111111',
-                user_id: new Types.ObjectId(citizen.id),
-                person: 'P',
-                phone: '',
-                info: '',
-                created_at: new Date(),
-            });
-            slot.value.time![0]!.booked_count = 1;
             const service = await fx.service(organization.id, { options: [option] });
+            await fx.booking({
+                service_id: service.id,
+                organization_id: organization.id,
+                option_id: option.id,
+                slot_id: slot.id,
+                user_id: citizen.id,
+                time: '10:00',
+                person: 'P',
+            });
 
             const replaced = await t.http
                 .patch(`${t.prefix}/services/${service.id}`)

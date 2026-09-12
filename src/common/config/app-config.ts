@@ -17,7 +17,21 @@ export class AppConfig {
 
     readonly log: { level: Env['LOG_LEVEL'] };
 
-    readonly mongo: { uri: string; autoIndex: boolean };
+    readonly mongo: {
+        uri: string;
+        autoIndex: boolean;
+        maxPoolSize: number;
+        minPoolSize: number;
+        serverSelectionTimeoutMs: number;
+        socketTimeoutMs: number;
+        retryWrites: boolean;
+        writeConcern: Env['MONGO_WRITE_CONCERN'];
+        readPreference: Env['MONGO_READ_PREFERENCE'];
+    };
+
+    readonly metrics: { enabled: boolean; token?: string };
+
+    readonly build: { version: string; sha?: string };
 
     readonly auth: {
         accessSecret: string;
@@ -28,6 +42,10 @@ export class AppConfig {
         citizenLoginMethod: LoginMethod;
         passwordMinLength: number;
         loginMinLength: number;
+        maxFailedAttempts: number;
+        lockoutSeconds: number;
+        lockoutMaxSeconds: number;
+        failedAttemptWindowSeconds: number;
         argon2: { memoryCost: number; timeCost: number; parallelism: number };
     };
 
@@ -48,6 +66,7 @@ export class AppConfig {
     readonly sms: {
         provider: Env['SMS_PROVIDER'];
         smpp: { url?: string; systemId?: string; password?: string; sourceAddr: string };
+        budget: { hourlyLimit: number; dailyLimit: number };
     };
 
     readonly mail: {
@@ -77,7 +96,12 @@ export class AppConfig {
 
     readonly upload: { maxBytes: number; allowedMime: string[] };
 
-    readonly retention: { archiveDays: number; analyticsDays: number; recurrentHorizonDays: number };
+    readonly retention: {
+        archiveDays: number;
+        analyticsDays: number;
+        smsDays: number;
+        recurrentHorizonDays: number;
+    };
 
     readonly jobs: {
         enabled: boolean;
@@ -88,8 +112,13 @@ export class AppConfig {
             newsExpiry: string;
             slotExpiry: string;
             staleBookings: string;
+            cascadeReconcile: string;
+            storageGc: string;
             debtorReport: string;
+            unreferencedImages: string;
         };
+        cascadeReconcileLimit: number;
+        storageGcMinAgeSeconds: number;
         reportRecipients: string[];
     };
 
@@ -107,7 +136,19 @@ export class AppConfig {
             swaggerEnabled: env.SWAGGER_ENABLED ?? env.NODE_ENV !== 'production',
         };
         this.log = { level: env.LOG_LEVEL };
-        this.mongo = { uri: env.MONGO_URI, autoIndex: env.NODE_ENV !== 'production' };
+        this.mongo = {
+            uri: env.MONGO_URI,
+            autoIndex: env.NODE_ENV !== 'production',
+            maxPoolSize: env.MONGO_MAX_POOL_SIZE,
+            minPoolSize: Math.min(env.MONGO_MIN_POOL_SIZE, env.MONGO_MAX_POOL_SIZE),
+            serverSelectionTimeoutMs: env.MONGO_SERVER_SELECTION_TIMEOUT_MS,
+            socketTimeoutMs: env.MONGO_SOCKET_TIMEOUT_MS,
+            retryWrites: env.MONGO_RETRY_WRITES,
+            writeConcern: env.MONGO_WRITE_CONCERN,
+            readPreference: env.MONGO_READ_PREFERENCE,
+        };
+        this.metrics = { enabled: env.METRICS_ENABLED, token: env.METRICS_TOKEN };
+        this.build = { version: env.BUILD_VERSION ?? '1.0.0', sha: env.BUILD_SHA };
         this.auth = {
             accessSecret: env.JWT_ACCESS_SECRET,
             refreshSecret: env.JWT_REFRESH_SECRET,
@@ -117,6 +158,10 @@ export class AppConfig {
             citizenLoginMethod: env.AUTH_CITIZEN_LOGIN_METHOD,
             passwordMinLength: env.PASSWORD_MIN_LENGTH,
             loginMinLength: env.LOGIN_MIN_LENGTH,
+            maxFailedAttempts: env.AUTH_MAX_FAILED_ATTEMPTS,
+            lockoutSeconds: env.AUTH_LOCKOUT_SECONDS,
+            lockoutMaxSeconds: env.AUTH_LOCKOUT_MAX_SECONDS,
+            failedAttemptWindowSeconds: env.AUTH_FAILED_ATTEMPT_WINDOW_SECONDS,
             argon2: {
                 memoryCost: env.ARGON2_MEMORY_COST,
                 timeCost: env.ARGON2_TIME_COST,
@@ -150,6 +195,7 @@ export class AppConfig {
                 password: env.SMPP_PASSWORD,
                 sourceAddr: env.SMPP_SOURCE_ADDR,
             },
+            budget: { hourlyLimit: env.SMS_HOURLY_LIMIT, dailyLimit: env.SMS_DAILY_LIMIT },
         };
         this.mail = {
             provider: env.MAIL_PROVIDER,
@@ -178,6 +224,7 @@ export class AppConfig {
         this.retention = {
             archiveDays: env.ARCHIVE_RETENTION_DAYS,
             analyticsDays: env.ANALYTICS_RETENTION_DAYS,
+            smsDays: env.SMS_RETENTION_DAYS,
             recurrentHorizonDays: env.RECURRENT_HORIZON_DAYS,
         };
         this.jobs = {
@@ -189,8 +236,13 @@ export class AppConfig {
                 newsExpiry: env.JOB_NEWS_EXPIRY_CRON,
                 slotExpiry: env.JOB_SLOT_EXPIRY_CRON,
                 staleBookings: env.JOB_STALE_BOOKINGS_CRON,
+                cascadeReconcile: env.JOB_CASCADE_RECONCILE_CRON,
+                storageGc: env.JOB_STORAGE_GC_CRON,
                 debtorReport: env.JOB_DEBTOR_REPORT_CRON,
+                unreferencedImages: env.JOB_UNREFERENCED_IMAGES_CRON,
             },
+            cascadeReconcileLimit: env.JOB_CASCADE_RECONCILE_LIMIT,
+            storageGcMinAgeSeconds: env.STORAGE_GC_MIN_AGE,
             reportRecipients: env.REPORT_RECIPIENTS,
         };
     }

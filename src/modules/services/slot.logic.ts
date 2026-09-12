@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import { type Types } from 'mongoose';
 
 import { texts } from '../../common/i18n/messages';
+import { type BookingEntity } from '../bookings/bookings.repository';
 import { type ServiceOptionInput, type SlotInput } from './dto/service.schemas';
 import {
-    type Booking,
     type RecurrentDate,
     type ServiceOption,
     type Slot,
+    type SlotValue,
     type TimeEntry,
     WEEKDAYS,
 } from './schemas/service.schema';
@@ -33,7 +35,6 @@ export function slotFromInput(input: SlotInput): Slot {
                         time: entry.time,
                         limit: entry.limit ?? null,
                         booked_count: 0,
-                        bookings: [],
                     })),
                 },
             };
@@ -42,19 +43,14 @@ export function slotFromInput(input: SlotInput): Slot {
                 id,
                 label: input.label ?? texts.defaults.dateSlotLabel,
                 child_type: 'date',
-                value: {
-                    date: input.value.date,
-                    limit: input.value.limit ?? null,
-                    booked_count: 0,
-                    bookings: [],
-                },
+                value: { date: input.value.date, limit: input.value.limit ?? null, booked_count: 0 },
             };
         case 'apply':
             return {
                 id,
                 label: input.label ?? texts.defaults.slotLabel,
                 child_type: 'apply',
-                value: { limit: input.value.limit ?? null, booked_count: 0, bookings: [] },
+                value: { limit: input.value.limit ?? null, booked_count: 0 },
             };
         default:
             return {
@@ -88,10 +84,10 @@ export function optionFromInput(input: ServiceOptionInput): ServiceOption {
 }
 
 /**
- * When an admin replaces `options`, existing bookings must survive: counters and booking lists are
- * copied from the stored option/slot/time by id. Time entries match on their `time` string, so a
- * renamed "10:00" finds no match and is kept alongside the new one while it still holds bookings —
- * the same rule as `planRecurrentDays`, so an edit can never strand a booking.
+ * When an admin replaces `options`, existing bookings must survive: occupancy counters are copied
+ * from the stored option/slot/time by id. Time entries match on their `time` string, so a renamed
+ * "10:00" finds no match and is kept alongside the new one while it still holds bookings — the same
+ * rule as `planRecurrentDays`, so an edit can never strand a booking.
  */
 export function mergeBookings(existing: ServiceOption[], incoming: ServiceOption[]): ServiceOption[] {
     const existingOptions = new Map(existing.map((option) => [option.id, option]));
@@ -116,27 +112,18 @@ export function mergeBookings(existing: ServiceOption[], incoming: ServiceOption
                     const kept = incomingTimes.map((entry) => {
                         const oldEntry = oldTimes.get(entry.time);
 
-                        return oldEntry
-                            ? { ...entry, booked_count: oldEntry.booked_count, bookings: oldEntry.bookings }
-                            : entry;
+                        return oldEntry ? { ...entry, booked_count: oldEntry.booked_count } : entry;
                     });
                     const requested = new Set(incomingTimes.map((entry) => entry.time));
                     const booked = (old.value.time ?? []).filter(
-                        (entry) => !requested.has(entry.time) && entry.bookings.length > 0,
+                        (entry) => !requested.has(entry.time) && entry.booked_count > 0,
                     );
 
                     return { ...slot, value: { ...slot.value, time: [...kept, ...booked] } };
                 }
 
                 if (slot.child_type === 'date' || slot.child_type === 'apply') {
-                    return {
-                        ...slot,
-                        value: {
-                            ...slot.value,
-                            booked_count: old.value.booked_count ?? 0,
-                            bookings: old.value.bookings ?? [],
-                        },
-                    };
+                    return { ...slot, value: { ...slot.value, booked_count: old.value.booked_count ?? 0 } };
                 }
 
                 return slot;
@@ -145,45 +132,72 @@ export function mergeBookings(existing: ServiceOption[], incoming: ServiceOption
     });
 }
 
-export function collectBookingIds(options: ServiceOption[]): string[] {
-    const ids: string[] = [];
-
-    for (const option of options) {
-        for (const slot of option.slots) {
-            for (const booking of slot.value.bookings ?? []) ids.push(booking.id);
-
-            for (const entry of slot.value.time ?? [])
-                for (const booking of entry.bookings ?? []) ids.push(booking.id);
-        }
-    }
-
-    return ids;
+/** Shape the response schemas expect where a slot used to carry its bookings inline. */
+export interface BookingView {
+    id: string;
+    user_id: Types.ObjectId;
+    person: string;
+    phone: string;
+    info: string;
+    created_at: Date;
 }
 
-export function findBookingsOfUser(
-    options: ServiceOption[],
-    userId: string,
-): { option_id: string; slot_id: string; time?: string; booking: Booking }[] {
-    const found: { option_id: string; slot_id: string; time?: string; booking: Booking }[] = [];
+export type TimeEntryWithBookings = TimeEntry & { bookings?: BookingView[] };
 
-    for (const option of options) {
-        for (const slot of option.slots) {
-            for (const booking of slot.value.bookings ?? []) {
-                if (booking.user_id.toHexString() === userId)
-                    found.push({ option_id: option.id, slot_id: slot.id, booking });
-            }
+export type SlotWithBookings = Omit<Slot, 'value'> & {
+    value: Omit<SlotValue, 'time'> & { time?: TimeEntryWithBookings[]; bookings?: BookingView[] };
+};
 
-            for (const entry of slot.value.time ?? []) {
-                for (const booking of entry.bookings) {
-                    if (booking.user_id.toHexString() === userId) {
-                        found.push({ option_id: option.id, slot_id: slot.id, time: entry.time, booking });
-                    }
-                }
-            }
-        }
+/**
+ * Grafts bookings read from the `bookings` collection back into the option tree, for viewers allowed
+ * to see them. Nothing is loaded for anyone else, so the response of a public route cannot leak
+ * personal data even if a `mask()` call is ever forgotten.
+ */
+export function attachBookings<T extends { id: string; slots: Slot[] }>(
+    options: T[],
+    bookings: BookingEntity[],
+): (Omit<T, 'slots'> & { slots: SlotWithBookings[] })[] {
+    const bySlot = new Map<string, BookingView[]>();
+
+    for (const booking of bookings) {
+        const key = `${booking.option_id}|${booking.slot_id}|${booking.slot_time ?? ''}`;
+        const view: BookingView = {
+            id: booking.id,
+            user_id: booking.user_id,
+            person: booking.person,
+            phone: booking.phone,
+            info: booking.info,
+            created_at: booking.created_at,
+        };
+        bySlot.set(key, [...(bySlot.get(key) ?? []), view]);
     }
 
-    return found;
+    return options.map((option) => ({
+        ...option,
+        slots: option.slots.map((slot): SlotWithBookings => {
+            if (slot.child_type === 'date_time') {
+                return {
+                    ...slot,
+                    value: {
+                        ...slot.value,
+                        time: (slot.value.time ?? []).map((entry) => ({
+                            ...entry,
+                            bookings: bySlot.get(`${option.id}|${slot.id}|${entry.time}`) ?? [],
+                        })),
+                    },
+                };
+            }
+
+            if (slot.child_type === 'date' || slot.child_type === 'apply') {
+                return {
+                    ...slot,
+                    value: { ...slot.value, bookings: bySlot.get(`${option.id}|${slot.id}|`) ?? [] },
+                };
+            }
+
+            return slot;
+        }),
+    }));
 }
 
 export interface GeneratedDay {
@@ -251,7 +265,6 @@ export function planRecurrentDays(slots: Slot[], days: GeneratedDay[]): Recurren
                         time: time.time,
                         limit: time.limit,
                         booked_count: 0,
-                        bookings: [],
                     })),
                 },
             });
@@ -262,17 +275,12 @@ export function planRecurrentDays(slots: Slot[], days: GeneratedDay[]): Recurren
         const configured = new Set(day.time.map((time) => time.time));
         const added = day.time
             .filter((time) => !entries.some((entry) => entry.time === time.time))
-            .map((time): TimeEntry => ({
-                time: time.time,
-                limit: time.limit,
-                booked_count: 0,
-                bookings: [],
-            }));
+            .map((time): TimeEntry => ({ time: time.time, limit: time.limit, booked_count: 0 }));
 
         if (added.length > 0) plan.add_times.push({ slot_id: slot.id, entries: added });
 
         const stale = entries
-            .filter((entry) => !configured.has(entry.time) && entry.bookings.length === 0)
+            .filter((entry) => !configured.has(entry.time) && entry.booked_count === 0)
             .map((entry) => entry.time);
 
         if (stale.length > 0) plan.remove_times.push({ slot_id: slot.id, times: stale });

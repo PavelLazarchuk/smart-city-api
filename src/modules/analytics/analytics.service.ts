@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
+import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { RequestContext } from '../../common/context/request-context';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type EventType } from '../../common/decorators/track-event.decorator';
@@ -29,13 +30,20 @@ export interface EventFields {
 const OBJECT_ID_FIELDS = ['user_id', 'organization_id', 'service_id'] as const;
 
 @Injectable()
-export class AnalyticsService {
+export class AnalyticsService implements OnModuleInit {
     constructor(
         private readonly events: AnalyticsRepository,
         private readonly pagination: PaginationService,
+        private readonly cascade: CascadeRegistry,
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(AnalyticsService.name);
+    }
+
+    onModuleInit(): void {
+        this.cascade.register('user', 'analytics.anonymize', async (userId, ctx) => {
+            await this.events.anonymizeUser(userId, ctx.session);
+        });
     }
 
     /** Non-blocking write; failures are logged, never surfaced to the request. */
@@ -90,7 +98,7 @@ export class AnalyticsService {
                 this.pagination.maxLimit,
             );
 
-            return this.events.paginateByCursor(filter, query.cursor, limit);
+            return this.events.paginateByCursor(filter, query.cursor, limit, query.with_total ?? false);
         }
 
         const pagination = this.pagination.resolve(query, {

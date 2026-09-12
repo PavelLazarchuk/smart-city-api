@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { type AnyBulkWriteOperation, type ClientSession, Model, Types } from 'mongoose';
+import { type AnyBulkWriteOperation, type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
 
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
 import { nextPosition, reorderSiblings } from '../../common/database/reorder';
-import { type Booking, Service, type ServiceOption } from './schemas/service.schema';
+import {
+    type RecurrentDate,
+    Service,
+    type ServiceOption,
+    type Slot,
+    type TimeEntry,
+} from './schemas/service.schema';
 import { type RecurrentSlotPlan } from './slot.logic';
 
 export type ServiceEntity = Lean<Service>;
@@ -64,12 +70,81 @@ export class ServicesRepository extends BaseRepository<Service> {
         return this.deleteMany({ category_id: new Types.ObjectId(categoryId) }, session);
     }
 
-    /**
-     * Whole-array replacement. Only safe inside a transaction that also performed the read: a booking
-     * committed in between makes the write conflict and the transaction retries.
-     */
-    setOptions(id: string, options: ServiceOption[], session?: ClientSession): Promise<ServiceEntity | null> {
-        return this.updateById(id, { $set: { options } }, session);
+    // ----- options and slots as sub-resources -----
+
+    async pushOption(id: string, option: ServiceOption, session?: ClientSession): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id) },
+            { $push: { options: option } },
+            undefined,
+            session,
+        );
+    }
+
+    async setOptionFields(
+        id: string,
+        optionId: string,
+        fields: Record<string, unknown>,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id), 'options.id': optionId },
+            { $set: prefix('options.$[option]', fields) },
+            [{ 'option.id': optionId }],
+            session,
+        );
+    }
+
+    async pullOption(id: string, optionId: string, session?: ClientSession): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id), 'options.id': optionId },
+            { $pull: { options: { id: optionId } } },
+            undefined,
+            session,
+        );
+    }
+
+    async setRecurrence(
+        id: string,
+        optionId: string,
+        dates: RecurrentDate[] | null,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        const update =
+            dates === null
+                ? { $unset: { 'options.$[option].recurrent_dates': 1 } }
+                : { $set: { 'options.$[option].recurrent_dates': dates } };
+
+        return this.matched(
+            { _id: new Types.ObjectId(id), 'options.id': optionId },
+            update,
+            [{ 'option.id': optionId }],
+            session,
+        );
+    }
+
+    async pushSlot(id: string, optionId: string, slot: Slot, session?: ClientSession): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id), 'options.id': optionId },
+            { $push: { 'options.$[option].slots': slot } },
+            [{ 'option.id': optionId }],
+            session,
+        );
+    }
+
+    async setSlotFields(
+        id: string,
+        optionId: string,
+        slotId: string,
+        fields: Record<string, unknown>,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id) },
+            { $set: prefix('options.$[option].slots.$[slot]', fields) },
+            [{ 'option.id': optionId }, { 'slot.id': slotId }],
+            session,
+        );
     }
 
     async pullSlots(
@@ -80,29 +155,78 @@ export class ServicesRepository extends BaseRepository<Service> {
     ): Promise<boolean> {
         if (slotIds.length === 0) return false;
 
-        const result = await this.model
-            .updateOne(
-                { _id: new Types.ObjectId(serviceId) },
-                { $pull: { 'options.$[option].slots': { id: { $in: slotIds } } } },
-                { arrayFilters: [{ 'option.id': optionId }], session },
-            )
-            .exec();
-
-        return result.modifiedCount === 1;
+        return this.matched(
+            { _id: new Types.ObjectId(serviceId) },
+            { $pull: { 'options.$[option].slots': { id: { $in: slotIds } } } },
+            [{ 'option.id': optionId }],
+            session,
+        );
     }
 
+    /** Adds time entries to a `date_time` slot without rewriting the ones already there. */
+    async pushTimes(
+        id: string,
+        optionId: string,
+        slotId: string,
+        entries: TimeEntry[],
+        session?: ClientSession,
+    ): Promise<boolean> {
+        if (entries.length === 0) return false;
+
+        return this.matched(
+            { _id: new Types.ObjectId(id) },
+            { $push: { 'options.$[option].slots.$[slot].value.time': { $each: entries } } },
+            [{ 'option.id': optionId }, { 'slot.id': slotId }],
+            session,
+        );
+    }
+
+    async pullTimes(
+        id: string,
+        optionId: string,
+        slotId: string,
+        times: string[],
+        session?: ClientSession,
+    ): Promise<boolean> {
+        if (times.length === 0) return false;
+
+        return this.matched(
+            { _id: new Types.ObjectId(id) },
+            { $pull: { 'options.$[option].slots.$[slot].value.time': { time: { $in: times } } } },
+            [{ 'option.id': optionId }, { 'slot.id': slotId }],
+            session,
+        );
+    }
+
+    async setTimeLimit(
+        id: string,
+        optionId: string,
+        slotId: string,
+        time: string,
+        limit: number | null,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id) },
+            { $set: { 'options.$[option].slots.$[slot].value.time.$[entry].limit': limit } },
+            [{ 'option.id': optionId }, { 'slot.id': slotId }, { 'entry.time': time }],
+            session,
+        );
+    }
+
+    // ----- capacity guards -----
+
     /**
-     * Capacity-guarded append for a `date_time` time entry: `arrayFilters` match the slot **and**
+     * Capacity-guarded increment for a `date_time` time entry: `arrayFilters` match the slot **and**
      * `booked_count < limit`, so `modifiedCount === 0` means full. Automatic timestamps are off —
      * otherwise `updated_at` alone would count as a modification.
      */
-    async pushTimeBooking(
+    async incrementTimeCount(
         serviceId: string,
         optionId: string,
         slotId: string,
         time: string,
         limit: number | null,
-        booking: Booking,
         session?: ClientSession,
     ): Promise<boolean> {
         const timeFilter: Record<string, unknown> = { 'entry.time': time };
@@ -112,10 +236,7 @@ export class ServicesRepository extends BaseRepository<Service> {
         const result = await this.model
             .updateOne(
                 { _id: new Types.ObjectId(serviceId) },
-                {
-                    $push: { 'options.$[option].slots.$[slot].value.time.$[entry].bookings': booking },
-                    $inc: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 1 },
-                },
+                { $inc: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 1 } },
                 {
                     arrayFilters: [{ 'option.id': optionId }, { 'slot.id': slotId }, timeFilter],
                     session,
@@ -127,13 +248,12 @@ export class ServicesRepository extends BaseRepository<Service> {
         return result.modifiedCount === 1;
     }
 
-    /** Same guard for `date` and `apply` slots, whose bookings live directly on the slot value. */
-    async pushSlotBooking(
+    /** Same guard for `date` and `apply` slots, whose counter lives directly on the slot value. */
+    async incrementSlotCount(
         serviceId: string,
         optionId: string,
         slotId: string,
         limit: number | null,
-        booking: Booking,
         session?: ClientSession,
     ): Promise<boolean> {
         const slotFilter: Record<string, unknown> = { 'slot.id': slotId };
@@ -143,10 +263,7 @@ export class ServicesRepository extends BaseRepository<Service> {
         const result = await this.model
             .updateOne(
                 { _id: new Types.ObjectId(serviceId) },
-                {
-                    $push: { 'options.$[option].slots.$[slot].value.bookings': booking },
-                    $inc: { 'options.$[option].slots.$[slot].value.booked_count': 1 },
-                },
+                { $inc: { 'options.$[option].slots.$[slot].value.booked_count': 1 } },
                 { arrayFilters: [{ 'option.id': optionId }, slotFilter], session, timestamps: false },
             )
             .exec();
@@ -155,98 +272,60 @@ export class ServicesRepository extends BaseRepository<Service> {
     }
 
     /**
-     * Mirror image of `pushTimeBooking`: `arrayFilters` require the booking to still be there, so a
-     * repeated cancel cannot decrement the counter twice. A second operation clamps legacy negatives.
+     * The mirror image, guarded by `booked_count > 0` so a counter can never go negative. Deleting the
+     * booking row is what makes a cancel idempotent, so no second clamping write is needed.
      */
-    async pullTimeBooking(
+    async decrementTimeCount(
         serviceId: string,
         optionId: string,
         slotId: string,
         time: string,
-        bookingId: string,
         session?: ClientSession,
     ): Promise<boolean> {
-        return this.pullBooking(
-            serviceId,
-            {
-                $pull: { 'options.$[option].slots.$[slot].value.time.$[entry].bookings': { id: bookingId } },
-                $inc: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': -1 },
-            },
-            [
-                { 'option.id': optionId },
-                { 'slot.id': slotId },
-                { 'entry.time': time, 'entry.bookings.id': bookingId },
-            ],
-            {
-                $set: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 0 },
-            },
-            [
-                { 'option.id': optionId },
-                { 'slot.id': slotId },
-                { 'entry.time': time, 'entry.booked_count': { $lt: 0 } },
-            ],
-            session,
-        );
+        const result = await this.model
+            .updateOne(
+                { _id: new Types.ObjectId(serviceId) },
+                { $inc: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': -1 } },
+                {
+                    arrayFilters: [
+                        { 'option.id': optionId },
+                        { 'slot.id': slotId },
+                        { 'entry.time': time, 'entry.booked_count': { $gt: 0 } },
+                    ],
+                    session,
+                    timestamps: false,
+                },
+            )
+            .exec();
+
+        return result.modifiedCount === 1;
     }
 
-    async pullSlotBooking(
+    async decrementSlotCount(
         serviceId: string,
         optionId: string,
         slotId: string,
-        bookingId: string,
         session?: ClientSession,
     ): Promise<boolean> {
-        return this.pullBooking(
-            serviceId,
-            {
-                $pull: { 'options.$[option].slots.$[slot].value.bookings': { id: bookingId } },
-                $inc: { 'options.$[option].slots.$[slot].value.booked_count': -1 },
-            },
-            [{ 'option.id': optionId }, { 'slot.id': slotId, 'slot.value.bookings.id': bookingId }],
-            { $set: { 'options.$[option].slots.$[slot].value.booked_count': 0 } },
-            [{ 'option.id': optionId }, { 'slot.id': slotId, 'slot.value.booked_count': { $lt: 0 } }],
-            session,
-        );
+        const result = await this.model
+            .updateOne(
+                { _id: new Types.ObjectId(serviceId) },
+                { $inc: { 'options.$[option].slots.$[slot].value.booked_count': -1 } },
+                {
+                    arrayFilters: [
+                        { 'option.id': optionId },
+                        { 'slot.id': slotId, 'slot.value.booked_count': { $gt: 0 } },
+                    ],
+                    session,
+                    timestamps: false,
+                },
+            )
+            .exec();
+
+        return result.modifiedCount === 1;
     }
 
-    /**
-     * Removal and clamp travel as one `bulkWrite`, so cancelling still costs a single round trip. The
-     * clamp matches nothing on healthy data, hence `modifiedCount >= 1` means "the booking was there".
-     */
-    private async pullBooking(
-        serviceId: string,
-        update: Record<string, unknown>,
-        arrayFilters: Record<string, unknown>[],
-        clamp: Record<string, unknown>,
-        clampFilters: Record<string, unknown>[],
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const filter = { _id: new Types.ObjectId(serviceId) };
-        const result = await this.model.bulkWrite(
-            [
-                { updateOne: { filter, update, arrayFilters, timestamps: false } },
-                { updateOne: { filter, update: clamp, arrayFilters: clampFilters, timestamps: false } },
-            ] as AnyBulkWriteOperation<Service>[],
-            { session, ordered: true },
-        );
-
-        return result.modifiedCount >= 1;
-    }
-
-    findWithBookingsOfUser(userId: string, session?: ClientSession): Promise<ServiceEntity[]> {
-        const id = new Types.ObjectId(userId);
-
-        return this.findMany(
-            {
-                $or: [
-                    { 'options.slots.value.bookings.user_id': id },
-                    { 'options.slots.value.time.bookings.user_id': id },
-                ],
-            },
-            { _id: 1 },
-            session,
-        );
-    }
+    // ----- job queries -----
 
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
         return this.findMany({ 'options.recurrent_dates.0': { $exists: true } }, { _id: 1 });
@@ -269,11 +348,17 @@ export class ServicesRepository extends BaseRepository<Service> {
         });
     }
 
-    /** Booking ids only — the report jobs must not pull whole booking lists into memory. */
-    findAllBookingIds(): Promise<ServiceEntity[]> {
+    /** Slot coordinates only — the reconciliation job must not load whole service documents. */
+    imageReferences(): Promise<string[]> {
+        return this.model.distinct('value.image_value').exec();
+    }
+
+    findAllSlotIds(): Promise<ServiceEntity[]> {
         return this.projected({
-            'options.slots.value.bookings.id': 1,
-            'options.slots.value.time.bookings.id': 1,
+            'options.id': 1,
+            'options.slots.id': 1,
+            'options.slots.child_type': 1,
+            'options.slots.value.time.time': 1,
         });
     }
 
@@ -324,7 +409,7 @@ export class ServicesRepository extends BaseRepository<Service> {
                             $pull: {
                                 'options.$[option].slots.$[slot].value.time': {
                                     time: { $in: times },
-                                    bookings: { $size: 0 },
+                                    booked_count: { $lte: 0 },
                                 },
                             },
                         },
@@ -340,4 +425,19 @@ export class ServicesRepository extends BaseRepository<Service> {
 
         return result.modifiedCount;
     }
+
+    private async matched(
+        filter: FilterQuery<Service>,
+        update: Record<string, unknown>,
+        arrayFilters: Record<string, unknown>[] | undefined,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        const result = await this.model.updateOne(filter, update, { arrayFilters, session }).exec();
+
+        return result.matchedCount === 1;
+    }
+}
+
+function prefix(path: string, fields: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(fields).map(([key, value]) => [`${path}.${key}`, value]));
 }

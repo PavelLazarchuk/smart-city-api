@@ -8,14 +8,14 @@ import {
     phoneSchema,
     timestampsOutputSchema,
 } from '../../../common/zod/primitives';
-import { SMS_PURPOSES } from '../schemas/sms.schema';
+import { SMS_PURPOSES, SMS_STATUSES } from '../schemas/sms.schema';
 
 export const smsResponseSchema = z.object({
     id: idOutputSchema,
     phone: z.string(),
     purpose: z.enum(SMS_PURPOSES),
     provider: z.string(),
-    status: z.enum(['sent', 'failed']),
+    status: z.enum(SMS_STATUSES),
     ...timestampsOutputSchema,
 });
 export class SmsResponseDto extends createZodDto(smsResponseSchema) {}
@@ -33,5 +33,5 @@ export class ListSmsQueryDto extends createZodDto(listSmsQuerySchema) {}
 export const sendTestSmsSchema = z.object({ phone: phoneSchema });
 export class SendTestSmsDto extends createZodDto(sendTestSmsSchema) {}
 
-export const testSmsResponseSchema = z.object({ phone: z.string(), status: z.enum(['sent', 'failed']) });
+export const testSmsResponseSchema = z.object({ phone: z.string(), status: z.enum(SMS_STATUSES) });
 export class TestSmsResponseDto extends createZodDto(testSmsResponseSchema) {}

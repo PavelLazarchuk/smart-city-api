@@ -8,9 +8,11 @@ import { PasswordService } from '../../src/modules/auth/password.service';
 import { Session } from '../../src/modules/auth/schemas/session.schema';
 import { TokenService } from '../../src/modules/auth/token.service';
 import { Category } from '../../src/modules/categories/schemas/category.schema';
+import { Image } from '../../src/modules/images/schemas/image.schema';
 import { InfoSection } from '../../src/modules/infosections/schemas/infosection.schema';
 import { News } from '../../src/modules/news/schemas/news.schema';
 import { Organization } from '../../src/modules/organizations/schemas/organization.schema';
+import { Booking } from '../../src/modules/bookings/schemas/booking.schema';
 import { Service, type ServiceOption } from '../../src/modules/services/schemas/service.schema';
 import { User } from '../../src/modules/users/schemas/user.schema';
 
@@ -58,7 +60,6 @@ export class Fixtures {
             name: overrides.name ?? `User ${n}`,
             password_hash: password ? await passwords.hash(password) : undefined,
             organization_ids: (overrides.organization_ids ?? []).map((id) => new Types.ObjectId(id)),
-            bookings: [],
         });
 
         return {
@@ -168,11 +169,59 @@ export class Fixtures {
                     id: slotId,
                     label: 'Date',
                     child_type: 'date_time',
-                    value: { date, time: [{ time, limit, booked_count: 0, bookings: [] }] },
+                    value: { date, time: [{ time, limit, booked_count: 0 }] },
                 },
             ],
             slot_id: slotId,
         };
+    }
+
+    /**
+     * Seeds a booking the way the API does: a row in `bookings` plus the slot's occupancy counter.
+     */
+    async booking(params: {
+        service_id: string;
+        organization_id: string;
+        option_id: string;
+        slot_id: string;
+        user_id: string;
+        time?: string;
+        child_type?: string;
+        person?: string;
+        phone?: string;
+        info?: string;
+    }): Promise<{ id: string }> {
+        const id = randomUUID();
+        await this.model<Booking>(Booking.name).create({
+            id,
+            service_id: new Types.ObjectId(params.service_id),
+            organization_id: new Types.ObjectId(params.organization_id),
+            option_id: params.option_id,
+            slot_id: params.slot_id,
+            child_type: params.child_type ?? (params.time ? 'date_time' : 'apply'),
+            slot_date: null,
+            slot_time: params.time ?? null,
+            service_label: 'Service',
+            user_id: new Types.ObjectId(params.user_id),
+            person: params.person ?? 'Person',
+            phone: params.phone ?? '375290000000',
+            info: params.info ?? '',
+        });
+        const counter = params.time
+            ? { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 1 }
+            : { 'options.$[option].slots.$[slot].value.booked_count': 1 };
+        const arrayFilters: Record<string, unknown>[] = [
+            { 'option.id': params.option_id },
+            { 'slot.id': params.slot_id },
+        ];
+
+        if (params.time) arrayFilters.push({ 'entry.time': params.time });
+
+        await this.model<Service>(Service.name)
+            .updateOne({ _id: params.service_id }, { $inc: counter }, { arrayFilters })
+            .exec();
+
+        return { id };
     }
 
     async news(organizationId: string, overrides: Partial<News> = {}): Promise<{ id: string }> {
@@ -203,6 +252,24 @@ export class Fixtures {
         });
 
         return { id: doc._id.toHexString() };
+    }
+
+    /** An uploaded image row. `name` is the storage key, `src` the URL documents refer to. */
+    async image(
+        organizationId: string,
+        overrides: Partial<Image> = {},
+    ): Promise<{ id: string; name: string; src: string }> {
+        const key = overrides.name ?? `${organizationId}/${randomUUID()}.jpg`;
+        const doc = await this.model<Image>(Image.name).create({
+            organization_id: new Types.ObjectId(organizationId),
+            mime_type: 'image/jpeg',
+            size: 1024,
+            ...overrides,
+            name: key,
+            src: overrides.src ?? `http://localhost:8080/uploads/${key}`,
+        });
+
+        return { id: doc._id.toHexString(), name: doc.name, src: doc.src };
     }
 
     collection<T>(name: string): Model<T> {

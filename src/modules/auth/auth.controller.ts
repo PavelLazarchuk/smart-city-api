@@ -55,9 +55,7 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     @ApiData(OtpRequestResponseDto)
     @Serialize(otpRequestResponseSchema)
-    @TrackEvent(EVENT_TYPES.OTP_REQUESTED, (_result, body) => ({
-        user_phone: (body as { phone?: string }).phone,
-    }))
+    @TrackEvent(EVENT_TYPES.OTP_REQUESTED)
     requestOtp(@Body() body: OtpRequestDto): Promise<{ phone: string; expires_in: number }> {
         return this.auth.requestOtp(body.phone);
     }
@@ -70,7 +68,7 @@ export class AuthController {
     @TrackEvent(EVENT_TYPES.OTP_VERIFIED, (result) => {
         const user = (result as TokenPairResponse).user;
 
-        return { user_id: user.id, user_role: user.role, user_phone: user.phone, user_name: user.name };
+        return { user_id: user.id, user_role: user.role };
     })
     verifyOtp(@Body() body: OtpVerifyDto, @Req() req: Request): Promise<TokenPairResponse> {
         return this.auth.verifyOtp(body, clientInfo(req));

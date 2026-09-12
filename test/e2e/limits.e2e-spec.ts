@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { Types } from 'mongoose';
 
 import { expectError } from '../support/assertions';
 import { Fixtures } from '../support/fixtures';
@@ -38,22 +37,14 @@ describe('public read limits (e2e)', () => {
         it('caps every child list and keeps bookings out of the response', async () => {
             const organization = await fx.organization();
             const limit = t.config.pagination.includeMaxItems;
-            const bookings = (count: number) =>
-                Array.from({ length: count }, () => ({
-                    id: randomUUID(),
-                    user_id: new Types.ObjectId(),
-                    person: 'Secret Person',
-                    phone: '375291112233',
-                    info: 'x'.repeat(200),
-                    created_at: new Date(),
-                }));
 
             for (let i = 0; i < limit + 5; i += 1) {
                 const slotId = randomUUID();
-                await fx.service(organization.id, {
+                const optionId = randomUUID();
+                const service = await fx.service(organization.id, {
                     options: [
                         {
-                            id: randomUUID(),
+                            id: optionId,
                             label: 'x',
                             service_type: 'service_apply',
                             enabled: true,
@@ -64,20 +55,27 @@ describe('public read limits (e2e)', () => {
                                     child_type: 'date_time',
                                     value: {
                                         date: '2999-01-01',
-                                        time: [
-                                            {
-                                                time: '10:00',
-                                                limit: null,
-                                                booked_count: 20,
-                                                bookings: bookings(20),
-                                            },
-                                        ],
+                                        time: [{ time: '10:00', limit: null, booked_count: 0 }],
                                     },
                                 },
                             ],
                         },
                     ],
                 });
+
+                for (let booked = 0; booked < 20; booked += 1) {
+                    await fx.booking({
+                        service_id: service.id,
+                        organization_id: organization.id,
+                        option_id: optionId,
+                        slot_id: slotId,
+                        user_id: (await fx.citizen()).id,
+                        time: '10:00',
+                        person: 'Secret Person',
+                        phone: '375291112233',
+                        info: 'x'.repeat(200),
+                    });
+                }
             }
 
             for (let i = 0; i < limit + 3; i += 1) await fx.news(organization.id);
@@ -113,7 +111,7 @@ describe('public read limits (e2e)', () => {
                                 child_type: 'date_time',
                                 value: {
                                     date: '01.01.2020',
-                                    time: [{ time: 'morning', limit: null, booked_count: 0, bookings: [] }],
+                                    time: [{ time: 'morning', limit: null, booked_count: 0 }],
                                 },
                             },
                             {

@@ -13,6 +13,10 @@ export class MailService {
         this.logger.setContext(MailService.name);
     }
 
+    check(): Promise<void> {
+        return this.provider.check();
+    }
+
     async send(message: MailMessage): Promise<void> {
         try {
             await this.provider.send(message);

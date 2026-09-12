@@ -6,6 +6,9 @@ import { baseSchemaOptions } from '../../../common/database/schema-options';
 export const SMS_PURPOSES = ['verification', 'test'] as const;
 export type SmsPurpose = (typeof SMS_PURPOSES)[number];
 
+export const SMS_STATUSES = ['sent', 'failed', 'blocked'] as const;
+export type SmsStatus = (typeof SMS_STATUSES)[number];
+
 @Schema(baseSchemaOptions('sms'))
 export class Sms {
     @Prop({ type: String, required: true })
@@ -17,8 +20,8 @@ export class Sms {
     @Prop({ type: String, required: true })
     provider!: string;
 
-    @Prop({ type: String, enum: ['sent', 'failed'], required: true })
-    status!: 'sent' | 'failed';
+    @Prop({ type: String, enum: SMS_STATUSES, required: true })
+    status!: SmsStatus;
 }
 
 export type SmsDocument = HydratedDocument<Sms>;

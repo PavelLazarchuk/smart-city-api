@@ -15,6 +15,7 @@ import {
     TestSmsResponseDto,
     testSmsResponseSchema,
 } from './dto/sms.schemas';
+import { type SmsStatus } from './schemas/sms.schema';
 import { type SmsEntity } from './sms.repository';
 import { SmsService } from './sms.service';
 
@@ -39,7 +40,7 @@ export class SmsController {
     @HttpCode(HttpStatus.OK)
     @ApiData(TestSmsResponseDto)
     @Serialize(testSmsResponseSchema)
-    async sendTest(@Body() body: SendTestSmsDto): Promise<{ phone: string; status: 'sent' | 'failed' }> {
+    async sendTest(@Body() body: SendTestSmsDto): Promise<{ phone: string; status: SmsStatus }> {
         const status = await this.sms.send(body.phone, texts.sms.test(this.otp.generateCode()), 'test');
 
         return { phone: body.phone, status };

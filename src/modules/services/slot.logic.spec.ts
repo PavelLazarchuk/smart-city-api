@@ -1,9 +1,9 @@
 import { Types } from 'mongoose';
 
+import { type BookingEntity } from '../bookings/bookings.repository';
 import { type ServiceOption, type Slot } from './schemas/service.schema';
 import {
-    collectBookingIds,
-    findBookingsOfUser,
+    attachBookings,
     formatDateOnly,
     generateRecurrentDays,
     isSlotExpired,
@@ -14,13 +14,24 @@ import {
     slotFromInput,
 } from './slot.logic';
 
-const booking = (userId = new Types.ObjectId()) => ({
-    id: `b-${userId.toHexString()}`,
-    user_id: userId,
+const booking = (
+    overrides: Partial<BookingEntity> & { option_id: string; slot_id: string },
+): BookingEntity => ({
+    _id: new Types.ObjectId(),
+    id: `b-${overrides.slot_id}-${overrides.slot_time ?? ''}`,
+    service_id: new Types.ObjectId(),
+    organization_id: new Types.ObjectId(),
+    child_type: 'date_time',
+    slot_date: '2026-03-01',
+    slot_time: null,
+    service_label: 'S',
+    user_id: new Types.ObjectId(),
     person: 'P',
     phone: '375290000000',
     info: '',
     created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
 });
 
 describe('slot.logic', () => {
@@ -34,11 +45,11 @@ describe('slot.logic', () => {
             value: { date: '2026-03-01', time: [{ time: '09:00', limit: 3 }, { time: '10:00' }] },
         });
         expect(dateTime.value.time).toEqual([
-            { time: '09:00', limit: 3, booked_count: 0, bookings: [] },
-            { time: '10:00', limit: null, booked_count: 0, bookings: [] },
+            { time: '09:00', limit: 3, booked_count: 0 },
+            { time: '10:00', limit: null, booked_count: 0 },
         ]);
         const apply = slotFromInput({ child_type: 'apply', value: { limit: 5 } });
-        expect(apply.value).toEqual({ limit: 5, booked_count: 0, bookings: [] });
+        expect(apply.value).toEqual({ limit: 5, booked_count: 0 });
         const info = slotFromInput({ child_type: 'delivery', value: { description: 'x' } });
         expect(info.value).toEqual({ description: 'x', link: undefined, price: undefined });
         expect(info.id).toMatch(/[0-9a-f-]{36}/);
@@ -52,8 +63,7 @@ describe('slot.logic', () => {
         expect(optionFromInput({ recurrent_dates: null }).recurrent_dates).toBeUndefined();
     });
 
-    it('mergeBookings keeps bookings and counters of slots that survive an options replacement', () => {
-        const user = new Types.ObjectId();
+    it('mergeBookings keeps occupancy counters of slots that survive an options replacement', () => {
         const existing: ServiceOption[] = [
             {
                 id: 'o1',
@@ -67,14 +77,14 @@ describe('slot.logic', () => {
                         child_type: 'date_time',
                         value: {
                             date: '2026-03-01',
-                            time: [{ time: '09:00', limit: 2, booked_count: 1, bookings: [booking(user)] }],
+                            time: [{ time: '09:00', limit: 2, booked_count: 1 }],
                         },
                     },
                     {
                         id: 's2',
                         label: 'a',
                         child_type: 'apply',
-                        value: { limit: null, booked_count: 1, bookings: [booking(user)] },
+                        value: { limit: null, booked_count: 1 },
                     },
                 ],
             },
@@ -93,8 +103,8 @@ describe('slot.logic', () => {
                         value: {
                             date: '2026-03-01',
                             time: [
-                                { time: '09:00', limit: 5, booked_count: 0, bookings: [] },
-                                { time: '11:00', limit: 1, booked_count: 0, bookings: [] },
+                                { time: '09:00', limit: 5, booked_count: 0 },
+                                { time: '11:00', limit: 1, booked_count: 0 },
                             ],
                         },
                     },
@@ -102,13 +112,13 @@ describe('slot.logic', () => {
                         id: 's2',
                         label: 'a',
                         child_type: 'apply',
-                        value: { limit: 3, booked_count: 0, bookings: [] },
+                        value: { limit: 3, booked_count: 0 },
                     },
                     {
                         id: 's3',
                         label: 'new',
                         child_type: 'apply',
-                        value: { limit: null, booked_count: 0, bookings: [] },
+                        value: { limit: null, booked_count: 0 },
                     },
                 ],
             },
@@ -117,8 +127,7 @@ describe('slot.logic', () => {
         const merged = mergeBookings(existing, incoming);
         const time = merged[0]!.slots[0]!.value.time!;
         expect(time[0]).toMatchObject({ time: '09:00', limit: 5, booked_count: 1 });
-        expect(time[0]!.bookings).toHaveLength(1);
-        expect(time[1]).toMatchObject({ time: '11:00', booked_count: 0, bookings: [] });
+        expect(time[1]).toMatchObject({ time: '11:00', booked_count: 0 });
         expect(merged[0]!.slots[1]!.value).toMatchObject({ limit: 3, booked_count: 1 });
         expect(merged[0]!.slots[2]!.value.booked_count).toBe(0);
         expect(merged[1]!.slots).toEqual([]);
@@ -126,7 +135,6 @@ describe('slot.logic', () => {
     });
 
     it('mergeBookings keeps a booked time the edit renamed away, and drops an unbooked one', () => {
-        const user = new Types.ObjectId();
         const existing: ServiceOption[] = [
             {
                 id: 'o1',
@@ -141,8 +149,8 @@ describe('slot.logic', () => {
                         value: {
                             date: '2026-03-01',
                             time: [
-                                { time: '10:00', limit: 2, booked_count: 1, bookings: [booking(user)] },
-                                { time: '14:00', limit: 2, booked_count: 0, bookings: [] },
+                                { time: '10:00', limit: 2, booked_count: 1 },
+                                { time: '14:00', limit: 2, booked_count: 0 },
                             ],
                         },
                     },
@@ -162,7 +170,7 @@ describe('slot.logic', () => {
                         child_type: 'date_time',
                         value: {
                             date: '2026-03-01',
-                            time: [{ time: '10:30', limit: 2, booked_count: 0, bookings: [] }],
+                            time: [{ time: '10:30', limit: 2, booked_count: 0 }],
                         },
                     },
                 ],
@@ -171,12 +179,9 @@ describe('slot.logic', () => {
         const time = mergeBookings(existing, incoming)[0]!.slots[0]!.value.time!;
         expect(time.map((entry) => entry.time)).toEqual(['10:30', '10:00']);
         expect(time[1]).toMatchObject({ booked_count: 1 });
-        expect(time[1]!.bookings).toHaveLength(1);
     });
 
-    it('collects booking ids and finds a user’s bookings anywhere in the tree', () => {
-        const user = new Types.ObjectId();
-        const other = new Types.ObjectId();
+    it('grafts bookings from their own collection back onto the right slot and time entry', () => {
         const options: ServiceOption[] = [
             {
                 id: 'o1',
@@ -190,14 +195,7 @@ describe('slot.logic', () => {
                         child_type: 'date_time',
                         value: {
                             date: '2026-03-01',
-                            time: [
-                                {
-                                    time: '09:00',
-                                    limit: null,
-                                    booked_count: 2,
-                                    bookings: [booking(user), booking(other)],
-                                },
-                            ],
+                            time: [{ time: '09:00', limit: null, booked_count: 2 }],
                         },
                     },
                     {
@@ -208,18 +206,19 @@ describe('slot.logic', () => {
                             date: '2026-03-02',
                             limit: null,
                             booked_count: 1,
-                            bookings: [booking(user)],
                         },
                     },
                 ],
             },
         ];
-        expect(collectBookingIds(options)).toHaveLength(3);
-        const mine = findBookingsOfUser(options, user.toHexString());
-        expect(mine.map((found) => [found.slot_id, found.time])).toEqual([
-            ['s1', '09:00'],
-            ['s2', undefined],
+        const attached = attachBookings(options, [
+            booking({ option_id: 'o1', slot_id: 's1', slot_time: '09:00' }),
+            booking({ option_id: 'o1', slot_id: 's1', slot_time: '09:00', id: 'second' }),
+            booking({ option_id: 'o1', slot_id: 's2', child_type: 'date' }),
+            booking({ option_id: 'o1', slot_id: 'gone', child_type: 'date' }),
         ]);
+        expect(attached[0]!.slots[0]!.value.time![0]!.bookings).toHaveLength(2);
+        expect(attached[0]!.slots[1]!.value.bookings).toHaveLength(1);
     });
 
     it('generates recurrent days over the horizon starting tomorrow', () => {
@@ -237,7 +236,6 @@ describe('slot.logic', () => {
     });
 
     it('planRecurrentDays adds missing dates and times and drops only unbooked stale ones', () => {
-        const user = new Types.ObjectId();
         const slots: Slot[] = [
             {
                 id: 's1',
@@ -246,8 +244,8 @@ describe('slot.logic', () => {
                 value: {
                     date: '2026-09-07',
                     time: [
-                        { time: '08:00', limit: null, booked_count: 1, bookings: [booking(user)] },
-                        { time: '12:00', limit: null, booked_count: 0, bookings: [] },
+                        { time: '08:00', limit: null, booked_count: 1 },
+                        { time: '12:00', limit: null, booked_count: 0 },
                     ],
                 },
             },
@@ -260,7 +258,7 @@ describe('slot.logic', () => {
         expect(plan.add_slots).toHaveLength(1);
         expect(plan.add_slots[0]!.value.date).toBe('2026-09-14');
         expect(plan.add_times).toEqual([
-            { slot_id: 's1', entries: [{ time: '09:00', limit: 2, booked_count: 0, bookings: [] }] },
+            { slot_id: 's1', entries: [{ time: '09:00', limit: 2, booked_count: 0 }] },
         ]);
         expect(plan.remove_times).toEqual([{ slot_id: 's1', times: ['12:00'] }]);
         expect(slots[0]!.value.time).toHaveLength(2);
@@ -273,8 +271,8 @@ describe('slot.logic', () => {
                 value: {
                     date: '2026-09-07',
                     time: [
-                        { time: '08:00', limit: null, booked_count: 1, bookings: [booking(user)] },
-                        { time: '09:00', limit: 2, booked_count: 0, bookings: [] },
+                        { time: '08:00', limit: null, booked_count: 1 },
+                        { time: '09:00', limit: 2, booked_count: 0 },
                     ],
                 },
             },
