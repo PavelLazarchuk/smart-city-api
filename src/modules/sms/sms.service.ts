@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { endOfMonth, startOfMonth, subMonths } from 'date-fns';
+import { type FilterQuery } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
 import { ApiError } from '../../common/http/api-error';
@@ -9,7 +10,7 @@ import { usesCursorMode } from '../../common/pagination/pagination.schema';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { SMS_PROVIDER, type SmsProvider } from '../../integrations/sms/sms.provider';
 import { type ListSmsQuery } from './dto/sms.schemas';
-import { type SmsPurpose, type SmsStatus } from './schemas/sms.schema';
+import { type Sms, type SmsPurpose, type SmsStatus } from './schemas/sms.schema';
 import { SmsBudgetService } from './sms-budget.service';
 import { type SmsEntity, SmsRepository } from './sms.repository';
 
@@ -52,7 +53,7 @@ export class SmsService {
 
     async list(query: ListSmsQuery): Promise<PaginatedResult<SmsEntity>> {
         const { from, to } = this.range(query);
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<Sms> = {};
 
         if (from || to)
             filter['created_at'] = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };

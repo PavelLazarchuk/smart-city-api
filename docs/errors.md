@@ -88,8 +88,11 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `OTP_EXPIRED`                     | 401    | Past `OTP_TTL_SECONDS`; request a new one                                                         |
 | `OTP_ATTEMPTS_EXCEEDED`           | 401    | Beyond `OTP_MAX_ATTEMPTS`; request a new one                                                      |
 | `LOGIN_METHOD_DISABLED`           | 403    | This audience signs in the other way (`AUTH_*_LOGIN_METHOD`)                                      |
-| `PASSWORD_TOO_SHORT`              | 422    |                                                                                                   |
+| `PASSWORD_TOO_SHORT`              | 422    | Below `PASSWORD_MIN_LENGTH`                                                                       |
+| `PASSWORD_TOO_LONG`               | 422    | Above `PASSWORD_MAX_LENGTH`                                                                       |
+| `PASSWORD_TOO_WEAK`               | 422    | `details[]` lists the missing character classes                                                   |
 | `PASSWORD_UNCHANGED`              | 422    | The new password equals the current one                                                           |
+| `SESSION_NOT_FOUND`               | 404    | `DELETE /auth/sessions/:sid` — not a session of the calling account                               |
 | `LOGIN_TOO_SHORT`                 | 422    |                                                                                                   |
 | `PHONE_COUNTRY_NOT_SUPPORTED`     | 422    | The number does not start with `PHONE_COUNTRY_CODE`                                               |
 
@@ -132,12 +135,16 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `SLOT_FULL`                            | 422    | Capacity reached — decided by a conditional update inside the transaction, so it is race-free |
 | `SLOT_EXPIRED`                         | 422    | The slot date has passed                                                                      |
 | `OPTION_DISABLED`                      | 422    | The service option is switched off                                                            |
+| `IDEMPOTENCY_IN_PROGRESS`              | 409    | The first request with this `Idempotency-Key` is still running — retry shortly                |
+| `IDEMPOTENCY_KEY_REUSED`               | 422    | The same key was used for a different payload                                                 |
 
 ### Files and delivery
 
 | Code                                                       | Status |
 | ---------------------------------------------------------- | ------ |
 | `FILE_REQUIRED`, `FILE_TYPE_NOT_ALLOWED`, `FILE_TOO_LARGE` | 400    |
+| `IMAGE_UNREADABLE`                                         | 400    |
+| `IMAGE_TOO_LARGE`                                          | 422    |
 | `SMS_DELIVERY_FAILED`                                      | 422    |
 | `SMS_BUDGET_EXCEEDED`                                      | 422    |
 

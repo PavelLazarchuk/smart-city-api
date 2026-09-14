@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { TransactionRunner } from '../../common/database/transaction-runner';
@@ -14,6 +14,7 @@ import {
     type UpdateInfoSectionInput,
 } from './dto/infosection.schemas';
 import { type InfoSectionEntity, InfoSectionsRepository } from './infosections.repository';
+import { type InfoSection } from './schemas/infosection.schema';
 
 const INFOSECTION_SORTABLE = ['position', 'created_at', 'label'] as const;
 
@@ -45,7 +46,7 @@ export class InfoSectionsService implements OnModuleInit {
             defaultSort: 'position',
             defaultOrder: 'asc',
         });
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<InfoSection> = {};
 
         if (query.organization_id) filter['organization_id'] = new Types.ObjectId(query.organization_id);
 

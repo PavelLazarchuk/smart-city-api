@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { type ClientSession, Types } from 'mongoose';
+import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { TransactionRunner } from '../../common/database/transaction-runner';
@@ -10,6 +10,7 @@ import { PaginationService } from '../../common/pagination/pagination.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type CreateNewsInput, type ListNewsQuery, type UpdateNewsInput } from './dto/news.schemas';
 import { type NewsEntity, NewsRepository } from './news.repository';
+import { type News } from './schemas/news.schema';
 
 const NEWS_SORTABLE = ['position', 'date', 'created_at', 'label'] as const;
 
@@ -42,7 +43,7 @@ export class NewsService implements OnModuleInit {
             defaultSort: scoped ? 'position' : 'date',
             defaultOrder: scoped ? 'asc' : 'desc',
         });
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<News> = {};
 
         if (query.organization_id) filter['organization_id'] = new Types.ObjectId(query.organization_id);
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiNoContentResponse, ApiTags } from '@nestjs/swagger';
 import { type Request } from 'express';
 
@@ -6,7 +6,7 @@ import { ApiData } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
-import { Serialize } from '../../common/http/serialize.decorator';
+import { Serialize, SerializeList } from '../../common/http/serialize.decorator';
 import { UserResponseDto, userResponseSchema } from '../users/dto/user.schemas';
 import { type UserEntity } from '../users/users.repository';
 import { type ClientInfo, AuthService } from './auth.service';
@@ -19,6 +19,9 @@ import {
     OtpVerifyDto,
     RefreshDto,
     RegisterDto,
+    type SessionResponse,
+    SessionResponseDto,
+    sessionResponseSchema,
     TokenPairResponseDto,
     type TokenPairResponse,
     tokenPairResponseSchema,
@@ -81,6 +84,22 @@ export class AuthController {
     @Serialize(tokenPairResponseSchema)
     refresh(@Body() body: RefreshDto, @Req() req: Request): Promise<TokenPairResponse> {
         return this.auth.refresh(body.refresh_token, clientInfo(req));
+    }
+
+    @Get('sessions')
+    @ApiBearerAuth()
+    @ApiData(SessionResponseDto)
+    @SerializeList(sessionResponseSchema)
+    sessions(@CurrentUser() user: AuthUser): Promise<SessionResponse[]> {
+        return this.auth.listSessions(user);
+    }
+
+    @Delete('sessions/:sid')
+    @ApiBearerAuth()
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiNoContentResponse({ description: 'Session revoked' })
+    async revokeSession(@CurrentUser() user: AuthUser, @Param('sid') sid: string): Promise<void> {
+        await this.auth.revokeSession(user, sid);
     }
 
     @Post('logout')

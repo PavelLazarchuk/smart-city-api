@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 import { AppConfig } from '../../common/config/app-config';
+import { secretFor } from '../../common/config/jwt-keys';
 import { type Role, ROLE_VALUES } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
 
@@ -29,13 +30,26 @@ export class TokenService {
     ) {}
 
     async issuePair(user: { id: string; role: Role }, sid: string): Promise<IssuedPair> {
+        const { access: accessKeys, refresh: refreshKeys, issuer, audience } = this.config.auth;
         const accessToken = await this.jwt.signAsync(
             { sub: user.id, role: user.role, sid, type: 'access' },
-            { secret: this.config.auth.accessSecret, expiresIn: this.config.auth.accessTtlSeconds },
+            {
+                secret: accessKeys.secret,
+                keyid: accessKeys.kid,
+                issuer,
+                audience,
+                expiresIn: this.config.auth.accessTtlSeconds,
+            },
         );
         const refreshToken = await this.jwt.signAsync(
             { sub: user.id, sid, type: 'refresh' },
-            { secret: this.config.auth.refreshSecret, expiresIn: this.config.auth.refreshTtlSeconds },
+            {
+                secret: refreshKeys.secret,
+                keyid: refreshKeys.kid,
+                issuer,
+                audience,
+                expiresIn: this.config.auth.refreshTtlSeconds,
+            },
         );
         const access = this.decode(accessToken);
         const refresh = this.decode(refreshToken);
@@ -51,8 +65,18 @@ export class TokenService {
     async verifyRefresh(token: string): Promise<RefreshClaims> {
         let payload: unknown;
         try {
-            payload = await this.jwt.verifyAsync(token, { secret: this.config.auth.refreshSecret });
+            const secret = secretFor(this.jwt, token, this.config.auth.refresh);
+
+            if (!secret) throw ApiError.unauthorized('TOKEN_INVALID');
+
+            payload = await this.jwt.verifyAsync(token, {
+                secret,
+                issuer: this.config.auth.issuer,
+                audience: this.config.auth.audience,
+            });
         } catch (error) {
+            if (error instanceof ApiError) throw error;
+
             const name = (error as { name?: string }).name;
             throw ApiError.unauthorized(name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID');
         }

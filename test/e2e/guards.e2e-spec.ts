@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { type Types } from 'mongoose';
 
+import { maskedServiceResponseSchema } from '../../src/modules/services/dto/service.schemas';
+import { ServicesRepository } from '../../src/modules/services/services.repository';
 import { collectKeys, expectNoSensitiveKeys } from '../support/assertions';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
@@ -182,6 +184,39 @@ describe('cross-cutting guards (e2e)', () => {
             }
         });
 
+        it('never reads the subscribe address for a public viewer, and refuses to serialize a booking', async () => {
+            const repository = t.app.get(ServicesRepository);
+            const listed = jest.spyOn(repository, 'paginate');
+            const read = jest.spyOn(repository, 'findById');
+
+            await t.http.get(`${t.prefix}/services`);
+            await t.http.get(`${t.prefix}/services/${serviceId}`);
+            await t.http.get(`${t.prefix}/services`).set('Authorization', await fx.bearer(citizen));
+
+            expect(listed.mock.calls.map((call) => call[2])).toEqual([
+                { 'value.subscribe': 0 },
+                { 'value.subscribe': 0 },
+            ]);
+            expect(read.mock.calls.map((call) => call[2])).toEqual([{ 'value.subscribe': 0 }]);
+
+            listed.mockClear();
+            read.mockClear();
+            await t.http.get(`${t.prefix}/services`).set('Authorization', await fx.bearer(admin));
+            await t.http
+                .get(`${t.prefix}/services/${serviceId}`)
+                .set('Authorization', await fx.bearer(admin));
+            expect(listed.mock.calls.map((call) => call[2])).toEqual([undefined]);
+            expect(read.mock.calls.map((call) => call[2])).toEqual([undefined]);
+            listed.mockRestore();
+            read.mockRestore();
+
+            const withBooking = (await t.http.get(`${t.prefix}/services/${serviceId}`)).body.data;
+            withBooking.options[0].slots[0].value.time[0].bookings = [
+                { id: 'x', user_id: citizen.id, person: 'Private Citizen', phone: '375291234567', info: '' },
+            ];
+            expect(maskedServiceResponseSchema.safeParse(withBooking).success).toBe(false);
+        });
+
         it('the organization admin sees booking details; a super-admin listing users sees no hashes', async () => {
             const own = await t.http
                 .get(`${t.prefix}/services/${serviceId}`)
@@ -240,7 +275,7 @@ describe('cross-cutting guards (e2e)', () => {
                     method: 'patch',
                     path: `/organizations/${organization.id}`,
                     body: { main_label: 'y' },
-                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 403, super: 200 },
+                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 404, super: 200 },
                 },
                 {
                     method: 'post',
@@ -252,7 +287,7 @@ describe('cross-cutting guards (e2e)', () => {
                     method: 'patch',
                     path: `/categories/${category.id}`,
                     body: { label: 'z' },
-                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 403, super: 200 },
+                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 404, super: 200 },
                 },
                 {
                     method: 'get',

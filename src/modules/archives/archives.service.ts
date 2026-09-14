@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { type ClientSession, Types } from 'mongoose';
+import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
@@ -10,6 +10,7 @@ import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type ArchiveEntity, ArchivesRepository } from './archives.repository';
+import { type Archive } from './schemas/archive.schema';
 import { type CreateArchiveInput, type ListArchivesQuery } from './dto/archive.schemas';
 
 @Injectable()
@@ -41,7 +42,7 @@ export class ArchivesService implements OnModuleInit {
             sortable: ['created_at', 'type'],
             defaultSort: 'created_at',
         });
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<Archive> = {};
 
         if (query.type) filter['type'] = query.type;
 

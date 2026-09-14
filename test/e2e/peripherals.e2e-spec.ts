@@ -41,7 +41,8 @@ describe('images, archives, sms, analytics (e2e)', () => {
             expect(uploaded.body.data.mime_type).toBe('image/png');
             expect(uploaded.body.data.src).toMatch(/^http:\/\/localhost:8080\/uploads\//);
             const storedPath = `${t.config.storage.local.dir}/${uploaded.body.data.name as string}`;
-            expect(readFileSync(storedPath)).toHaveLength(PNG.length);
+            expect(readFileSync(storedPath).length).toBeGreaterThan(0);
+            expect(uploaded.body.data.size).toBe(readFileSync(storedPath).length);
 
             const wrongType = await t.http
                 .post(`${t.prefix}/organizations/${organization.id}/images`)
@@ -62,7 +63,8 @@ describe('images, archives, sms, analytics (e2e)', () => {
                     .post(`${t.prefix}/organizations/${organization.id}/images`)
                     .set('Authorization', foreign)
                     .attach('file', PNG, 'p.png'),
-                403,
+                404,
+                'ORGANIZATION_NOT_FOUND',
             );
 
             const listed = await t.http.get(`${t.prefix}/organizations/${organization.id}/images`);
@@ -77,7 +79,8 @@ describe('images, archives, sms, analytics (e2e)', () => {
                 await t.http
                     .delete(`${t.prefix}/images/${uploaded.body.data.id as string}`)
                     .set('Authorization', foreign),
-                403,
+                404,
+                'IMAGE_NOT_FOUND',
             );
             expect(
                 (

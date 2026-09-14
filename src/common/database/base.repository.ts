@@ -1,4 +1,12 @@
-import { type ClientSession, type FilterQuery, type Model, type PipelineStage, Types } from 'mongoose';
+import {
+    type ClientSession,
+    type FilterQuery,
+    type Model,
+    type PipelineStage,
+    type ProjectionType,
+    type UpdateQuery,
+    Types,
+} from 'mongoose';
 
 import { type PaginatedResult } from '../pagination/paginated-result';
 import { type ResolvedPagination } from '../pagination/pagination.service';
@@ -13,11 +21,15 @@ export abstract class BaseRepository<TDoc> {
         return new Types.ObjectId(id);
     }
 
-    async findById(id: string, session?: ClientSession): Promise<Lean<TDoc> | null> {
+    async findById(
+        id: string,
+        session?: ClientSession,
+        projection?: ProjectionType<TDoc>,
+    ): Promise<Lean<TDoc> | null> {
         if (!Types.ObjectId.isValid(id)) return null;
 
         return this.model
-            .findById(id)
+            .findById(id, projection)
             .session(session ?? null)
             .lean<Lean<TDoc>>()
             .exec();
@@ -70,7 +82,7 @@ export abstract class BaseRepository<TDoc> {
 
     async updateById(
         id: string,
-        update: Record<string, unknown>,
+        update: UpdateQuery<TDoc>,
         session?: ClientSession,
     ): Promise<Lean<TDoc> | null> {
         return this.model
@@ -80,8 +92,10 @@ export abstract class BaseRepository<TDoc> {
     }
 
     async deleteById(id: string, session?: ClientSession): Promise<boolean> {
+        if (!Types.ObjectId.isValid(id)) return false;
+
         const result = await this.model
-            .deleteOne({ _id: id })
+            .deleteOne({ _id: this.toObjectId(id) })
             .session(session ?? null)
             .exec();
 
@@ -100,7 +114,7 @@ export abstract class BaseRepository<TDoc> {
     async paginate(
         filter: FilterQuery<TDoc>,
         pagination: ResolvedPagination,
-        projection?: Record<string, 0 | 1>,
+        projection?: ProjectionType<TDoc>,
     ): Promise<PaginatedResult<Lean<TDoc>>> {
         const [items, total] = await Promise.all([
             this.model

@@ -112,6 +112,30 @@ describe('env schema', () => {
         });
     });
 
+    it('keeps the two token secrets apart and parses the rotation key list', () => {
+        expect(() => validateEnv({ ...base, JWT_REFRESH_SECRET: base.JWT_ACCESS_SECRET })).toThrow(
+            /JWT_REFRESH_SECRET/,
+        );
+        expect(() => validateEnv({ ...base, JWT_ACCESS_PREVIOUS_KEYS: 'old-key' })).toThrow(
+            /JWT_ACCESS_PREVIOUS_KEYS/,
+        );
+        expect(() =>
+            validateEnv({ ...base, JWT_ACCESS_PREVIOUS_KEYS: `access-1:${'c'.repeat(32)}` }),
+        ).toThrow(/Duplicate key id/);
+
+        const config = new AppConfig(
+            validateEnv({ ...base, JWT_ACCESS_PREVIOUS_KEYS: `retired:${'c'.repeat(32)}` }),
+        );
+        expect(config.auth.access.kid).toBe('access-1');
+        expect(Object.keys(config.auth.access.accepted)).toEqual(['access-1', 'retired']);
+        expect(config.auth.issuer).toBe('smart-city-api');
+    });
+
+    it('keeps the password length bounds ordered', () => {
+        expect(() => validateEnv({ ...base, PASSWORD_MIN_LENGTH: '30' })).toThrow(/PASSWORD_MIN_LENGTH/);
+        expect(new AppConfig(validateEnv(base)).auth.passwordMaxLength).toBe(20);
+    });
+
     it('refuses to boot on missing or malformed values with a readable message', () => {
         expect(() => validateEnv({})).toThrow(/MONGO_URI/);
         expect(() => validateEnv({ ...base, JWT_ACCESS_SECRET: 'short' })).toThrow(/JWT_ACCESS_SECRET/);

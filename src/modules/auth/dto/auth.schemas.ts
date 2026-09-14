@@ -1,7 +1,14 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
-import { loginSchema, nameSchema, passwordSchema, phoneSchema } from '../../../common/zod/primitives';
+import {
+    idOutputSchema,
+    isoDateTimeSchema,
+    loginSchema,
+    nameSchema,
+    passwordSchema,
+    phoneSchema,
+} from '../../../common/zod/primitives';
 import { userResponseSchema } from '../../users/dto/user.schemas';
 
 export const loginRequestSchema = z
@@ -60,6 +67,17 @@ export const tokenPairResponseSchema = z.object({
 });
 export type TokenPairResponse = z.infer<typeof tokenPairResponseSchema>;
 export class TokenPairResponseDto extends createZodDto(tokenPairResponseSchema) {}
+
+export const sessionResponseSchema = z.object({
+    id: idOutputSchema,
+    current: z.boolean(),
+    user_agent: z.string().optional(),
+    ip: z.string().optional(),
+    expires_at: isoDateTimeSchema,
+    created_at: isoDateTimeSchema,
+});
+export type SessionResponse = z.infer<typeof sessionResponseSchema>;
+export class SessionResponseDto extends createZodDto(sessionResponseSchema) {}
 
 export const otpRequestResponseSchema = z.object({
     phone: z.string(),

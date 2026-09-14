@@ -1,6 +1,9 @@
+import { type Request } from 'express';
 import { createZodDto } from 'nestjs-zod';
-import { z } from 'zod';
+import { z, type ZodType } from 'zod';
 
+import { type RequestWithUser } from '../../../common/decorators/current-user.decorator';
+import { ROLES } from '../../../common/decorators/roles.decorator';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
     dateOnlySchema,
@@ -241,6 +244,15 @@ export class ServiceResponseDto extends createZodDto(serviceResponseSchema) {}
 export const maskedServiceResponseSchema = serviceResponseSchemaFor(maskedBookingsOutput);
 export class MaskedServiceResponseDto extends createZodDto(maskedServiceResponseSchema) {}
 
+export function viewerSeesBookings(request: Request): boolean {
+    const { user } = request as Request & RequestWithUser;
+
+    return user !== undefined && user.role !== ROLES.COMMON_USER;
+}
+
+export const serviceSchemaForViewer = (request: Request): ZodType =>
+    viewerSeesBookings(request) ? serviceResponseSchema : maskedServiceResponseSchema;
+
 export const createServiceSchema = z.object({
     organization_id: objectIdSchema,
     category_id: objectIdSchema.nullable().optional(),
@@ -311,6 +323,49 @@ export const recurrenceSchema = z.object({
 });
 export type RecurrenceInput = z.infer<typeof recurrenceSchema>;
 export class RecurrenceDto extends createZodDto(recurrenceSchema) {}
+
+export const availabilityQuerySchema = z.object({
+    from: dateOnlySchema.optional(),
+    to: dateOnlySchema.optional(),
+});
+export type AvailabilityQuery = z.infer<typeof availabilityQuerySchema>;
+export class AvailabilityQueryDto extends createZodDto(availabilityQuerySchema) {}
+
+const availabilityTimeSchema = z.object({
+    time: outputText,
+    limit: limitSchema,
+    booked_count: z.number().int().min(0),
+    available: z.number().int().min(0).nullable(),
+});
+
+const availabilitySlotSchema = z.object({
+    id: z.string(),
+    label: z.string(),
+    child_type: z.enum(SLOT_TYPES),
+    date: outputText.nullable(),
+    limit: limitSchema,
+    booked_count: z.number().int().min(0),
+    available: z.number().int().min(0).nullable(),
+    time: z.array(availabilityTimeSchema).optional(),
+});
+
+export const availabilityResponseSchema = z.object({
+    service_id: idOutputSchema,
+    organization_id: idOutputSchema,
+    from: outputText,
+    to: outputText,
+    options: z.array(
+        z.object({
+            id: z.string(),
+            label: z.string(),
+            service_type: z.enum(SERVICE_TYPES),
+            enabled: enabledSchema,
+            slots: z.array(availabilitySlotSchema),
+        }),
+    ),
+});
+export type AvailabilityResponse = z.infer<typeof availabilityResponseSchema>;
+export class AvailabilityResponseDto extends createZodDto(availabilityResponseSchema) {}
 
 // ----- bookings (input) -----
 

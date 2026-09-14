@@ -1,13 +1,23 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { type ClientSession, Types } from 'mongoose';
+import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
+import { ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
+import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import { type PaginatedResult } from '../../common/pagination/paginated-result';
+import { PaginationService } from '../../common/pagination/pagination.service';
 import { MailService } from '../../integrations/mail/mail.service';
 import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
+import {
+    type BookingResource,
+    type ListBookingsQuery,
+    type ListOwnBookingsQuery,
+    type ListServiceBookingsQuery,
+} from '../bookings/dto/booking.schemas';
 import { type Booking } from '../bookings/schemas/booking.schema';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
 import { BOOKABLE_SLOT_TYPES } from './schemas/service.schema';
@@ -16,6 +26,26 @@ import { ServicesRepository } from './services.repository';
 import { formatDateOnly } from './slot.logic';
 
 const DUPLICATE_KEY = 11000;
+const BOOKING_SORTABLE = ['created_at', 'slot_date'] as const;
+
+function toResource(booking: BookingEntity): BookingResource {
+    return {
+        id: booking.id,
+        service_id: booking.service_id.toHexString(),
+        organization_id: booking.organization_id.toHexString(),
+        option_id: booking.option_id,
+        slot_id: booking.slot_id,
+        child_type: booking.child_type,
+        service_label: booking.service_label,
+        date: booking.slot_date,
+        time: booking.slot_time,
+        user_id: booking.user_id.toHexString(),
+        person: booking.person,
+        phone: booking.phone,
+        info: booking.info,
+        created_at: booking.created_at.toISOString(),
+    };
+}
 
 /**
  * Booking creation and cancellation. The booking row and the slot's occupancy counter change in one
@@ -29,6 +59,8 @@ export class BookingsService implements OnModuleInit {
         private readonly bookings: BookingsRepository,
         private readonly mail: MailService,
         private readonly masker: ServicesMasker,
+        private readonly pagination: PaginationService,
+        private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
     ) {}
@@ -47,6 +79,25 @@ export class BookingsService implements OnModuleInit {
         this.cascade.register('organization', 'bookings.delete', async (organizationId, ctx) => {
             await this.bookings.deleteByOrganization(organizationId, ctx.session);
         });
+    }
+
+    async createIdempotent(
+        serviceId: string,
+        input: CreateBookingInput,
+        actor: AuthUser,
+        key?: string,
+    ): Promise<{ booking: BookingCreated; replayed: boolean }> {
+        if (!key) return { booking: await this.create(serviceId, input, actor), replayed: false };
+
+        const outcome = await this.idempotency.run(
+            'bookings.create',
+            key,
+            actor.id,
+            { service_id: serviceId, ...input },
+            async () => (await this.create(serviceId, input, actor)) as unknown as Record<string, unknown>,
+        );
+
+        return { booking: outcome.result as unknown as BookingCreated, replayed: outcome.replayed };
     }
 
     async create(serviceId: string, input: CreateBookingInput, actor: AuthUser): Promise<BookingCreated> {
@@ -161,6 +212,86 @@ export class BookingsService implements OnModuleInit {
         });
     }
 
+    list(query: ListBookingsQuery, actor: AuthUser): Promise<PaginatedResult<BookingResource>> {
+        const filter: FilterQuery<Booking> = {};
+
+        if (actor.role !== ROLES.SUPER_ADMIN) {
+            const allowed = actor.organization_ids.map((id) => new Types.ObjectId(id));
+
+            if (query.organization_id && !actor.organization_ids.includes(query.organization_id))
+                throw ApiError.forbidden('FORBIDDEN');
+
+            filter['organization_id'] = query.organization_id
+                ? new Types.ObjectId(query.organization_id)
+                : { $in: allowed };
+        } else if (query.organization_id) {
+            filter['organization_id'] = new Types.ObjectId(query.organization_id);
+        }
+
+        if (query.service_id) filter['service_id'] = new Types.ObjectId(query.service_id);
+
+        if (query.user_id) filter['user_id'] = new Types.ObjectId(query.user_id);
+
+        if (query.option_id) filter['option_id'] = query.option_id;
+
+        if (query.slot_id) filter['slot_id'] = query.slot_id;
+
+        if (query.child_type) filter['child_type'] = query.child_type;
+
+        return this.paginate(filter, query);
+    }
+
+    listOwn(query: ListOwnBookingsQuery, actor: AuthUser): Promise<PaginatedResult<BookingResource>> {
+        return this.paginate({ user_id: new Types.ObjectId(actor.id) }, query);
+    }
+
+    listForService(
+        serviceId: string,
+        query: ListServiceBookingsQuery,
+    ): Promise<PaginatedResult<BookingResource>> {
+        if (!Types.ObjectId.isValid(serviceId)) throw ApiError.notFound('SERVICE_NOT_FOUND');
+
+        const filter: FilterQuery<Booking> = { service_id: new Types.ObjectId(serviceId) };
+
+        if (query.option_id) filter['option_id'] = query.option_id;
+
+        if (query.slot_id) filter['slot_id'] = query.slot_id;
+
+        return this.paginate(filter, query);
+    }
+
+    cancelById(
+        bookingId: string,
+        actor: AuthUser,
+    ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
+        return this.remove(bookingId, actor);
+    }
+
+    private async paginate(
+        filter: FilterQuery<Booking>,
+        query: { page?: number; limit?: number; sort?: string; order?: 'asc' | 'desc' } & {
+            date_from?: string;
+            date_to?: string;
+        },
+    ): Promise<PaginatedResult<BookingResource>> {
+        const pagination = this.pagination.resolve(query, {
+            sortable: BOOKING_SORTABLE,
+            defaultSort: 'created_at',
+        });
+        const dated: FilterQuery<Booking> = { ...filter };
+
+        if (query.date_from || query.date_to) {
+            dated['slot_date'] = {
+                ...(query.date_from ? { $gte: query.date_from } : {}),
+                ...(query.date_to ? { $lte: query.date_to } : {}),
+            };
+        }
+
+        const result = await this.bookings.list(dated, pagination);
+
+        return { ...result, items: result.items.map(toResource) };
+    }
+
     /**
      * The booking's owner or an admin of the service's organization may cancel. The booking row
      * carries its organization, so neither check needs the service document any more.
@@ -170,10 +301,18 @@ export class BookingsService implements OnModuleInit {
         bookingId: string,
         actor: AuthUser,
     ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
+        return this.remove(bookingId, actor, serviceId);
+    }
+
+    private async remove(
+        bookingId: string,
+        actor: AuthUser,
+        serviceId?: string,
+    ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
         return this.tx.run(async (ctx) => {
             const booking = await this.bookings.findByPublicId(bookingId, ctx.session);
 
-            if (!booking || booking.service_id.toHexString() !== serviceId)
+            if (!booking || (serviceId !== undefined && booking.service_id.toHexString() !== serviceId))
                 throw ApiError.notFound('BOOKING_NOT_FOUND');
 
             const ownerId = booking.user_id.toHexString();

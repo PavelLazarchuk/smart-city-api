@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { type FilterQuery, Types } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
@@ -10,6 +10,7 @@ import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { usesCursorMode } from '../../common/pagination/pagination.schema';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { type AnalyticsEventEntity, AnalyticsRepository } from './analytics.repository';
+import { type AnalyticsEvent } from './schemas/analytics-event.schema';
 import { type ListAnalyticsQuery } from './dto/analytics.schemas';
 
 export interface EventFields {
@@ -75,7 +76,7 @@ export class AnalyticsService implements OnModuleInit {
     }
 
     list(query: ListAnalyticsQuery): Promise<PaginatedResult<AnalyticsEventEntity>> {
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<AnalyticsEvent> = {};
 
         if (query.type) filter['type'] = query.type;
 

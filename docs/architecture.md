@@ -54,7 +54,10 @@ the `local-db` Compose profile provides a single-node one.
 Booking capacity is enforced by a conditional update inside the transaction (`booked_count < limit`), not by
 a read-then-write; the loser gets `422 SLOT_FULL`. The booking itself is a document in `bookings`,
 inserted in the same transaction, and a duplicate is refused by a unique index rather than by a prior read
-([data-model.md](data-model.md)).
+([data-model.md](data-model.md)). A client that retries a booking over a flaky network sends
+`Idempotency-Key`: the key is claimed in `idempotency_keys` before the transaction runs, so the retry gets
+the original `201` back (with `Idempotency-Replayed: true`) instead of a `409` that says nothing about
+whether the first attempt landed.
 
 ## Validation and serialization
 
@@ -62,7 +65,11 @@ zod is the single source of truth for both directions:
 requests are parsed by `nestjs-zod`'s pipe, responses by the schema named in `@Serialize(...)`. A response
 that does not match its schema is a `500 SERIALIZATION_ERROR` rather than a leak — this is what keeps
 `password_hash`, `code_hash`, `value.subscribe` and booking details out of responses, and it is covered by
-the sensitive-data e2e suite. The same schemas generate the OpenAPI document, so Swagger cannot drift from
+the sensitive-data e2e suite. Routes that serve two audiences declare both schemas with `@SerializeBy(...)`
+and the narrow one is used for the public audience: a service page for a citizen is serialized by a schema
+that accepts occupancy markers only, so a forgotten mask cannot leak a name or a phone number. In a list a
+row the schema refuses is dropped rather than failing the page, and the count is reported — `meta.dropped`
+in the response, `response_items_dropped_total` in the metrics. The same schemas generate the OpenAPI document, so Swagger cannot drift from
 the implementation.
 
 ## Providers

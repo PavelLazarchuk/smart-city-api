@@ -18,6 +18,7 @@ const migrations: Migration[] = [
     require('../../migrations/20260905000000-initial-indexes.js') as Migration,
     require('../../migrations/20260911000000-bookings-collection.js') as Migration,
     require('../../migrations/20260911100000-images-name-index.js') as Migration,
+    require('../../migrations/20260912000000-idempotency-keys.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -47,6 +48,7 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     rate_limits: 'RateLimit',
     bookings: 'Booking',
     sms_counters: 'SmsCounter',
+    idempotency_keys: 'IdempotencyKey',
 };
 
 describe('persistence (e2e)', () => {

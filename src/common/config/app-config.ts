@@ -1,5 +1,19 @@
 import { type Env, type LoginMethod } from './env.schema';
 
+export interface JwtKeySet {
+    kid: string;
+    secret: string;
+    accepted: Record<string, string>;
+}
+
+function keySet(kid: string, secret: string, previous: { kid: string; secret: string }[]): JwtKeySet {
+    const accepted: Record<string, string> = { [kid]: secret };
+
+    for (const key of previous) accepted[key.kid] = key.secret;
+
+    return { kid, secret, accepted };
+}
+
 /** Typed view over the validated environment. Sections are plain objects, so tests can override values. */
 export class AppConfig {
     readonly env: Env['NODE_ENV'];
@@ -34,13 +48,16 @@ export class AppConfig {
     readonly build: { version: string; sha?: string };
 
     readonly auth: {
-        accessSecret: string;
-        refreshSecret: string;
+        access: JwtKeySet;
+        refresh: JwtKeySet;
+        issuer: string;
+        audience: string;
         accessTtlSeconds: number;
         refreshTtlSeconds: number;
         adminLoginMethod: LoginMethod;
         citizenLoginMethod: LoginMethod;
         passwordMinLength: number;
+        passwordMaxLength: number;
         loginMinLength: number;
         maxFailedAttempts: number;
         lockoutSeconds: number;
@@ -60,6 +77,8 @@ export class AppConfig {
         uploadLimit: number;
         storage: Env['THROTTLE_STORAGE'];
     };
+
+    readonly idempotency: { ttlSeconds: number };
 
     readonly pagination: { defaultLimit: number; maxLimit: number; maxPage: number; includeMaxItems: number };
 
@@ -94,7 +113,7 @@ export class AppConfig {
         };
     };
 
-    readonly upload: { maxBytes: number; allowedMime: string[] };
+    readonly upload: { maxBytes: number; maxPixels: number; maxDimension: number; allowedMime: string[] };
 
     readonly retention: {
         archiveDays: number;
@@ -150,13 +169,16 @@ export class AppConfig {
         this.metrics = { enabled: env.METRICS_ENABLED, token: env.METRICS_TOKEN };
         this.build = { version: env.BUILD_VERSION ?? '1.0.0', sha: env.BUILD_SHA };
         this.auth = {
-            accessSecret: env.JWT_ACCESS_SECRET,
-            refreshSecret: env.JWT_REFRESH_SECRET,
+            access: keySet(env.JWT_ACCESS_KID, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_PREVIOUS_KEYS),
+            refresh: keySet(env.JWT_REFRESH_KID, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_PREVIOUS_KEYS),
+            issuer: env.JWT_ISSUER,
+            audience: env.JWT_AUDIENCE,
             accessTtlSeconds: env.JWT_ACCESS_TTL,
             refreshTtlSeconds: env.JWT_REFRESH_TTL,
             adminLoginMethod: env.AUTH_ADMIN_LOGIN_METHOD,
             citizenLoginMethod: env.AUTH_CITIZEN_LOGIN_METHOD,
             passwordMinLength: env.PASSWORD_MIN_LENGTH,
+            passwordMaxLength: env.PASSWORD_MAX_LENGTH,
             loginMinLength: env.LOGIN_MIN_LENGTH,
             maxFailedAttempts: env.AUTH_MAX_FAILED_ATTEMPTS,
             lockoutSeconds: env.AUTH_LOCKOUT_SECONDS,
@@ -181,6 +203,7 @@ export class AppConfig {
             uploadLimit: env.THROTTLE_UPLOAD_LIMIT,
             storage: env.THROTTLE_STORAGE,
         };
+        this.idempotency = { ttlSeconds: env.IDEMPOTENCY_TTL };
         this.pagination = {
             defaultLimit: env.PAGINATION_DEFAULT_LIMIT,
             maxLimit: env.PAGINATION_MAX_LIMIT,
@@ -220,7 +243,12 @@ export class AppConfig {
                 secretAccessKey: env.S3_SECRET_ACCESS_KEY,
             },
         };
-        this.upload = { maxBytes: env.UPLOAD_MAX_BYTES, allowedMime: env.UPLOAD_ALLOWED_MIME };
+        this.upload = {
+            maxBytes: env.UPLOAD_MAX_BYTES,
+            maxPixels: env.UPLOAD_MAX_PIXELS,
+            maxDimension: env.UPLOAD_MAX_DIMENSION,
+            allowedMime: env.UPLOAD_ALLOWED_MIME,
+        };
         this.retention = {
             archiveDays: env.ARCHIVE_RETENTION_DAYS,
             analyticsDays: env.ANALYTICS_RETENTION_DAYS,

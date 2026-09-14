@@ -28,6 +28,10 @@ export interface ServiceView {
  */
 @Injectable()
 export class ServicesMasker {
+    maySeeDetails(viewer: AuthUser | undefined): boolean {
+        return viewer !== undefined && viewer.role !== ROLES.COMMON_USER;
+    }
+
     canSeeDetails(viewer: AuthUser | undefined, organizationId: string): boolean {
         if (!viewer) return false;
 

@@ -28,7 +28,14 @@ describe('organizations (e2e)', () => {
             const res = await t.http.get(`${t.prefix}/organizations?sort=created_at&order=asc`);
             expect(res.status).toBe(200);
             expect(res.body.data).toHaveLength(30);
-            expect(res.body.meta).toEqual({ page: 1, limit: 30, total: 41, total_pages: 2, has_next: true });
+            expect(res.body.meta).toEqual({
+                page: 1,
+                limit: 30,
+                total: 41,
+                total_pages: 2,
+                has_next: true,
+                dropped: 0,
+            });
             const row = res.body.data.find((item: { id: string }) => item.id === organization.id);
             expect(row.counts).toEqual({ news: 2, infosections: 0, categories: 1, services: 1, images: 0 });
             expect(row.news).toBeUndefined();
@@ -128,8 +135,8 @@ describe('organizations (e2e)', () => {
                     .patch(`${t.prefix}/organizations/${other.id}`)
                     .set('Authorization', bearer)
                     .send({ main_label: 'x' }),
-                403,
-                'FORBIDDEN',
+                404,
+                'ORGANIZATION_NOT_FOUND',
             );
             expectError(
                 await t.http
@@ -318,7 +325,8 @@ describe('organizations (e2e)', () => {
                     .patch(`${t.prefix}/organizations/${organization.id}/news/order`)
                     .set('Authorization', await fx.bearer(foreign))
                     .send({ ids: [n1.id, n2.id] }),
-                403,
+                404,
+                'ORGANIZATION_NOT_FOUND',
             );
         });
     });

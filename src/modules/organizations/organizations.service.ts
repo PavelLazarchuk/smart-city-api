@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
@@ -21,6 +21,7 @@ import {
     type OrganizationListRow,
     OrganizationsRepository,
 } from './organizations.repository';
+import { type Organization } from './schemas/organization.schema';
 
 const ORGANIZATION_SORTABLE = ['created_at', 'main_label', 'main_category'] as const;
 
@@ -52,7 +53,7 @@ export class OrganizationsService {
             sortable: ORGANIZATION_SORTABLE,
             defaultSort: 'created_at',
         });
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<Organization> = {};
 
         if (query.main_category) filter['main_category'] = query.main_category;
 

@@ -79,3 +79,7 @@ previous version cannot serve bookings once it has run. It needs a short window 
 deploy: stop the old replicas, run `migrate:up`, start the new ones. Its `down` rebuilds the embedded
 arrays from the collection, so a rollback in that window is a rollback, not a data loss — but bookings
 created after the switch are only restored if `down` runs before the old version writes again.
+
+[`20260912000000-idempotency-keys.js`](../migrations/20260912000000-idempotency-keys.js) is back to the
+ordinary kind: it only adds the `idempotency_keys` collection with its unique and TTL indexes, plus one
+booking index, so the running version neither notices it nor needs it.

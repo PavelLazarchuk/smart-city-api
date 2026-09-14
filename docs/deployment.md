@@ -74,6 +74,14 @@ cannot hold a known account shut indefinitely by spending one wrong password per
 above `AUTH_LOCKOUT_MAX_SECONDS` buys nothing; below `AUTH_LOCKOUT_SECONDS` the schema refuses it, because
 the counter would then reset while the account is still locked and the escalation could never happen.
 
+## Token claims: a one-time re-login on this release
+
+Verification now demands `iss` and `aud`, and tokens issued by the previous version carry neither, so every
+access and refresh token in flight stops working the moment the new version serves traffic: everyone signs in
+again once. Plan the release accordingly (it is the only such step — later **key** rotations keep sessions,
+see [auth.md](auth.md)). To avoid it entirely, deploy in two steps: first a release that signs with the claims
+but does not require them, then one that requires them, `JWT_REFRESH_TTL` later.
+
 ## Login-method switches
 
 `AUTH_ADMIN_LOGIN_METHOD` and `AUTH_CITIZEN_LOGIN_METHOD` are deployment-time choices. Flipping the citizen
@@ -108,5 +116,6 @@ What is exported, beyond the default process and Node metrics:
 | `db_transactions_total{result}`, `db_transaction_attempts_total` | Retry ratio: attempts over committed                    |
 | `sms_messages_total{provider,purpose,status}`                    | Spend and delivery failures                             |
 | `sms_budget_blocked_total{window}`                               | The budget cap was hit                                  |
+| `response_items_dropped_total{route}`                            | List rows the response schema refused — schema drift    |
 
 Route labels are patterns (`/api/v1/services/:id`), never URLs, so the label set stays bounded.

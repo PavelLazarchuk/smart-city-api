@@ -8,6 +8,7 @@ import { CommonModule } from './common/common.module';
 import { AppConfigModule } from './common/config/config.module';
 import { RequestContextMiddleware } from './common/context/request-context.middleware';
 import { DatabaseModule } from './common/database/database.module';
+import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { OrganizationScopeGuard } from './common/guards/organization-scope.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -20,6 +21,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ArchivesModule } from './modules/archives/archives.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BookingsHttpModule } from './modules/bookings/bookings-http.module';
 import { ThrottleModule } from './modules/auth/throttle.module';
 import { CategoriesHttpModule } from './modules/categories/categories-http.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -41,6 +43,7 @@ import { UsersModule } from './modules/users/users.module';
         MetricsModule,
         DatabaseModule,
         CommonModule,
+        IdempotencyModule,
         JwtModule.register({}),
         ThrottleModule,
         AnalyticsModule,
@@ -52,6 +55,7 @@ import { UsersModule } from './modules/users/users.module';
         CategoriesModule,
         CategoriesHttpModule,
         ServicesModule,
+        BookingsHttpModule,
         NewsModule,
         InfoSectionsModule,
         ImagesModule,

@@ -10,8 +10,8 @@ import { ServicesService } from '../src/modules/services/services.service';
 import { UsersService } from '../src/modules/users/users.service';
 
 const SEED = {
-    superAdmin: { login: 'superadmin', password: 'superadmin-password', name: 'Super Admin' },
-    admin: { login: 'cityadmin', password: 'cityadmin-password', name: 'City Admin' },
+    superAdmin: { login: 'superadmin', password: 'Superadmin-Pass1', name: 'Super Admin' },
+    admin: { login: 'cityadmin', password: 'Cityadmin-Pass1', name: 'City Admin' },
     citizen: { phone: '375290000001', name: 'Citizen One' },
     organization: {
         main_label: 'City Clinic No. 1',

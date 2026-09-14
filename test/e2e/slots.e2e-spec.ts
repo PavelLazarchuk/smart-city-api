@@ -179,12 +179,15 @@ describe('service options and slots (e2e)', () => {
         const citizen = await fx.bearer(await fx.citizen());
         const foreign = await fx.bearer(await fx.admin([(await fx.organization()).id]));
 
-        for (const token of [citizen, foreign]) {
+        for (const [token, status] of [
+            [citizen, 403],
+            [foreign, 404],
+        ] as const) {
             const res = await t.http
                 .post(`${t.prefix}/services/${service.id}/options`)
                 .set('Authorization', token)
                 .send(optionBody());
-            expect(res.status).toBe(403);
+            expect(res.status).toBe(status);
         }
     });
 });

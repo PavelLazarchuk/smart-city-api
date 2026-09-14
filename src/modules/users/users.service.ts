@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
@@ -21,6 +21,7 @@ import {
     type UpdateUserAdminInput,
 } from './dto/user.schemas';
 import { type UserEntity, UsersRepository } from './users.repository';
+import { type User } from './schemas/user.schema';
 
 const USER_SORTABLE = ['created_at', 'name', 'login', 'role'] as const;
 
@@ -92,7 +93,7 @@ export class UsersService implements OnModuleInit {
             sortable: USER_SORTABLE,
             defaultSort: 'created_at',
         });
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<User> = {};
 
         if (query.role) filter['role'] = query.role;
 

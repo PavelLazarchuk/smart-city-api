@@ -24,7 +24,7 @@ The rest of the documentation is indexed in [docs/README.md](docs/README.md).
 cp .env.example .env      # fill in MONGO_URI and the two JWT secrets at minimum
 npm ci
 npm run migrate:up        # creates the indexes
-npm run seed              # optional development data (super-admin: superadmin / superadmin-password)
+npm run seed              # optional development data (super-admin: superadmin / Superadmin-Pass1)
                           # idempotent: re-running it adds neither accounts nor content
 npm run start:dev
 ```
@@ -94,8 +94,9 @@ Notable switches:
 ## API conventions
 
 - Every data field is `snake_case` — JSON, query/path parameters, database fields, JWT claims.
-- Envelope: `{ "data": … }` for single entities and lists, `{ "data": [...], "meta": { page, limit, total, total_pages, has_next } }` for pages,
-  `{ "error": { code, message, details?, request_id } }` for failures.
+- Envelope: `{ "data": … }` for single entities and lists, `{ "data": [...], "meta": { page, limit, total, total_pages, has_next, dropped } }` for pages,
+  `{ "error": { code, message, details?, request_id } }` for failures. `meta.dropped` counts rows the response
+  schema refused, so "end of page" and "row withheld" stay distinguishable.
 - Status codes: 200 read/update, 201 create (with `Location`), 204 delete, 400 validation, 401 unauthenticated,
   403 unauthorised, 404 missing, 409 conflict, 422 business rule, 429 rate limit.
 - Pagination: `page` (default 1, capped by `PAGINATION_MAX_PAGE`), `limit` (default 30, max 100), `sort`, `order`;
@@ -106,6 +107,13 @@ Notable switches:
 - Bookings require a session; slots enforce capacity (`422 SLOT_FULL`); booking details are visible only to the
   organization's admins and super-admins, everyone else sees `{ "status": "reserved" }`. Bookings are stored
   in their own collection, so a service document carries occupancy counters and no personal data.
+- Bookings are also a resource: `GET /bookings` (admins, filtered by organization, service, user, option,
+  slot, `child_type` and `date_from`/`date_to`), `GET /me/bookings`, `GET /services/:id/bookings` and
+  `DELETE /bookings/:id`, which needs no `service_id`.
+- `POST /services/:id/bookings` accepts an `Idempotency-Key` header: a retry replays the original `201`
+  (with `Idempotency-Replayed: true`) instead of answering `409 BOOKING_ALREADY_EXISTS`.
+- `GET /services/:id/availability?from=&to=` is the cacheable, personal-data-free view of free capacity —
+  no need to download the whole service to render a booking form.
 - Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
   `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
   `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.

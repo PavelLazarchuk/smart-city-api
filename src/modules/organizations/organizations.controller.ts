@@ -20,7 +20,7 @@ import { OrganizationScope } from '../../common/decorators/organization-scope.de
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
-import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
+import { Serialize, SerializeBy, SerializePaginated } from '../../common/http/serialize.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationQueryDto } from '../../common/pagination/pagination.dto';
 import { CategoriesService } from '../categories/categories.service';
@@ -31,15 +31,20 @@ import { InfoSectionResponseDto, infoSectionResponseSchema } from '../infosectio
 import { InfoSectionsService } from '../infosections/infosections.service';
 import { NewsResponseDto, newsResponseSchema } from '../news/dto/news.schemas';
 import { NewsService } from '../news/news.service';
-import { ServiceResponseDto, serviceResponseSchema } from '../services/dto/service.schemas';
+import {
+    MaskedServiceResponseDto,
+    maskedServiceResponseSchema,
+    serviceSchemaForViewer,
+} from '../services/dto/service.schemas';
 import { ServicesService } from '../services/services.service';
 import {
     CreateOrganizationDto,
     ListOrganizationsQueryDto,
+    MaskedOrganizationListItemDto,
+    maskedOrganizationListItemSchema,
     OrganizationDetailDto,
     organizationDetailSchema,
-    OrganizationListItemDto,
-    organizationListItemSchema,
+    organizationListSchemaForViewer,
     OrganizationResponseDto,
     organizationResponseSchema,
     ReorderDto,
@@ -62,8 +67,8 @@ export class OrganizationsController {
 
     @Get()
     @Public()
-    @ApiPaginated(OrganizationListItemDto)
-    @SerializePaginated(organizationListItemSchema)
+    @ApiPaginated(MaskedOrganizationListItemDto)
+    @SerializeBy(organizationListSchemaForViewer, maskedOrganizationListItemSchema, 'paginated')
     @TrackEvent(EVENT_TYPES.ORGANIZATIONS_LISTED)
     list(
         @Query() query: ListOrganizationsQueryDto,
@@ -159,8 +164,8 @@ export class OrganizationsController {
 
     @Get(':id/services')
     @Public()
-    @ApiPaginated(ServiceResponseDto)
-    @SerializePaginated(serviceResponseSchema)
+    @ApiPaginated(MaskedServiceResponseDto)
+    @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema, 'paginated')
     async listServices(
         @Param('id') id: string,
         @Query() query: PaginationQueryDto,

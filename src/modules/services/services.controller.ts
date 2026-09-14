@@ -3,6 +3,7 @@ import {
     Controller,
     Delete,
     Get,
+    Headers,
     HttpCode,
     HttpStatus,
     Param,
@@ -21,11 +22,16 @@ import { OrganizationScope } from '../../common/decorators/organization-scope.de
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
+import { ApiError } from '../../common/http/api-error';
 import { parseBody } from '../../common/http/parse-body';
-import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
+import { Serialize, SerializeBy } from '../../common/http/serialize.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { BookingsService } from './bookings.service';
 import {
+    AvailabilityQueryDto,
+    type AvailabilityResponse,
+    AvailabilityResponseDto,
+    availabilityResponseSchema,
     type BookingCreated,
     BookingCreatedResponseDto,
     bookingCreatedResponseSchema,
@@ -34,7 +40,10 @@ import {
     CreateServiceDto,
     createSlotSchema,
     ListServicesQueryDto,
+    MaskedServiceResponseDto,
+    maskedServiceResponseSchema,
     RecurrenceDto,
+    serviceSchemaForViewer,
     ServiceResponseDto,
     serviceResponseSchema,
     UpdateOptionDto,
@@ -43,6 +52,19 @@ import {
 } from './dto/service.schemas';
 import { type ServiceEntity } from './services.repository';
 import { ServicesService } from './services.service';
+
+function parseIdempotencyKey(raw: string | undefined): string | undefined {
+    const key = raw?.trim();
+
+    if (!key) return undefined;
+
+    if (key.length > 128)
+        throw ApiError.badRequest('VALIDATION_ERROR', [
+            { path: 'Idempotency-Key', message: 'Must be at most 128 characters' },
+        ]);
+
+    return key;
+}
 
 @ApiTags('services')
 @Controller('services')
@@ -54,8 +76,8 @@ export class ServicesController {
 
     @Get()
     @Public()
-    @ApiPaginated(ServiceResponseDto)
-    @SerializePaginated(serviceResponseSchema)
+    @ApiPaginated(MaskedServiceResponseDto)
+    @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema, 'paginated')
     list(
         @Query() query: ListServicesQueryDto,
         @CurrentUser() user?: AuthUser,
@@ -65,10 +87,24 @@ export class ServicesController {
 
     @Get(':id')
     @Public()
-    @ApiData(ServiceResponseDto)
-    @Serialize(serviceResponseSchema)
+    @ApiData(MaskedServiceResponseDto)
+    @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema)
     getOne(@Param('id') id: string, @CurrentUser() user?: AuthUser): Promise<ServiceEntity> {
         return this.services.getMasked(id, user);
+    }
+
+    @Get(':id/availability')
+    @Public()
+    @ApiData(AvailabilityResponseDto)
+    @Serialize(availabilityResponseSchema)
+    async availability(
+        @Param('id') id: string,
+        @Query() query: AvailabilityQueryDto,
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<AvailabilityResponse> {
+        res.setHeader('Cache-Control', 'public, max-age=60');
+
+        return this.services.availability(id, query);
     }
 
     @Post()
@@ -237,15 +273,24 @@ export class ServicesController {
             time: booking.time,
         };
     })
-    createBooking(
+    async createBooking(
         @Param('id') id: string,
         @Body() body: CreateBookingDto,
         @CurrentUser() user: AuthUser,
         @Res({ passthrough: true }) res: Response,
+        @Headers('idempotency-key') idempotencyKey?: string,
     ): Promise<BookingCreated> {
-        res.setHeader('Location', `/users/${user.id}/bookings`);
+        const { booking, replayed } = await this.bookings.createIdempotent(
+            id,
+            body,
+            user,
+            parseIdempotencyKey(idempotencyKey),
+        );
+        res.setHeader('Location', `/me/bookings`);
 
-        return this.bookings.create(id, body, user);
+        if (replayed) res.setHeader('Idempotency-Replayed', 'true');
+
+        return booking;
     }
 
     @Delete(':id/bookings/:booking_id')

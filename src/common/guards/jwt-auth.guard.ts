@@ -5,6 +5,7 @@ import { type Request } from 'express';
 import { z } from 'zod';
 
 import { AppConfig } from '../config/app-config';
+import { secretFor } from '../config/jwt-keys';
 import { RequestContext } from '../context/request-context';
 import { type RequestWithUser } from '../decorators/current-user.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -82,8 +83,14 @@ export class JwtAuthGuard implements CanActivate {
 
     private async verify(token: string, lenient: boolean): Promise<AccessClaims | undefined> {
         try {
+            const secret = secretFor(this.jwt, token, this.config.auth.access);
+
+            if (!secret) throw ApiError.unauthorized('TOKEN_INVALID');
+
             const payload: unknown = await this.jwt.verifyAsync(token, {
-                secret: this.config.auth.accessSecret,
+                secret,
+                issuer: this.config.auth.issuer,
+                audience: this.config.auth.audience,
             });
             const parsed = accessClaimsSchema.safeParse(payload);
 

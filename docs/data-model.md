@@ -32,6 +32,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `job_locks`          | Scheduler lease and last run                     | one document per job name; lease plus `last_status`, `last_error`, `last_duration_ms` ([jobs.md](jobs.md))                                  |
 | `rate_limits`        | Throttler counters when `THROTTLE_STORAGE=mongo` | `key`, `count`, `expires_at`                                                                                                                |
 | `sms_counters`       | Global SMS budget windows                        | `_id` = `sms:<hour\|day>:<bucket>`, `count`, `expires_at`                                                                                   |
+| `idempotency_keys`   | Remembered writes per `Idempotency-Key`          | `scope`, `key`, `user_id`, `request_hash`, `status`, `response`, `expires_at`                                                               |
 
 ## The service tree and its bookings
 
@@ -64,6 +65,9 @@ copies. Four things to know about the shape that replaced it:
   unique; a second identical booking fails the insert and surfaces as `409 BOOKING_ALREADY_EXISTS`.
 - **Never rewrite `options` wholesale.** Jobs and the sub-resource routes use targeted `$push` / `$pull` /
   `$inc` on the exact path, so a booking made concurrently with a job cannot be clobbered.
+- **Bookings are also a resource of their own.** `GET /bookings`, `GET /me/bookings`,
+  `GET /services/:id/bookings` and `DELETE /bookings/:id` read and write the collection directly, so a
+  client no longer downloads a whole service document to see or cancel one booking.
 - **The service document holds no personal data.** Bookings are read from their own collection and grafted
   into the response only for the organization's admins and super-admins; everyone else gets
   `{ "status": "reserved" }` markers rebuilt from `booked_count`, and a public route issues no booking query
@@ -87,14 +91,17 @@ Shape of the set:
   `position` and are listed newest first, by `{ organization_id: 1, created_at: -1 }`; `images` also has
   `{ name: 1 }`, which is what makes the `storage_gc` batch lookup an index hit rather than a scan.
 - **Bookings** — `{ user_id, created_at }`, `{ service_id, created_at }` and
-  `{ organization_id, created_at }` cover the three cascade paths and "my bookings"; `id` is unique, and
+  `{ organization_id, created_at }` cover the three cascade paths and "my bookings";
+  `{ organization_id, slot_date }` serves a desk asking for one day; `id` is unique, and
   `{ service_id, option_id, slot_id, slot_time, user_id }` is the uniqueness guard described above.
+- **Idempotency** — `idempotency_keys` is unique on `{ scope, user_id, key }`: claiming that key _is_ the
+  atomic operation that makes a retried booking replay instead of running twice.
 - **Uniqueness** — `users.login` and `users.phone` are unique with a partial filter on
   `{ $type: 'string' }`, so any number of accounts may have no login or no phone.
 - **Partial** — `news.is_main` and `news.is_offer` are indexed only for the `true` documents.
 - **Text** — `organizations.main_label` for search.
 - **TTL** — `sessions.expires_at`, `verification_codes.expires_at`, `rate_limits.expires_at` (all
-  `expireAfterSeconds: 0`), plus `sms_counters.expires_at`; `archives.created_at` at
+  `expireAfterSeconds: 0`), plus `sms_counters.expires_at` and `idempotency_keys.expires_at`; `archives.created_at` at
   `ARCHIVE_RETENTION_DAYS`; `analytics_events.created_at` at `ANALYTICS_RETENTION_DAYS` and
   `sms.created_at` at `SMS_RETENTION_DAYS`, because those rows carry citizen phone numbers and names.
   Deleting an account also strips `user_id`, `user_name` and `user_phone` from its analytics events, so the

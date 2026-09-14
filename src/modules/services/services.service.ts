@@ -1,7 +1,8 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { type ClientSession, Types } from 'mongoose';
+import { type ClientSession, type FilterQuery, type ProjectionType, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
+import { AppConfig } from '../../common/config/app-config';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
@@ -13,6 +14,8 @@ import { BookingsRepository } from '../bookings/bookings.repository';
 import { CategoriesService } from '../categories/categories.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
+    type AvailabilityQuery,
+    type AvailabilityResponse,
     type CreateServiceInput,
     type ListServicesQuery,
     type RecurrenceInput,
@@ -22,11 +25,18 @@ import {
     type UpdateServiceInput,
     type UpdateSlotInput,
 } from './dto/service.schemas';
-import { type RecurrentDate, type Slot, type TimeEntry } from './schemas/service.schema';
+import {
+    BOOKABLE_SLOT_TYPES,
+    type RecurrentDate,
+    type Service,
+    type Slot,
+    type TimeEntry,
+} from './schemas/service.schema';
 import { ServicesMasker } from './services.masker';
 import { type ServiceEntity, ServicesRepository } from './services.repository';
 import {
     attachBookings,
+    formatDateOnly,
     mergeBookings,
     optionFromInput,
     type RecurrentSlotPlan,
@@ -43,6 +53,7 @@ export class ServicesService implements OnModuleInit {
         private readonly organizations: OrganizationsService,
         private readonly categories: CategoriesService,
         private readonly masker: ServicesMasker,
+        private readonly config: AppConfig,
         private readonly pagination: PaginationService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
@@ -74,7 +85,7 @@ export class ServicesService implements OnModuleInit {
             defaultSort: scoped ? 'position' : 'created_at',
             defaultOrder: scoped ? 'asc' : 'desc',
         });
-        const filter: Record<string, unknown> = {};
+        const filter: FilterQuery<Service> = {};
 
         if (query.organization_id) filter['organization_id'] = new Types.ObjectId(query.organization_id);
 
@@ -82,13 +93,13 @@ export class ServicesService implements OnModuleInit {
 
         if (query.enabled !== undefined) filter['enabled'] = query.enabled;
 
-        const result = await this.services.paginate(filter, pagination);
+        const result = await this.services.paginate(filter, pagination, this.projectionFor(viewer));
 
         return { ...result, items: await this.present(result.items, viewer) };
     }
 
-    async getById(id: string): Promise<ServiceEntity> {
-        const service = await this.services.findById(id);
+    async getById(id: string, projection?: ProjectionType<Service>): Promise<ServiceEntity> {
+        const service = await this.services.findById(id, undefined, projection);
 
         if (!service) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
@@ -96,11 +107,72 @@ export class ServicesService implements OnModuleInit {
     }
 
     async getMasked(id: string, viewer?: AuthUser): Promise<ServiceEntity> {
-        const [service] = await this.present([await this.getById(id)], viewer);
+        const [service] = await this.present([await this.getById(id, this.projectionFor(viewer))], viewer);
 
         if (!service) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
         return service;
+    }
+
+    private projectionFor(viewer?: AuthUser): ProjectionType<Service> | undefined {
+        return this.masker.maySeeDetails(viewer) ? undefined : { 'value.subscribe': 0 };
+    }
+
+    async availability(id: string, query: AvailabilityQuery): Promise<AvailabilityResponse> {
+        const service = await this.getById(id, { 'value.subscribe': 0 });
+        const from = query.from ?? formatDateOnly(new Date());
+        const horizon = new Date();
+        horizon.setDate(horizon.getDate() + this.config.retention.recurrentHorizonDays);
+        const to = query.to ?? formatDateOnly(horizon);
+        const free = (limit: number | null | undefined, booked: number): number | null =>
+            limit === null || limit === undefined ? null : Math.max(0, limit - booked);
+        const options = service.options
+            .filter((option) => option.enabled)
+            .map((option) => ({
+                id: option.id,
+                label: option.label,
+                service_type: option.service_type,
+                enabled: option.enabled,
+                slots: option.slots
+                    .filter((slot) => BOOKABLE_SLOT_TYPES.includes(slot.child_type))
+                    .filter((slot) => {
+                        const date = slot.value.date;
+
+                        return typeof date !== 'string' || (date >= from && date <= to);
+                    })
+                    .map((slot) => {
+                        const booked = slot.value.booked_count ?? 0;
+
+                        return {
+                            id: slot.id,
+                            label: slot.label,
+                            child_type: slot.child_type,
+                            date: slot.value.date ?? null,
+                            limit: slot.value.limit ?? null,
+                            booked_count: booked,
+                            available: free(slot.value.limit, booked),
+                            ...(slot.value.time
+                                ? {
+                                      time: slot.value.time.map((entry) => ({
+                                          time: entry.time,
+                                          limit: entry.limit,
+                                          booked_count: entry.booked_count,
+                                          available: free(entry.limit, entry.booked_count),
+                                      })),
+                                  }
+                                : {}),
+                        };
+                    }),
+            }))
+            .filter((option) => option.slots.length > 0);
+
+        return {
+            service_id: service._id.toHexString(),
+            organization_id: service.organization_id.toHexString(),
+            from,
+            to,
+            options,
+        };
     }
 
     async create(input: CreateServiceInput, viewer?: AuthUser): Promise<ServiceEntity> {

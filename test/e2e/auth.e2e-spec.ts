@@ -90,15 +90,15 @@ describe('auth (e2e)', () => {
         });
 
         it('refuses password login for citizens while the citizen method is sms', async () => {
-            const citizen = await fx.citizen({ password: 'citizen-password' });
+            const citizen = await fx.citizen({ password: 'Citizen-Pass1' });
             const res = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ phone: citizen.phone, password: 'citizen-password' });
+                .send({ phone: citizen.phone, password: 'Citizen-Pass1' });
             expectError(res, 401, 'INVALID_CREDENTIALS');
         });
 
         it('does not reveal whether an account exists when its method is disabled', async () => {
-            const citizen = await fx.citizen({ password: 'citizen-password' });
+            const citizen = await fx.citizen({ password: 'Citizen-Pass1' });
             const known = await t.http
                 .post(`${t.prefix}/auth/login`)
                 .send({ phone: citizen.phone, password: 'wrong-password' });
@@ -111,10 +111,10 @@ describe('auth (e2e)', () => {
 
         it('allows password login for citizens when the citizen method is password', async () => {
             t.app.get(AppConfig).auth.citizenLoginMethod = 'password';
-            const citizen = await fx.citizen({ password: 'citizen-password' });
+            const citizen = await fx.citizen({ password: 'Citizen-Pass1' });
             const res = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ phone: citizen.phone, password: 'citizen-password' });
+                .send({ phone: citizen.phone, password: 'Citizen-Pass1' });
             expect(res.status).toBe(200);
             expect(res.body.data.user.role).toBe('common-user');
         });
@@ -124,7 +124,7 @@ describe('auth (e2e)', () => {
         it('is disabled while the citizen method is sms', async () => {
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'citizen-password', name: 'New' });
+                .send({ phone: '375291112233', password: 'Citizen-Pass1', name: 'New' });
             expectError(res, 403, 'LOGIN_METHOD_DISABLED');
         });
 
@@ -132,12 +132,12 @@ describe('auth (e2e)', () => {
             t.app.get(AppConfig).auth.citizenLoginMethod = 'password';
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'citizen-password', name: 'New' });
+                .send({ phone: '375291112233', password: 'Citizen-Pass1', name: 'New' });
             expect(res.status).toBe(201);
             expect(res.body.data.user.phone).toBe('375291112233');
             const dup = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'citizen-password', name: 'New' });
+                .send({ phone: '375291112233', password: 'Citizen-Pass1', name: 'New' });
             expectError(dup, 409, 'PHONE_TAKEN');
         });
 
@@ -316,19 +316,19 @@ describe('auth (e2e)', () => {
             const bearer = await fx.bearer(admin);
             const wrong = await t.http.patch(`${t.prefix}/auth/password`).set('Authorization', bearer).send({
                 current_password: 'wrong-password',
-                new_password: 'new-password-1',
-                new_password_confirmation: 'new-password-1',
+                new_password: 'New-Passw0rd1',
+                new_password_confirmation: 'New-Passw0rd1',
             });
             expectError(wrong, 401, 'INVALID_CREDENTIALS');
             const ok = await t.http.patch(`${t.prefix}/auth/password`).set('Authorization', bearer).send({
                 current_password: admin.password,
-                new_password: 'new-password-1',
-                new_password_confirmation: 'new-password-1',
+                new_password: 'New-Passw0rd1',
+                new_password_confirmation: 'New-Passw0rd1',
             });
             expect(ok.status).toBe(204);
             const login = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ login: admin.login, password: 'new-password-1' });
+                .send({ login: admin.login, password: 'New-Passw0rd1' });
             expect(login.status).toBe(200);
         });
 
@@ -339,8 +339,8 @@ describe('auth (e2e)', () => {
                 .set('Authorization', await fx.bearer(admin))
                 .send({
                     current_password: admin.password,
-                    new_password: 'new-password-1',
-                    new_password_confirmation: 'new-password-2',
+                    new_password: 'New-Passw0rd1',
+                    new_password_confirmation: 'New-Passw0rd2',
                 });
             expectError(res, 400, 'VALIDATION_ERROR');
         });
@@ -359,8 +359,8 @@ describe('auth (e2e)', () => {
                 .set('Authorization', `Bearer ${mine.access}`)
                 .send({
                     current_password: admin.password,
-                    new_password: 'new-password-2',
-                    new_password_confirmation: 'new-password-2',
+                    new_password: 'New-Passw0rd2',
+                    new_password_confirmation: 'New-Passw0rd2',
                 });
             expect(changed.status).toBe(204);
 

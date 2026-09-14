@@ -67,3 +67,4 @@ BookingSchema.index(
 BookingSchema.index({ user_id: 1, created_at: -1 });
 BookingSchema.index({ service_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, created_at: -1 });
+BookingSchema.index({ organization_id: 1, slot_date: 1 });

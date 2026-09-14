@@ -38,7 +38,14 @@ describe('users (e2e)', () => {
                 .set('Authorization', await fx.bearer(superAdmin));
             expect(res.status).toBe(200);
             expect(res.body.data).toHaveLength(30);
-            expect(res.body.meta).toEqual({ page: 1, limit: 30, total: 38, total_pages: 2, has_next: true });
+            expect(res.body.meta).toEqual({
+                page: 1,
+                limit: 30,
+                total: 38,
+                total_pages: 2,
+                has_next: true,
+                dropped: 0,
+            });
             expectNoSensitiveKeys(res.body);
 
             const filtered = await t.http
@@ -59,7 +66,7 @@ describe('users (e2e)', () => {
                 .set('Authorization', bearer)
                 .send({
                     login: 'newadmin',
-                    password: 'strong-password',
+                    password: 'Strong-Passw0rd',
                     role: 'common-admin',
                     organization_ids: [organization.id],
                 });
@@ -71,7 +78,7 @@ describe('users (e2e)', () => {
             const dup = await t.http
                 .post(`${t.prefix}/users`)
                 .set('Authorization', bearer)
-                .send({ login: 'newadmin', password: 'strong-password', role: 'common-admin' });
+                .send({ login: 'newadmin', password: 'Strong-Passw0rd', role: 'common-admin' });
             expectError(dup, 409, 'LOGIN_TAKEN');
 
             const noIdentifier = await t.http
@@ -103,7 +110,7 @@ describe('users (e2e)', () => {
                 .set('Authorization', bearer)
                 .send({
                     login: 'another',
-                    password: 'strong-password',
+                    password: 'Strong-Passw0rd',
                     role: 'common-admin',
                     organization_ids: ['64b000000000000000000000'],
                 });
@@ -115,7 +122,7 @@ describe('users (e2e)', () => {
             const res = await t.http
                 .post(`${t.prefix}/users`)
                 .set('Authorization', await fx.bearer(admin))
-                .send({ login: 'newadmin', password: 'strong-password', role: 'common-admin' });
+                .send({ login: 'newadmin', password: 'Strong-Passw0rd', role: 'common-admin' });
             expectError(res, 403, 'FORBIDDEN');
         });
     });
@@ -179,7 +186,7 @@ describe('users (e2e)', () => {
             const byAdmin = await t.http
                 .patch(`${t.prefix}/users/${citizen.id}`)
                 .set('Authorization', await fx.bearer(superAdmin))
-                .send({ role: 'common-admin', login: 'promoted', password: 'strong-password', phone: null });
+                .send({ role: 'common-admin', login: 'promoted', password: 'Strong-Passw0rd', phone: null });
             expect(byAdmin.status).toBe(200);
             expect(byAdmin.body.data.role).toBe('common-admin');
             expect(byAdmin.body.data.login).toBe('promoted');
@@ -254,7 +261,7 @@ describe('users (e2e)', () => {
             const changed = await t.http
                 .patch(`${t.prefix}/users/${target.id}`)
                 .set('Authorization', await fx.bearer(superAdmin))
-                .send({ name: 'Renamed', password: 'brand-new-password' });
+                .send({ name: 'Renamed', password: 'Brand-New-Pass1' });
             expect(changed.status).toBe(200);
             expectError(
                 await t.http.get(`${t.prefix}/auth/me`).set('Authorization', `Bearer ${targetToken.access}`),

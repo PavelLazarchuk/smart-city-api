@@ -29,6 +29,34 @@ const optionalString = z
     .optional()
     .transform((value) => (value && value.length > 0 ? value : undefined));
 
+const keyListSchema = z
+    .string()
+    .default('')
+    .transform((value, ctx) => {
+        const keys: { kid: string; secret: string }[] = [];
+
+        for (const entry of value.split(',').map((item) => item.trim())) {
+            if (!entry) continue;
+
+            const separator = entry.indexOf(':');
+            const kid = separator > 0 ? entry.slice(0, separator).trim() : '';
+            const secret = separator > 0 ? entry.slice(separator + 1).trim() : '';
+
+            if (!kid || secret.length < 32) {
+                ctx.addIssue({
+                    code: 'custom',
+                    message: 'Must be a comma separated list of kid:secret, each secret 32+ characters',
+                });
+
+                return z.NEVER;
+            }
+
+            keys.push({ kid, secret });
+        }
+
+        return keys;
+    });
+
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 export const LOGIN_METHODS = ['password', 'sms'] as const;
 
@@ -63,6 +91,12 @@ export const envSchema = z
 
         JWT_ACCESS_SECRET: z.string().min(32),
         JWT_REFRESH_SECRET: z.string().min(32),
+        JWT_ACCESS_KID: z.string().min(1).default('access-1'),
+        JWT_REFRESH_KID: z.string().min(1).default('refresh-1'),
+        JWT_ACCESS_PREVIOUS_KEYS: keyListSchema,
+        JWT_REFRESH_PREVIOUS_KEYS: keyListSchema,
+        JWT_ISSUER: z.string().min(1).default('smart-city-api'),
+        JWT_AUDIENCE: z.string().min(1).default('smart-city-clients'),
         JWT_ACCESS_TTL: durationSchema.default(5 * 60),
         JWT_REFRESH_TTL: durationSchema.default(7 * 24 * 3600),
         AUTH_ADMIN_LOGIN_METHOD: z.enum(LOGIN_METHODS).default('password'),
@@ -71,6 +105,7 @@ export const envSchema = z
         ARGON2_TIME_COST: positiveInt(2),
         ARGON2_PARALLELISM: positiveInt(1),
         PASSWORD_MIN_LENGTH: positiveInt(8),
+        PASSWORD_MAX_LENGTH: positiveInt(20),
         LOGIN_MIN_LENGTH: positiveInt(5),
         AUTH_MAX_FAILED_ATTEMPTS: positiveInt(5),
         AUTH_LOCKOUT_SECONDS: positiveInt(300),
@@ -91,6 +126,8 @@ export const envSchema = z
         THROTTLE_GLOBAL_LIMIT: positiveInt(200),
         THROTTLE_UPLOAD_LIMIT: positiveInt(20),
         THROTTLE_STORAGE: z.enum(['mongo', 'memory']).default('mongo'),
+
+        IDEMPOTENCY_TTL: durationSchema.default(24 * 3600),
 
         PAGINATION_DEFAULT_LIMIT: positiveInt(30),
         PAGINATION_MAX_LIMIT: positiveInt(100),
@@ -124,6 +161,8 @@ export const envSchema = z
         S3_ACCESS_KEY_ID: optionalString,
         S3_SECRET_ACCESS_KEY: optionalString,
         UPLOAD_MAX_BYTES: positiveInt(10 * 1024 * 1024),
+        UPLOAD_MAX_PIXELS: positiveInt(40_000_000),
+        UPLOAD_MAX_DIMENSION: positiveInt(10_000),
         UPLOAD_ALLOWED_MIME: z
             .string()
             .default('image/jpeg,image/png')
@@ -157,6 +196,32 @@ export const envSchema = z
         REPORT_RECIPIENTS: csv,
     })
     .superRefine((env, ctx) => {
+        if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['JWT_REFRESH_SECRET'],
+                message: 'JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET',
+            });
+        }
+
+        for (const kind of ['ACCESS', 'REFRESH'] as const) {
+            const active = { kid: env[`JWT_${kind}_KID`], secret: env[`JWT_${kind}_SECRET`] };
+            const previous = env[`JWT_${kind}_PREVIOUS_KEYS`];
+            const kids = new Set([active.kid]);
+
+            for (const key of previous) {
+                if (kids.has(key.kid)) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        path: [`JWT_${kind}_PREVIOUS_KEYS`],
+                        message: `Duplicate key id "${key.kid}"`,
+                    });
+                }
+
+                kids.add(key.kid);
+            }
+        }
+
         if (env.SMS_PROVIDER === 'smpp') {
             for (const key of ['SMPP_URL', 'SMPP_SYSTEM_ID', 'SMPP_PASSWORD'] as const) {
                 if (!env[key])
@@ -185,6 +250,14 @@ export const envSchema = z
                         message: `${key} is required when STORAGE_PROVIDER=s3`,
                     });
             }
+        }
+
+        if (env.PASSWORD_MIN_LENGTH > env.PASSWORD_MAX_LENGTH) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['PASSWORD_MIN_LENGTH'],
+                message: 'PASSWORD_MIN_LENGTH must not exceed PASSWORD_MAX_LENGTH',
+            });
         }
 
         if (env.PAGINATION_DEFAULT_LIMIT > env.PAGINATION_MAX_LIMIT) {

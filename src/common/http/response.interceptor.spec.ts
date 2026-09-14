@@ -5,16 +5,26 @@ import { ZodSerializationException } from 'nestjs-zod';
 import { firstValueFrom, of } from 'rxjs';
 import { z } from 'zod';
 
+import { type MetricsService } from '../metrics/metrics.service';
 import { ResponseInterceptor } from './response.interceptor';
 import { type SerializeOptions } from './serialize.decorator';
 
 const logged = jest.fn();
+const counted = jest.fn();
 
-function run(options: SerializeOptions | undefined, payload: unknown): Promise<unknown> {
+function run(
+    options: SerializeOptions | undefined,
+    payload: unknown,
+    request: Record<string, unknown> = { route: { path: '/things' } },
+): Promise<unknown> {
     const reflector = { get: jest.fn().mockReturnValue(options) } as unknown as Reflector;
     const logger = { setContext: jest.fn(), error: logged } as unknown as PinoLogger;
-    const interceptor = new ResponseInterceptor(reflector, logger);
-    const context = { getHandler: () => ({}) } as unknown as ExecutionContext;
+    const metrics = { countDroppedItems: counted } as unknown as MetricsService;
+    const interceptor = new ResponseInterceptor(reflector, logger, metrics);
+    const context = {
+        getHandler: () => ({}),
+        switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
     const next: CallHandler = { handle: () => of(payload) };
 
     return firstValueFrom(interceptor.intercept(context, next));
@@ -39,7 +49,7 @@ describe('ResponseInterceptor', () => {
             ),
         ).resolves.toEqual({
             data: [{ id: '1', name: 'a' }],
-            meta: { page: 1, limit: 30, total: 1, total_pages: 1, has_next: false },
+            meta: { page: 1, limit: 30, total: 1, total_pages: 1, has_next: false, dropped: 0 },
         });
     });
 
@@ -50,8 +60,9 @@ describe('ResponseInterceptor', () => {
         );
     });
 
-    it('drops and logs a list row the schema rejects instead of failing the whole page', async () => {
+    it('drops a list row the schema rejects, and says so in meta, the log and a metric', async () => {
         logged.mockClear();
+        counted.mockClear();
         await expect(
             run({ schema, kind: 'list' }, [{ id: '1', name: 'a' }, { id: 2 }, { id: '3', name: 'c' }]),
         ).resolves.toEqual({
@@ -59,7 +70,19 @@ describe('ResponseInterceptor', () => {
                 { id: '1', name: 'a' },
                 { id: '3', name: 'c' },
             ],
+            meta: { dropped: 1 },
         });
         expect(logged).toHaveBeenCalledTimes(1);
+        expect(counted).toHaveBeenCalledWith('/things', 1);
+    });
+
+    it('picks the schema from the request when the handler declares one', async () => {
+        const narrow = z.object({ id: z.string() });
+        await expect(
+            run(
+                { schema: narrow, kind: 'single', schemaFor: () => schema },
+                { id: '1', name: 'a', extra: true },
+            ),
+        ).resolves.toEqual({ data: { id: '1', name: 'a' } });
     });
 });

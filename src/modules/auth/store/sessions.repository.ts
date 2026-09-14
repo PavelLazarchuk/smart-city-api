@@ -56,6 +56,35 @@ export class SessionsRepository extends BaseRepository<Session> {
             .exec();
     }
 
+    findActiveForUser(userId: string): Promise<SessionEntity[]> {
+        return this.findMany(
+            {
+                user_id: new Types.ObjectId(userId),
+                revoked_at: { $exists: false },
+                replaced_by: { $exists: false },
+                expires_at: { $gt: new Date() },
+            },
+            { created_at: -1 },
+        );
+    }
+
+    async revokeOwned(userId: string, sid: string): Promise<boolean> {
+        if (!Types.ObjectId.isValid(sid)) return false;
+
+        const result = await this.model
+            .updateOne(
+                {
+                    _id: new Types.ObjectId(sid),
+                    user_id: new Types.ObjectId(userId),
+                    revoked_at: { $exists: false },
+                },
+                { $set: { revoked_at: new Date() } },
+            )
+            .exec();
+
+        return result.matchedCount === 1;
+    }
+
     async markReplaced(
         id: Types.ObjectId,
         replacedBy: Types.ObjectId,

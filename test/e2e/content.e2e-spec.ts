@@ -37,12 +37,14 @@ describe('content resources (e2e)', () => {
     const resources = [
         {
             name: 'categories',
+            not_found: 'CATEGORY_NOT_FOUND',
             body: () => ({ organization_id: organization.id, label: 'Category', enabled: true }),
             patch: { label: 'Renamed' },
             create: () => fx.category(organization.id),
         },
         {
             name: 'services',
+            not_found: 'SERVICE_NOT_FOUND',
             body: () => ({
                 organization_id: organization.id,
                 label: 'Service',
@@ -53,6 +55,7 @@ describe('content resources (e2e)', () => {
         },
         {
             name: 'news',
+            not_found: 'NEWS_NOT_FOUND',
             body: () => ({
                 organization_id: organization.id,
                 label: 'News',
@@ -64,6 +67,7 @@ describe('content resources (e2e)', () => {
         },
         {
             name: 'infosections',
+            not_found: 'INFOSECTION_NOT_FOUND',
             body: () => ({
                 organization_id: organization.id,
                 label: 'Address',
@@ -113,8 +117,8 @@ describe('content resources (e2e)', () => {
                     .patch(`${url}/${id}`)
                     .set('Authorization', bearers['foreign']!)
                     .send(resource.patch),
-                403,
-                'FORBIDDEN',
+                404,
+                resource.not_found,
             );
             expectError(
                 await t.http
@@ -134,8 +138,8 @@ describe('content resources (e2e)', () => {
 
             expectError(
                 await t.http.delete(`${url}/${id}`).set('Authorization', bearers['foreign']!),
-                403,
-                'FORBIDDEN',
+                404,
+                resource.not_found,
             );
             expect((await t.http.delete(`${url}/${id}`).set('Authorization', bearers['admin']!)).status).toBe(
                 204,
@@ -206,7 +210,8 @@ describe('content resources (e2e)', () => {
                     .patch(`${t.prefix}/categories/${category.id}/services/order`)
                     .set('Authorization', bearers['foreign']!)
                     .send({ ids: [s1.id, s2.id] }),
-                403,
+                404,
+                'CATEGORY_NOT_FOUND',
             );
 
             const moved = await t.http

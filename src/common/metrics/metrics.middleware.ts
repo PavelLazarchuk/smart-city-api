@@ -2,6 +2,7 @@ import { Injectable, type NestMiddleware } from '@nestjs/common';
 import { type NextFunction, type Request, type Response } from 'express';
 
 import { MetricsService } from './metrics.service';
+import { routeOf } from './route-of';
 
 /**
  * Middleware rather than an interceptor: a request rejected by a guard (401, 403, 429) never reaches
@@ -19,16 +20,4 @@ export class MetricsMiddleware implements NestMiddleware {
         });
         next();
     }
-}
-
-/** The route pattern, never the URL: `/services/:id` keeps the label set bounded. */
-function routeOf(request: Request): string {
-    const route = (request as { route?: { path?: unknown } }).route;
-    const path = route?.path;
-
-    if (typeof path !== 'string') return 'unmatched';
-
-    const base = typeof request.baseUrl === 'string' ? request.baseUrl : '';
-
-    return `${base}${path === '/' ? '' : path}` || '/';
 }

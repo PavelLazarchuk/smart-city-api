@@ -1,5 +1,6 @@
+import { type Request } from 'express';
 import { createZodDto } from 'nestjs-zod';
-import { z } from 'zod';
+import { z, type ZodType } from 'zod';
 
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
@@ -13,7 +14,11 @@ import { categoryResponseSchema } from '../../categories/dto/category.schemas';
 import { imageResponseSchema } from '../../images/dto/image.schemas';
 import { infoSectionResponseSchema } from '../../infosections/dto/infosection.schemas';
 import { newsResponseSchema } from '../../news/dto/news.schemas';
-import { maskedServiceResponseSchema, serviceResponseSchema } from '../../services/dto/service.schemas';
+import {
+    maskedServiceResponseSchema,
+    serviceResponseSchema,
+    viewerSeesBookings,
+} from '../../services/dto/service.schemas';
 
 export const ORGANIZATION_INCLUDES = ['news', 'infosections', 'categories', 'services', 'images'] as const;
 export type OrganizationInclude = (typeof ORGANIZATION_INCLUDES)[number];
@@ -45,6 +50,14 @@ export const organizationListItemSchema = organizationBaseResponseSchema.extend(
     images: z.array(imageResponseSchema).optional(),
 });
 export class OrganizationListItemDto extends createZodDto(organizationListItemSchema) {}
+
+export const maskedOrganizationListItemSchema = organizationListItemSchema.extend({
+    services: z.array(maskedServiceResponseSchema).optional(),
+});
+export class MaskedOrganizationListItemDto extends createZodDto(maskedOrganizationListItemSchema) {}
+
+export const organizationListSchemaForViewer = (request: Request): ZodType =>
+    viewerSeesBookings(request) ? organizationListItemSchema : maskedOrganizationListItemSchema;
 
 /**
  * Detail: the tree with two independent top-level arrays. Child lists are capped at

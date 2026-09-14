@@ -1,3 +1,5 @@
+import { Types } from 'mongoose';
+
 import { AppConfig } from '../../src/common/config/app-config';
 import { JobRunner } from '../../src/jobs/job-runner';
 import { expectError } from '../support/assertions';
@@ -133,6 +135,32 @@ describe('observability (e2e)', () => {
             expect(res.text).toContain('http_request_errors_total');
             expect(res.text).toContain(`route="${t.prefix}/services/:id"`);
             expect(res.text).not.toContain('deadbeefdeadbeefdeadbeef');
+        });
+
+        it('says in meta and in a metric how many rows the response schema refused', async () => {
+            const organization = await fx.organization();
+            await fx.collection('Service').collection.insertOne({
+                organization_id: new Types.ObjectId(organization.id),
+                category_id: null,
+                position: 0,
+                label: 42,
+                enabled: true,
+                value: {},
+                options: [],
+                created_at: new Date(),
+                updated_at: new Date(),
+            });
+            await fx.service(organization.id);
+
+            const listed = await t.http.get(`${t.prefix}/services?organization_id=${organization.id}`);
+            expect(listed.status).toBe(200);
+            expect(listed.body.data).toHaveLength(1);
+            expect(listed.body.meta.dropped).toBe(1);
+            expect(listed.body.meta.total).toBe(2);
+
+            const res = await scrape();
+            expect(res.text).toContain('response_items_dropped_total');
+            expect(res.text).toContain(`route="${t.prefix}/services"`);
         });
 
         it('serves nothing anonymously when no token is configured, instead of the whole registry', async () => {

@@ -51,7 +51,7 @@ export class Fixtures {
         const isAdmin = role !== ROLES.COMMON_USER;
         const login = overrides.login ?? (isAdmin ? `admin_${n}_${randomUUID().slice(0, 6)}` : undefined);
         const phone = overrides.phone ?? (isAdmin ? undefined : `37529${String(1000000 + n).slice(-7)}`);
-        const password = overrides.password ?? (isAdmin ? 'password-123' : undefined);
+        const password = overrides.password ?? (isAdmin ? 'Password-123' : undefined);
         const passwords = this.app.get(PasswordService);
         const doc = await this.model<User>(User.name).create({
             role,

@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { type ClientSession, Model, Types } from 'mongoose';
+import { type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
 
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
+import { type PaginatedResult } from '../../common/pagination/paginated-result';
+import { type ResolvedPagination } from '../../common/pagination/pagination.service';
 import { Booking } from './schemas/booking.schema';
 
 export type BookingEntity = Lean<Booking>;
@@ -15,6 +17,13 @@ export class BookingsRepository extends BaseRepository<Booking> {
 
     findByPublicId(id: string, session?: ClientSession): Promise<BookingEntity | null> {
         return this.findOne({ id }, session);
+    }
+
+    list(
+        filter: FilterQuery<Booking>,
+        pagination: ResolvedPagination,
+    ): Promise<PaginatedResult<BookingEntity>> {
+        return this.paginate(filter, pagination);
     }
 
     findByUser(userId: string, session?: ClientSession): Promise<BookingEntity[]> {

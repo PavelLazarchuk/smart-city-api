@@ -26,6 +26,14 @@ An account created for an audience must carry what that method needs (`ADMIN_PAS
 Passwords are argon2id (`ARGON2_MEMORY_COST` / `ARGON2_TIME_COST` / `ARGON2_PARALLELISM`) and the hash lives
 in a `select: false` field, so it is not even loaded unless a code path asks for it.
 
+### Password policy
+
+Every path that sets a password — registration, `POST /users`, `PATCH /users/:id`, `PATCH /auth/password` —
+requires `PASSWORD_MIN_LENGTH`…`PASSWORD_MAX_LENGTH` characters (8–20 by default) with at least one
+lowercase latin letter, one uppercase latin letter, one digit and one special (non-alphanumeric) character.
+A refusal is `422 PASSWORD_TOO_SHORT` / `PASSWORD_TOO_LONG` / `PASSWORD_TOO_WEAK`, and `details[]` lists
+every requirement that failed at once, so a form can show them all instead of one per attempt.
+
 ## One-time codes
 
 `POST /auth/otp/request` issues a CSPRNG code of `OTP_LENGTH` digits, stores **only its argon2 hash** in
@@ -46,11 +54,22 @@ A successful login returns an access/refresh pair:
 - **Refresh token** — JWT, `JWT_REFRESH_TTL` (default 7 days). Only its **hash** is stored, in a
   `select: false` field of the `sessions` document.
 
+Every token carries `iss` (`JWT_ISSUER`), `aud` (`JWT_AUDIENCE`) and a `kid` header, and verification
+demands all three: a staging token is refused in production even if the two share a secret. **Rotating a
+secret** does not sign anyone out — publish the new `JWT_ACCESS_SECRET` with a new `JWT_ACCESS_KID`, keep
+the old one in `JWT_ACCESS_PREVIOUS_KEYS` as `kid:secret` while its tokens are still alive, then drop that
+entry. `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` must differ, or the app refuses to boot: one secret for
+both would make a refresh token a valid access token.
+
 `POST /auth/refresh` rotates in a single transaction: the presented session is marked `replaced_by` and a new
 session is written with the same `family_id`. Presenting a token that was already rotated or revoked is
 **reuse detection** — the entire `family_id` is revoked at once and the caller gets
 `401 REFRESH_TOKEN_REUSED`. `POST /auth/logout` revokes the current session, `POST /auth/logout-all` revokes
 every other session of the account and keeps the caller's. Expired sessions disappear through a TTL index.
+
+`GET /auth/sessions` lists the account's own live sessions — id, user agent, ip, `expires_at` and `current`
+for the one making the request — and `DELETE /auth/sessions/:sid` signs one device out. Another account's
+session id answers `404 SESSION_NOT_FOUND`; refresh-token hashes never leave the database.
 
 Changing a password takes `current_password` (required for accounts that have one), `new_password` and
 `new_password_confirmation`, which must repeat `new_password` exactly, and revokes the account's other
@@ -66,6 +85,8 @@ sessions.
 | `POST /auth/refresh`                               | Rotate the token pair                         |
 | `POST /auth/logout` / `POST /auth/logout-all`      | Revoke this session / every other session     |
 | `GET /auth/me`                                     | The current principal                         |
+| `GET /auth/sessions`                               | The account's own devices                     |
+| `DELETE /auth/sessions/:sid`                       | Sign one device out                           |
 | `PATCH /auth/password`                             | Change own password                           |
 
 ## How a route is authorised
@@ -79,7 +100,10 @@ sessions.
 `RolesGuard` answers `403 FORBIDDEN` (not 401) when a valid principal lacks the role.
 `OrganizationScopeGuard` resolves the organization behind the request — from a path/body parameter or by
 loading the entity through the `ScopeResolverRegistry` — and lets a `common-admin` through only when it is in
-their `organization_ids`; a super-admin always passes, a citizen never does. Routes that are readable by
+their `organization_ids`; a super-admin always passes, a citizen never does. The role is decided **before**
+anything is loaded, so a super-admin pays no extra read and a citizen is refused without one; an admin of
+another organization gets the same `404` as for an id that does not exist (`403` only where the
+organization comes from the request body, because then there is no resource to hide). Routes that are readable by
 anyone still run the JWT guard in optional mode, because the response is masked by role: booking details are
 visible only to the organization's admins and super-admins, everyone else sees `{ "status": "reserved" }`.
 

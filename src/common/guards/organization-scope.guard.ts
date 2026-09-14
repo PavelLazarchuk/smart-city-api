@@ -47,13 +47,13 @@ export class OrganizationScopeGuard implements CanActivate {
 
         if (!user) throw ApiError.unauthorized('UNAUTHENTICATED');
 
-        const organizationId = await this.resolveOrganizationId(request, options);
-
         if (user.role === ROLES.SUPER_ADMIN) return true;
 
         if (user.role !== ROLES.COMMON_ADMIN) throw ApiError.forbidden('FORBIDDEN');
 
-        if (!user.organization_ids.includes(organizationId)) throw ApiError.forbidden('FORBIDDEN');
+        const organizationId = await this.resolveOrganizationId(request, options);
+
+        if (!user.organization_ids.includes(organizationId)) throw this.denied(options);
 
         return true;
     }
@@ -95,6 +95,14 @@ export class OrganizationScopeGuard implements CanActivate {
             default:
                 throw ApiError.forbidden('FORBIDDEN');
         }
+    }
+
+    private denied(options: OrganizationScopeOptions): ApiError {
+        if (options.from === 'entity') return ApiError.notFound(NOT_FOUND_BY_KIND[options.entity]);
+
+        if (options.from === 'path') return ApiError.notFound('ORGANIZATION_NOT_FOUND');
+
+        return ApiError.forbidden('FORBIDDEN');
     }
 
     private parseId(raw: unknown, code: ErrorCode): string {

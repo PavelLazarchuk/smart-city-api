@@ -16,6 +16,7 @@ import {
     type LoginInput,
     type OtpVerifyInput,
     type RegisterInput,
+    type SessionResponse,
     type TokenPairResponse,
 } from './dto/auth.schemas';
 import { LoginAttemptsService } from './login-attempts.service';
@@ -229,6 +230,23 @@ export class AuthService {
         }
 
         return this.toResponse(pair, user);
+    }
+
+    async listSessions(user: AuthUser): Promise<SessionResponse[]> {
+        const sessions = await this.sessions.findActiveForUser(user.id);
+
+        return sessions.map((session) => ({
+            id: session._id.toHexString(),
+            current: session._id.toHexString() === user.sid,
+            user_agent: session.user_agent,
+            ip: session.ip,
+            expires_at: session.expires_at.toISOString(),
+            created_at: session.created_at.toISOString(),
+        }));
+    }
+
+    async revokeSession(user: AuthUser, sid: string): Promise<void> {
+        if (!(await this.sessions.revokeOwned(user.id, sid))) throw ApiError.notFound('SESSION_NOT_FOUND');
     }
 
     async logout(user: AuthUser): Promise<void> {

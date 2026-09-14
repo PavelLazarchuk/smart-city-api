@@ -19,6 +19,7 @@ export class MetricsService {
     private readonly transactionAttempts: Counter<string>;
     private readonly smsSent: Counter<'provider' | 'purpose' | 'status'>;
     private readonly smsBudgetBlocked: Counter<'window'>;
+    private readonly droppedItems: Counter<'route'>;
 
     constructor(config: AppConfig) {
         this.registry.setDefaultLabels({ env: config.env, version: config.build.version });
@@ -73,6 +74,12 @@ export class MetricsService {
             labelNames: ['window'],
             registers: [this.registry],
         });
+        this.droppedItems = new Counter({
+            name: 'response_items_dropped_total',
+            help: 'List rows dropped because they did not match the response schema',
+            labelNames: ['route'],
+            registers: [this.registry],
+        });
     }
 
     observeHttp(method: string, route: string, status: number, durationMs: number): void {
@@ -103,6 +110,10 @@ export class MetricsService {
 
     countSmsBudgetBlock(window: 'hour' | 'day'): void {
         this.smsBudgetBlocked.inc({ window });
+    }
+
+    countDroppedItems(route: string, count: number): void {
+        this.droppedItems.inc({ route }, count);
     }
 
     render(): Promise<string> {
