@@ -137,8 +137,8 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
             ).toHaveLength(0);
             expectError(
                 await t.http.delete(`${t.prefix}/bookings/${bookingId}`).set('Authorization', bearer),
-                404,
-                'BOOKING_NOT_FOUND',
+                422,
+                'BOOKING_NOT_ACTIVE',
             );
         });
     });

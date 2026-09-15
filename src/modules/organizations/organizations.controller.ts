@@ -20,7 +20,13 @@ import { OrganizationScope } from '../../common/decorators/organization-scope.de
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
-import { Serialize, SerializeBy, SerializePaginated } from '../../common/http/serialize.decorator';
+import {
+    Serialize,
+    SerializeBy,
+    SerializeList,
+    SerializePaginated,
+} from '../../common/http/serialize.decorator';
+import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationQueryDto } from '../../common/pagination/pagination.dto';
 import { CategoriesService } from '../categories/categories.service';
@@ -30,8 +36,10 @@ import { ImagesService } from '../images/images.service';
 import { InfoSectionResponseDto, infoSectionResponseSchema } from '../infosections/dto/infosection.schemas';
 import { InfoSectionsService } from '../infosections/infosections.service';
 import { NewsResponseDto, newsResponseSchema } from '../news/dto/news.schemas';
+import { type NewsEntity } from '../news/news.repository';
 import { NewsService } from '../news/news.service';
 import {
+    GetServiceQueryDto,
     MaskedServiceResponseDto,
     maskedServiceResponseSchema,
     serviceSchemaForViewer,
@@ -42,6 +50,7 @@ import {
     ListOrganizationsQueryDto,
     MaskedOrganizationListItemDto,
     maskedOrganizationListItemSchema,
+    NearbyOrganizationsQueryDto,
     OrganizationDetailDto,
     organizationDetailSchema,
     organizationListSchemaForViewer,
@@ -77,6 +86,14 @@ export class OrganizationsController {
         return this.organizations.list(query, user);
     }
 
+    @Get('nearby')
+    @Public()
+    @ApiData(OrganizationResponseDto)
+    @SerializeList(organizationResponseSchema)
+    nearby(@Query() query: NearbyOrganizationsQueryDto): Promise<OrganizationEntity[]> {
+        return this.organizations.nearby(query);
+    }
+
     @Post()
     @Roles(ROLES.SUPER_ADMIN)
     @ApiBearerAuth()
@@ -95,6 +112,7 @@ export class OrganizationsController {
     @Get(':id')
     @Public()
     @ApiData(OrganizationDetailDto)
+    @ApiErrors('ORGANIZATION_NOT_FOUND')
     @Serialize(organizationDetailSchema)
     @TrackEvent(EVENT_TYPES.ORGANIZATION_VIEWED, (result) => {
         const tree = result as OrganizationTree;
@@ -173,7 +191,34 @@ export class OrganizationsController {
     ): Promise<PaginatedResult<unknown>> {
         await this.organizations.assertExists(id);
 
-        return this.services.list({ ...query, organization_id: id }, user);
+        return this.services.list({ ...query, organization_id: id, tags: [], include: [] }, user);
+    }
+
+    @Get(':id/services/:slug')
+    @Public()
+    @ApiData(MaskedServiceResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND')
+    @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema)
+    serviceBySlug(
+        @Param('id') id: string,
+        @Param('slug') slug: string,
+        @Query() query: GetServiceQueryDto,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<unknown> {
+        return this.services.getBySlug(id, slug, user, query);
+    }
+
+    @Get(':id/news/:slug')
+    @Public()
+    @ApiData(NewsResponseDto)
+    @ApiErrors('NEWS_NOT_FOUND')
+    @Serialize(newsResponseSchema)
+    newsBySlug(
+        @Param('id') id: string,
+        @Param('slug') slug: string,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<NewsEntity> {
+        return this.news.getBySlug(id, slug, user);
     }
 
     @Get(':id/images')

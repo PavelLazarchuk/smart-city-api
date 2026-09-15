@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 
 import { ConsoleMailProvider } from '../../src/integrations/mail/console-mail.provider';
-import { expectError } from '../support/assertions';
+import { expectError, waitFor } from '../support/assertions';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
@@ -93,7 +93,7 @@ describe('bookings (e2e)', () => {
             time: '10:00',
         });
 
-        expect(mailSpy).toHaveBeenCalledTimes(1);
+        await waitFor(() => Promise.resolve(mailSpy.mock.calls.length === 1));
         expect(mailSpy.mock.calls[0]![0]).toMatchObject({ to: ['clinic@example.com'] });
 
         const duplicate = await t.http
@@ -144,6 +144,7 @@ describe('bookings (e2e)', () => {
 
         expect(await timeEntry(service.id)).toMatchObject({ booked_count: k });
         expect(await fx.collection('Booking').countDocuments({})).toBe(k);
+        await waitFor(() => Promise.resolve(mailSpy.mock.calls.length === k));
         expect(mailSpy).toHaveBeenCalledTimes(k);
     });
 
@@ -268,17 +269,23 @@ describe('bookings (e2e)', () => {
             .set('Authorization', await fx.bearer(admin));
         expect(cancelled.status).toBe(204);
         expect(await timeEntry(service.id)).toMatchObject({ booked_count: 0 });
-        expect(await fx.collection('Booking').countDocuments({})).toBe(0);
+        expect(await fx.collection('Booking').countDocuments({ active: true })).toBe(0);
+        expect(await fx.collection('Booking').countDocuments({ status: 'cancelled' })).toBe(1);
         const refs = await t.http
             .get(`${t.prefix}/users/${owner.id}/bookings`)
             .set('Authorization', ownerBearer);
         expect(refs.body.data).toEqual([]);
+        const history = await t.http
+            .get(`${t.prefix}/me/bookings?status=cancelled`)
+            .set('Authorization', ownerBearer);
+        expect(history.body.data).toHaveLength(1);
+        expect(history.body.data[0]).toMatchObject({ id: bookingId, status: 'cancelled' });
         expectError(
             await t.http
                 .delete(`${t.prefix}/services/${service.id}/bookings/${bookingId}`)
                 .set('Authorization', ownerBearer),
-            404,
-            'BOOKING_NOT_FOUND',
+            422,
+            'BOOKING_NOT_ACTIVE',
         );
     });
 
@@ -304,7 +311,7 @@ describe('bookings (e2e)', () => {
                 .set('Authorization', bearer);
         expect((await cancel()).status).toBe(204);
         expect(await entry()).toMatchObject({ booked_count: 0 });
-        expectError(await cancel(), 404, 'BOOKING_NOT_FOUND');
+        expectError(await cancel(), 422, 'BOOKING_NOT_ACTIVE');
         expect(await entry()).toMatchObject({ booked_count: 0 });
 
         for (let i = 0; i < 2; i += 1) {
@@ -399,6 +406,19 @@ describe('bookings (e2e)', () => {
                 await t.http
                     .delete(`${t.prefix}/services/${service.id}`)
                     .set('Authorization', await fx.bearer(admin))
+            ).status,
+        ).toBe(204);
+        expect(
+            (await fx.collection<{ deleted_at: Date | null }>('Service').findById(service.id).lean())
+                ?.deleted_at,
+        ).toBeInstanceOf(Date);
+        expect(await fx.collection('Booking').countDocuments({})).toBe(1);
+
+        expect(
+            (
+                await t.http
+                    .delete(`${t.prefix}/services/${service.id}?permanent=true`)
+                    .set('Authorization', await fx.bearer(superAdmin))
             ).status,
         ).toBe(204);
         expect(await fx.collection('Service').findById(service.id).lean()).toBeNull();

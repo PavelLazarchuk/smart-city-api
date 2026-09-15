@@ -14,6 +14,7 @@ import { type ServiceView, ServicesMasker } from '../services/services.masker';
 import {
     type CreateOrganizationInput,
     type ListOrganizationsQuery,
+    type NearbyOrganizationsQuery,
     type UpdateOrganizationInput,
 } from './dto/organization.schemas';
 import {
@@ -57,6 +58,8 @@ export class OrganizationsService {
 
         if (query.main_category) filter['main_category'] = query.main_category;
 
+        if (query.status) filter['status'] = query.status;
+
         if (query.q) filter['$text'] = { $search: query.q };
 
         const result = await this.organizations.list(filter, pagination, {
@@ -83,7 +86,7 @@ export class OrganizationsService {
         const serviceIds = visible.flatMap((row) =>
             (row.services ?? []).map((service) => String((service as { _id: unknown })._id)),
         );
-        const bookings = await this.bookings.findByServices(serviceIds);
+        const bookings = await this.bookings.findActiveByServices(serviceIds);
         const byService = new Map<string, typeof bookings>();
 
         for (const booking of bookings) {
@@ -160,8 +163,25 @@ export class OrganizationsService {
         return { ...row, categories, services: direct };
     }
 
+    nearby(query: NearbyOrganizationsQuery): Promise<(OrganizationEntity & { distance_m: number })[]> {
+        const filter: FilterQuery<Organization> = {};
+
+        if (query.main_category) filter['main_category'] = query.main_category;
+
+        return this.organizations.nearby(query.lng, query.lat, query.radius_m, query.limit, filter);
+    }
+
     create(input: CreateOrganizationInput): Promise<OrganizationEntity> {
-        return this.organizations.create(input);
+        const { location, closed_until: closedUntil, ...rest } = input;
+
+        return this.organizations.create({
+            ...rest,
+            status: input.status ?? 'active',
+            closed_until: closedUntil ? new Date(closedUntil) : null,
+            location: location ? { type: 'Point', coordinates: [location.lng, location.lat] } : undefined,
+            working_hours: input.working_hours ?? [],
+            holidays: [...new Set(input.holidays ?? [])],
+        });
     }
 
     async update(id: string, input: UpdateOrganizationInput): Promise<OrganizationEntity> {
@@ -171,6 +191,26 @@ export class OrganizationsService {
 
         for (const [key, value] of Object.entries(input)) {
             if (value === undefined) continue;
+
+            if (key === 'location') {
+                if (value === null) unset[key] = 1;
+                else {
+                    const point = value as { lng: number; lat: number };
+                    set[key] = { type: 'Point', coordinates: [point.lng, point.lat] };
+                }
+
+                continue;
+            }
+
+            if (key === 'closed_until') {
+                set[key] = value === null ? null : new Date(value as string);
+                continue;
+            }
+
+            if (key === 'holidays') {
+                set[key] = [...new Set(value as string[])];
+                continue;
+            }
 
             if (value === null) unset[key] = 1;
             else set[key] = value;
@@ -218,6 +258,10 @@ export class OrganizationsService {
         if (found !== unique.length) throw ApiError.notFound('ORGANIZATION_NOT_FOUND');
     }
 
+    findManyByIds(ids: string[]): Promise<OrganizationEntity[]> {
+        return this.organizations.findManyByIds([...new Set(ids)]);
+    }
+
     findAllForReport(): Promise<OrganizationEntity[]> {
         return this.organizations.findAllForReport();
     }
@@ -233,5 +277,9 @@ export class OrganizationsService {
 
     labels(): Promise<Map<string, string>> {
         return this.organizations.labels();
+    }
+
+    holidays(): Promise<Map<string, string[]>> {
+        return this.organizations.holidays();
     }
 }

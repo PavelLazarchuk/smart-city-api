@@ -12,6 +12,7 @@ import {
     optionFromInput,
     planRecurrentDays,
     slotFromInput,
+    timesFromWorkingHours,
 } from './slot.logic';
 
 const booking = (
@@ -29,6 +30,14 @@ const booking = (
     person: 'P',
     phone: '375290000000',
     info: '',
+    fields: {},
+    documents: [],
+    status: 'confirmed',
+    active: true,
+    confirmed_at: null,
+    finished_at: null,
+    status_changed_by: null,
+    reminder_sent_at: null,
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -59,7 +68,9 @@ describe('slot.logic', () => {
         const option = optionFromInput({ recurrent_dates: [{ day: 'monday', time: [{ time: '09:00' }] }] });
         expect(option.service_type).toBe('service_apply');
         expect(option.enabled).toBe(true);
-        expect(option.recurrent_dates).toEqual([{ day: 'monday', time: [{ time: '09:00', limit: null }] }]);
+        expect(option.recurrent_dates).toEqual([
+            { day: 'monday', time: [{ time: '09:00', limit: null }], limit: null },
+        ]);
         expect(optionFromInput({ recurrent_dates: null }).recurrent_dates).toBeUndefined();
     });
 
@@ -221,7 +232,7 @@ describe('slot.logic', () => {
         expect(attached[0]!.slots[1]!.value.bookings).toHaveLength(1);
     });
 
-    it('generates recurrent days over the horizon starting tomorrow', () => {
+    it('generates recurrent days over the horizon starting tomorrow; a day without times is skipped', () => {
         const from = new Date(2026, 8, 5);
         const days = generateRecurrentDays(
             [
@@ -231,8 +242,8 @@ describe('slot.logic', () => {
             from,
             14,
         );
-        expect(days.map((day) => day.date)).toEqual(['2026-09-06', '2026-09-07', '2026-09-13', '2026-09-14']);
-        expect(days[1]!.time).toEqual([{ time: '09:00', limit: 1 }]);
+        expect(days.map((day) => day.date)).toEqual(['2026-09-07', '2026-09-14']);
+        expect(days[0]!.time).toEqual([{ time: '09:00', limit: 1 }]);
     });
 
     it('planRecurrentDays adds missing dates and times and drops only unbooked stale ones', () => {
@@ -305,5 +316,50 @@ describe('slot.logic', () => {
         expect(isSlotExpired({ id: 'x', label: 'x', child_type: 'apply', value: {} }, '2026-01-02')).toBe(
             false,
         );
+    });
+});
+
+describe('slot.logic — working hours and closures', () => {
+    it('cuts opening intervals into appointment starts, keeping a whole appointment inside', () => {
+        const hours = [
+            { day: 'monday' as const, from: '09:00', to: '10:30' },
+            { day: 'monday' as const, from: '13:00', to: '13:45' },
+            { day: 'tuesday' as const, from: '09:00', to: '17:00' },
+        ];
+        expect(timesFromWorkingHours(hours, 'monday', 30, 15, 2)).toEqual([
+            { time: '09:00', limit: 2 },
+            { time: '09:45', limit: 2 },
+            { time: '13:00', limit: 2 },
+        ]);
+        expect(timesFromWorkingHours(hours, 'sunday', 30, 0, null)).toEqual([]);
+    });
+
+    it('falls back to working hours for a weekday without times and skips holidays and blackouts', () => {
+        // 2026-09-05 is a Saturday; the Mondays inside a 14-day horizon are 09-07 and 09-14.
+        const days = generateRecurrentDays(
+            [
+                { day: 'monday', time: [], limit: 1 },
+                { day: 'wednesday', time: [{ time: '12:00', limit: null }] },
+            ],
+            new Date(2026, 8, 5),
+            14,
+            {
+                working_hours: [{ day: 'monday', from: '09:00', to: '10:00' }],
+                duration_minutes: 20,
+                buffer_minutes: 10,
+                holidays: ['09-09'],
+                blackout_dates: ['2026-09-14'],
+            },
+        );
+        expect(days).toEqual([
+            {
+                date: '2026-09-07',
+                time: [
+                    { time: '09:00', limit: 1 },
+                    { time: '09:30', limit: 1 },
+                ],
+            },
+            { date: '2026-09-16', time: [{ time: '12:00', limit: null }] },
+        ]);
     });
 });

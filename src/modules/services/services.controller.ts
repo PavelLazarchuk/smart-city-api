@@ -24,8 +24,22 @@ import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { parseBody } from '../../common/http/parse-body';
-import { Serialize, SerializeBy } from '../../common/http/serialize.decorator';
+import {
+    Serialize,
+    SerializeBy,
+    SerializePaginated,
+    SparseFields,
+} from '../../common/http/serialize.decorator';
+import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
+import { PaginationQueryDto } from '../../common/pagination/pagination.dto';
+import {
+    JoinWaitlistDto,
+    ListWaitlistQueryDto,
+    type WaitlistEntryResource,
+    WaitlistEntryResponseDto,
+    waitlistEntryResponseSchema,
+} from '../bookings/dto/booking.schemas';
 import { BookingsService } from './bookings.service';
 import {
     AvailabilityQueryDto,
@@ -39,19 +53,26 @@ import {
     CreateOptionDto,
     CreateServiceDto,
     createSlotSchema,
+    DeleteServiceQueryDto,
+    GetServiceQueryDto,
     ListServicesQueryDto,
     MaskedServiceResponseDto,
     maskedServiceResponseSchema,
+    NearbyQueryDto,
     RecurrenceDto,
     serviceSchemaForViewer,
     ServiceResponseDto,
     serviceResponseSchema,
+    ServiceRevisionResponseDto,
+    serviceRevisionResponseSchema,
+    SetServiceStatusDto,
     UpdateOptionDto,
     UpdateServiceDto,
     UpdateSlotDto,
 } from './dto/service.schemas';
+import { type ServiceRevisionEntity } from './service-revisions.repository';
 import { type ServiceEntity } from './services.repository';
-import { ServicesService } from './services.service';
+import { type ServiceListItem, ServicesService } from './services.service';
 
 function parseIdempotencyKey(raw: string | undefined): string | undefined {
     const key = raw?.trim();
@@ -66,6 +87,26 @@ function parseIdempotencyKey(raw: string | undefined): string | undefined {
     return key;
 }
 
+const BOOKING_ERRORS = [
+    'SERVICE_NOT_FOUND',
+    'SLOT_NOT_FOUND',
+    'OPTION_DISABLED',
+    'SLOT_NOT_BOOKABLE',
+    'SLOT_EXPIRED',
+    'SLOT_TIME_REQUIRED',
+    'SLOT_FULL',
+    'SERVICE_NOT_PUBLISHED',
+    'ORGANIZATION_CLOSED',
+    'BOOKING_LIMIT_REACHED',
+    'BOOKING_LEAD_TIME',
+    'BOOKING_TOO_FAR_AHEAD',
+    'BOOKING_FIELDS_INVALID',
+    'BOOKING_DOCUMENTS_REQUIRED',
+    'BOOKING_ALREADY_EXISTS',
+    'IDEMPOTENCY_IN_PROGRESS',
+    'IDEMPOTENCY_KEY_REUSED',
+] as const;
+
 @ApiTags('services')
 @Controller('services')
 export class ServicesController {
@@ -77,25 +118,44 @@ export class ServicesController {
     @Get()
     @Public()
     @ApiPaginated(MaskedServiceResponseDto)
+    @ApiErrors('FIELDS_NOT_ALLOWED', 'PAGE_OUT_OF_RANGE')
     @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema, 'paginated')
+    @SparseFields()
     list(
         @Query() query: ListServicesQueryDto,
         @CurrentUser() user?: AuthUser,
-    ): Promise<PaginatedResult<ServiceEntity>> {
+    ): Promise<PaginatedResult<ServiceListItem>> {
         return this.services.list(query, user);
+    }
+
+    @Get('nearby')
+    @Public()
+    @ApiData(MaskedServiceResponseDto)
+    @ApiErrors('FIELDS_NOT_ALLOWED')
+    @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema, 'list')
+    @SparseFields()
+    nearby(@Query() query: NearbyQueryDto, @CurrentUser() user?: AuthUser): Promise<ServiceListItem[]> {
+        return this.services.nearby(query, user);
     }
 
     @Get(':id')
     @Public()
     @ApiData(MaskedServiceResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND', 'FIELDS_NOT_ALLOWED')
     @SerializeBy(serviceSchemaForViewer, maskedServiceResponseSchema)
-    getOne(@Param('id') id: string, @CurrentUser() user?: AuthUser): Promise<ServiceEntity> {
-        return this.services.getMasked(id, user);
+    @SparseFields()
+    getOne(
+        @Param('id') id: string,
+        @Query() query: GetServiceQueryDto,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<ServiceListItem> {
+        return this.services.getMasked(id, user, query);
     }
 
     @Get(':id/availability')
     @Public()
     @ApiData(AvailabilityResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND')
     @Serialize(availabilityResponseSchema)
     async availability(
         @Param('id') id: string,
@@ -107,11 +167,31 @@ export class ServicesController {
         return this.services.availability(id, query);
     }
 
+    @Get(':id/history')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @ApiPaginated(ServiceRevisionResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND')
+    @SerializePaginated(serviceRevisionResponseSchema)
+    history(
+        @Param('id') id: string,
+        @Query() query: PaginationQueryDto,
+    ): Promise<PaginatedResult<ServiceRevisionEntity>> {
+        return this.services.history(id, query);
+    }
+
     @Post()
     @ApiBearerAuth()
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'body' })
     @ApiCreatedResponse({ type: ServiceResponseDto })
+    @ApiErrors(
+        'ORGANIZATION_NOT_FOUND',
+        'CATEGORY_NOT_FOUND',
+        'CATEGORY_ORGANIZATION_MISMATCH',
+        'SERVICE_SLUG_TAKEN',
+    )
     @Serialize(serviceResponseSchema)
     async create(
         @Body() body: CreateServiceDto,
@@ -129,6 +209,12 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiData(ServiceResponseDto)
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'CATEGORY_NOT_FOUND',
+        'CATEGORY_ORGANIZATION_MISMATCH',
+        'SERVICE_SLUG_TAKEN',
+    )
     @Serialize(serviceResponseSchema)
     update(
         @Param('id') id: string,
@@ -138,13 +224,47 @@ export class ServicesController {
         return this.services.update(id, body, user);
     }
 
+    @Put(':id/status')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @ApiData(ServiceResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND')
+    @Serialize(serviceResponseSchema)
+    setStatus(
+        @Param('id') id: string,
+        @Body() body: SetServiceStatusDto,
+        @CurrentUser() user: AuthUser,
+    ): Promise<ServiceEntity> {
+        return this.services.setStatus(id, body.status, user);
+    }
+
     @Delete(':id')
     @ApiBearerAuth()
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @HttpCode(HttpStatus.NO_CONTENT)
-    async remove(@Param('id') id: string): Promise<void> {
-        await this.services.delete(id);
+    @ApiErrors('SERVICE_NOT_FOUND')
+    async remove(
+        @Param('id') id: string,
+        @Query() query: DeleteServiceQueryDto,
+        @CurrentUser() user: AuthUser,
+    ): Promise<void> {
+        if (query.permanent && user.role !== ROLES.SUPER_ADMIN) throw ApiError.forbidden('FORBIDDEN');
+
+        await this.services.delete(id, user, query.permanent === true);
+    }
+
+    @Post(':id/restore')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @HttpCode(HttpStatus.OK)
+    @ApiData(ServiceResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND', 'SERVICE_NOT_DELETED')
+    @Serialize(serviceResponseSchema)
+    restore(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<ServiceEntity> {
+        return this.services.restore(id, user);
     }
 
     // ----- options and slots as sub-resources -----
@@ -159,6 +279,7 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiCreatedResponse({ type: ServiceResponseDto })
+    @ApiErrors('SERVICE_NOT_FOUND')
     @Serialize(serviceResponseSchema)
     addOption(
         @Param('id') id: string,
@@ -173,6 +294,7 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiData(ServiceResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND')
     @Serialize(serviceResponseSchema)
     updateOption(
         @Param('id') id: string,
@@ -188,8 +310,13 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @HttpCode(HttpStatus.NO_CONTENT)
-    async removeOption(@Param('id') id: string, @Param('option_id') optionId: string): Promise<void> {
-        await this.services.removeOption(id, optionId);
+    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND', 'OPTION_HAS_BOOKINGS')
+    async removeOption(
+        @Param('id') id: string,
+        @Param('option_id') optionId: string,
+        @CurrentUser() user: AuthUser,
+    ): Promise<void> {
+        await this.services.removeOption(id, optionId, user);
     }
 
     @Put(':id/options/:option_id/recurrence')
@@ -197,6 +324,7 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiData(ServiceResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND')
     @Serialize(serviceResponseSchema)
     setRecurrence(
         @Param('id') id: string,
@@ -218,6 +346,7 @@ export class ServicesController {
         },
     })
     @ApiCreatedResponse({ type: ServiceResponseDto })
+    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND', 'CONFLICT')
     @Serialize(serviceResponseSchema)
     addSlot(
         @Param('id') id: string,
@@ -233,6 +362,15 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiData(ServiceResponseDto)
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'OPTION_NOT_FOUND',
+        'SLOT_NOT_FOUND',
+        'SLOT_NOT_DATED',
+        'SLOT_NOT_LIMITED',
+        'SLOT_NOT_TIMED',
+        'SLOT_TIME_BOOKED',
+    )
     @Serialize(serviceResponseSchema)
     updateSlot(
         @Param('id') id: string,
@@ -249,18 +387,21 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND', 'SLOT_NOT_FOUND', 'SLOT_HAS_BOOKINGS')
     async removeSlot(
         @Param('id') id: string,
         @Param('option_id') optionId: string,
         @Param('slot_id') slotId: string,
+        @CurrentUser() user: AuthUser,
     ): Promise<void> {
-        await this.services.removeSlot(id, optionId, slotId);
+        await this.services.removeSlot(id, optionId, slotId, user);
     }
 
     /** Authenticated, any role: a booking always belongs to the calling user. */
     @Post(':id/bookings')
     @ApiBearerAuth()
     @ApiCreatedResponse({ type: BookingCreatedResponseDto })
+    @ApiErrors(...BOOKING_ERRORS)
     @Serialize(bookingCreatedResponseSchema)
     @TrackEvent(EVENT_TYPES.BOOKING_CREATED, (result) => {
         const booking = result as BookingCreated;
@@ -296,6 +437,7 @@ export class ServicesController {
     @Delete(':id/bookings/:booking_id')
     @ApiBearerAuth()
     @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiErrors('BOOKING_NOT_FOUND', 'BOOKING_NOT_ACTIVE', 'BOOKING_CANCEL_DEADLINE_PASSED')
     @TrackEvent(EVENT_TYPES.BOOKING_CANCELLED, (result) => {
         const cancelled = result as { date?: string; time?: string; child_type: string };
 
@@ -307,5 +449,43 @@ export class ServicesController {
         @CurrentUser() user: AuthUser,
     ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
         return this.bookings.cancel(id, bookingId, user);
+    }
+
+    @Post(':id/waitlist')
+    @ApiBearerAuth()
+    @ApiCreatedResponse({ type: WaitlistEntryResponseDto })
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'SLOT_NOT_FOUND',
+        'OPTION_DISABLED',
+        'SLOT_NOT_BOOKABLE',
+        'SLOT_EXPIRED',
+        'SLOT_TIME_REQUIRED',
+        'SLOT_NOT_FULL',
+        'SERVICE_NOT_PUBLISHED',
+        'ORGANIZATION_CLOSED',
+        'WAITLIST_ALREADY_JOINED',
+    )
+    @Serialize(waitlistEntryResponseSchema)
+    joinWaitlist(
+        @Param('id') id: string,
+        @Body() body: JoinWaitlistDto,
+        @CurrentUser() user: AuthUser,
+    ): Promise<WaitlistEntryResource> {
+        return this.bookings.joinWaitlist(id, body, user);
+    }
+
+    @Get(':id/waitlist')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @ApiPaginated(WaitlistEntryResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND')
+    @SerializePaginated(waitlistEntryResponseSchema)
+    waitlistForService(
+        @Param('id') id: string,
+        @Query() query: ListWaitlistQueryDto,
+    ): Promise<PaginatedResult<WaitlistEntryResource>> {
+        return this.bookings.listWaitlistForService(id, query);
     }
 }

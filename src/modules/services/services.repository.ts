@@ -1,9 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { type AnyBulkWriteOperation, type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
+import {
+    type AnyBulkWriteOperation,
+    type ClientSession,
+    type FilterQuery,
+    Model,
+    type PipelineStage,
+    type ProjectionType,
+    Types,
+} from 'mongoose';
 
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
 import { nextPosition, reorderSiblings } from '../../common/database/reorder';
+import { type PaginatedResult } from '../../common/pagination/paginated-result';
+import { type ResolvedPagination } from '../../common/pagination/pagination.service';
 import {
     type RecurrentDate,
     Service,
@@ -64,6 +74,105 @@ export class ServicesRepository extends BaseRepository<Service> {
 
     findByCategory(categoryId: string, session?: ClientSession): Promise<ServiceEntity[]> {
         return this.findMany({ category_id: new Types.ObjectId(categoryId) }, { position: 1 }, session);
+    }
+
+    async searchText(
+        filter: FilterQuery<Service>,
+        q: string,
+        pagination: ResolvedPagination,
+        projection?: ProjectionType<Service>,
+    ): Promise<PaginatedResult<ServiceEntity>> {
+        const textFilter: FilterQuery<Service> = { ...filter, $text: { $search: q } };
+        const fields = {
+            ...(projection as Record<string, unknown> | undefined),
+            score: { $meta: 'textScore' },
+        };
+        const [items, total] = await Promise.all([
+            this.model
+                .find(textFilter, fields)
+                .sort({ score: { $meta: 'textScore' }, _id: 1 })
+                .skip(pagination.skip)
+                .limit(pagination.limit)
+                .lean<(ServiceEntity & { score?: number })[]>()
+                .exec(),
+            this.model.countDocuments(textFilter).exec(),
+        ]);
+
+        return {
+            items: items.map(({ score: _score, ...item }) => item as ServiceEntity),
+            total,
+            page: pagination.page,
+            limit: pagination.limit,
+        };
+    }
+
+    nearby(
+        lng: number,
+        lat: number,
+        radiusM: number,
+        limit: number,
+        filter: FilterQuery<Service>,
+        projection?: Record<string, 0 | 1>,
+    ): Promise<(ServiceEntity & { distance_m: number })[]> {
+        const stages: PipelineStage[] = [
+            {
+                $geoNear: {
+                    near: { type: 'Point', coordinates: [lng, lat] },
+                    distanceField: 'distance_m',
+                    maxDistance: radiusM,
+                    query: filter,
+                    spherical: true,
+                },
+            },
+            { $limit: limit },
+        ];
+
+        if (projection && Object.keys(projection).length > 0) stages.push({ $project: projection });
+
+        return this.aggregate<ServiceEntity & { distance_m: number }>(stages);
+    }
+
+    slugTaken(
+        organizationId: Types.ObjectId,
+        slug: string,
+        exceptId?: string,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        const filter: FilterQuery<Service> = { organization_id: organizationId, slug };
+
+        if (exceptId) filter['_id'] = { $ne: new Types.ObjectId(exceptId) };
+
+        return this.exists(filter, session);
+    }
+
+    findBySlug(
+        organizationId: string,
+        slug: string,
+        projection?: ProjectionType<Service>,
+    ): Promise<ServiceEntity | null> {
+        if (!Types.ObjectId.isValid(organizationId)) return Promise.resolve(null);
+
+        return this.model
+            .findOne(
+                { organization_id: new Types.ObjectId(organizationId), slug, deleted_at: null },
+                projection,
+            )
+            .lean<ServiceEntity>()
+            .exec();
+    }
+
+    findDeletedBefore(before: Date, limit: number): Promise<ServiceEntity[]> {
+        return this.model
+            .find({ deleted_at: { $ne: null, $lte: before } }, { _id: 1, organization_id: 1 })
+            .limit(limit)
+            .lean<ServiceEntity[]>()
+            .exec();
+    }
+
+    findManyByIds(ids: string[]): Promise<ServiceEntity[]> {
+        if (ids.length === 0) return Promise.resolve([]);
+
+        return this.findMany({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } }, { _id: 1 });
     }
 
     deleteByCategory(categoryId: string, session?: ClientSession): Promise<number> {
@@ -328,7 +437,10 @@ export class ServicesRepository extends BaseRepository<Service> {
     // ----- job queries -----
 
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
-        return this.findMany({ 'options.recurrent_dates.0': { $exists: true } }, { _id: 1 });
+        return this.findMany(
+            { 'options.recurrent_dates.0': { $exists: true }, deleted_at: null, status: { $ne: 'archived' } },
+            { _id: 1 },
+        );
     }
 
     findWithDatedSlots(): Promise<ServiceEntity[]> {
@@ -338,6 +450,8 @@ export class ServicesRepository extends BaseRepository<Service> {
     findAllForDebtorReport(): Promise<ServiceEntity[]> {
         return this.projected({
             organization_id: 1,
+            status: 1,
+            deleted_at: 1,
             label: 1,
             'value.heading_value': 1,
             'options.service_type': 1,

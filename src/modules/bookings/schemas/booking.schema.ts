@@ -1,7 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { type HydratedDocument, Types, SchemaTypes } from 'mongoose';
+import { type HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 import { baseSchemaOptions } from '../../../common/database/schema-options';
+
+export const BOOKING_STATUSES = ['pending', 'confirmed', 'completed', 'no_show', 'cancelled'] as const;
+export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+
+export const ACTIVE_BOOKING_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed'];
 
 /**
  * A booking is its own document. It used to live inside `services.options[].slots[]` and be mirrored
@@ -53,18 +58,48 @@ export class Booking {
 
     @Prop({ type: String, default: '' })
     info!: string;
+
+    @Prop({ type: SchemaTypes.Mixed, default: () => ({}) })
+    fields!: Record<string, unknown>;
+
+    @Prop({ type: [String], default: [] })
+    documents!: string[];
+
+    @Prop({ type: String, enum: BOOKING_STATUSES, required: true, default: 'confirmed' })
+    status!: BookingStatus;
+
+    /** Denormalised `status ∈ {pending, confirmed}`: what the partial unique index keys on. */
+    @Prop({ type: Boolean, required: true, default: true })
+    active!: boolean;
+
+    @Prop({ type: Date, default: null })
+    confirmed_at!: Date | null;
+
+    @Prop({ type: Date, default: null })
+    finished_at!: Date | null;
+
+    @Prop({ type: SchemaTypes.ObjectId, default: null })
+    status_changed_by!: Types.ObjectId | null;
+
+    @Prop({ type: Date, default: null })
+    reminder_sent_at!: Date | null;
 }
 
 export type BookingDocument = HydratedDocument<Booking>;
 export const BookingSchema = SchemaFactory.createForClass(Booking);
 
 BookingSchema.index({ id: 1 }, { unique: true });
-/** Replaces the read-then-check for duplicates: a second identical booking cannot be inserted. */
+/**
+ * Replaces the read-then-check for duplicates: a second identical *active* booking cannot be inserted.
+ * Partial on `active`, so a cancelled row does not block booking the same slot again.
+ */
 BookingSchema.index(
     { service_id: 1, option_id: 1, slot_id: 1, slot_time: 1, user_id: 1 },
-    { unique: true, name: 'unique_booking_per_slot' },
+    { unique: true, name: 'unique_booking_per_slot', partialFilterExpression: { active: true } },
 );
 BookingSchema.index({ user_id: 1, created_at: -1 });
 BookingSchema.index({ service_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, slot_date: 1 });
+BookingSchema.index({ active: 1, slot_date: 1, reminder_sent_at: 1 });
+BookingSchema.index({ organization_id: 1, status: 1, slot_date: 1 });

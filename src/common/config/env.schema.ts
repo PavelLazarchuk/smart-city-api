@@ -129,6 +129,19 @@ export const envSchema = z
 
         IDEMPOTENCY_TTL: durationSchema.default(24 * 3600),
 
+        PUBLIC_SITE_URL: z.url().default('http://localhost:5173'),
+        DEFAULT_CURRENCY: z
+            .string()
+            .regex(/^[A-Z]{3}$/)
+            .default('BYN'),
+
+        OUTBOX_MAX_ATTEMPTS: positiveInt(8),
+        OUTBOX_RETENTION_DAYS: positiveInt(30),
+        OUTBOX_BATCH_SIZE: positiveInt(100),
+        WEBHOOK_TIMEOUT_MS: positiveInt(5000),
+        WEBHOOK_ALLOW_PRIVATE_HOSTS: z.stringbool().default(false),
+        BOOKING_REMINDER_HOURS: positiveInt(24),
+
         PAGINATION_DEFAULT_LIMIT: positiveInt(30),
         PAGINATION_MAX_LIMIT: positiveInt(100),
         PAGINATION_MAX_PAGE: positiveInt(1000),
@@ -176,6 +189,8 @@ export const envSchema = z
         ARCHIVE_RETENTION_DAYS: positiveInt(30),
         ANALYTICS_RETENTION_DAYS: positiveInt(365),
         SMS_RETENTION_DAYS: positiveInt(365),
+        BOOKING_HISTORY_RETENTION_DAYS: positiveInt(365),
+        SERVICE_TRASH_RETENTION_DAYS: positiveInt(30),
         RECURRENT_HORIZON_DAYS: positiveInt(30),
 
         JOBS_ENABLED: z.stringbool().default(false),
@@ -191,6 +206,9 @@ export const envSchema = z
         JOB_STORAGE_GC_CRON: z.string().default('0 5 * * *'),
         JOB_DEBTOR_REPORT_CRON: z.string().default('0 12 * * *'),
         JOB_UNREFERENCED_IMAGES_CRON: z.string().default('30 12 * * *'),
+        JOB_OUTBOX_DISPATCH_CRON: z.string().default('* * * * *'),
+        JOB_BOOKING_REMINDERS_CRON: z.string().default('0 * * * *'),
+        JOB_TRASH_PURGE_CRON: z.string().default('0 6 * * *'),
         /** How long a stored file is left alone before `storage_gc` may treat it as an orphan. */
         STORAGE_GC_MIN_AGE: durationSchema.default(24 * 3600),
         REPORT_RECIPIENTS: csv,

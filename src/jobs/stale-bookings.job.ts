@@ -13,7 +13,8 @@ const BATCH = 200;
  * Drops bookings whose slot no longer exists. With bookings in their own collection there is no
  * second copy to reconcile any more; what remains is the slot an admin removed by hand or a service
  * that went away outside a cascade. Slots are read as coordinates only and stale rows are deleted
- * by id, so the job never loads a whole service or booking document.
+ * by id, so the job never loads a whole service or booking document. Finished rows (completed,
+ * no-show, cancelled) are statistics, not reservations: they are left alone until their TTL.
  */
 @Injectable()
 export class StaleBookingsJob {
@@ -33,7 +34,7 @@ export class StaleBookingsJob {
         let stale: string[] = [];
         let removed = 0;
 
-        for await (const booking of this.bookings.iterateAll()) {
+        for await (const booking of this.bookings.iterateActive()) {
             const key = this.keyOf(
                 booking.service_id.toHexString(),
                 booking.option_id,

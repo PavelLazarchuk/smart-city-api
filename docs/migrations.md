@@ -45,7 +45,8 @@ against a database that already has the index is safe.
 
 ## Changing a TTL window
 
-`ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS` and `SMS_RETENTION_DAYS` are read by the migration when
+`ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS`, `SMS_RETENTION_DAYS`, `BOOKING_HISTORY_RETENTION_DAYS` and
+`OUTBOX_RETENTION_DAYS` are read by the migration when
 the TTL index is created — they are **not** read at runtime, and the Mongoose schemas deliberately do not declare TTL at all.
 Changing the variable alone changes nothing on an existing database.
 
@@ -83,3 +84,11 @@ created after the switch are only restored if `down` runs before the old version
 [`20260912000000-idempotency-keys.js`](../migrations/20260912000000-idempotency-keys.js) is back to the
 ordinary kind: it only adds the `idempotency_keys` collection with its unique and TTL indexes, plus one
 booking index, so the running version neither notices it nor needs it.
+
+[`20260914000000-p3-catalogue-and-lifecycle.js`](../migrations/20260914000000-p3-catalogue-and-lifecycle.js)
+is backwards compatible in the forward direction: it adds fields the running version ignores (`status` from
+`enabled`, generated `slug`s, `active: true` on every booking), the four new collections and the new indexes,
+and rebuilds `unique_booking_per_slot` as a partial index on `active: true` — the same key, so the old version's
+inserts still hit it. Its `down` is **lossy by design**: a service in the trash is deleted with its bookings
+(it was deleted from the user's point of view), and finished bookings are removed (the old model has no such
+row and the plain unique index could not be rebuilt over them). Run it only as a real rollback.

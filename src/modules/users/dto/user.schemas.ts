@@ -38,6 +38,7 @@ export const userBookingResponseSchema = z.object({
     date: z.string().optional(),
     time: z.string().optional(),
     info: z.string().catch(''),
+    status: z.string().catch('confirmed'),
     created_at: isoDateTimeSchema,
 });
 export class UserBookingResponseDto extends createZodDto(userBookingResponseSchema) {}

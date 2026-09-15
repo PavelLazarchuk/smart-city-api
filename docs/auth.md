@@ -115,3 +115,15 @@ The full endpoint-by-endpoint access matrix is enforced by the authorization-mat
 `THROTTLE_GLOBAL_LIMIT`; uploads `THROTTLE_UPLOAD_LIMIT`. With `THROTTLE_STORAGE=mongo` (the default) the
 counters live in the `rate_limits` collection and are therefore shared by every replica. Set
 `TRUST_PROXY=true` behind a reverse proxy, or every request will be counted against the proxy's IP.
+
+Every response says where the caller stands: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
+(seconds) and `RateLimit-Policy` (`<limit>;w=<window seconds>`) describe the window with the least headroom
+among those that applied — on `/auth/*` the strict one — and a `429` carries `Retry-After`. The legacy
+`X-RateLimit-*-<name>` headers per throttler are still sent.
+
+## Webhooks
+
+`POST/GET/PATCH/DELETE /webhooks` are for admins: a `common-admin` manages the hooks of their own organizations
+(`organization_id` required), a `super-admin` any of them and the platform-wide ones (`organization_id: null`),
+which receive every organization's events. `GET /outbox/events` and `POST /outbox/events/:id/replay` follow the
+same scope. The secret appears in exactly two responses: creation and `POST /webhooks/:id/rotate-secret`.

@@ -74,7 +74,7 @@ export class DebtorReportJob {
         for (const service of services) {
             const organization = byId.get(service.organization_id.toHexString());
 
-            if (!organization) continue;
+            if (!organization || service.deleted_at || service.status === 'archived') continue;
 
             if (DebtorReportJob.isDebtor(service, today)) {
                 rows.push({

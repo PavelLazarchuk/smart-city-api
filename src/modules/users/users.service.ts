@@ -37,6 +37,7 @@ export interface UserBookingView {
     date?: string;
     time?: string;
     info: string;
+    status: string;
     created_at: Date;
 }
 
@@ -261,6 +262,7 @@ export class UsersService implements OnModuleInit {
             date: booking.slot_date ?? undefined,
             time: booking.slot_time ?? undefined,
             info: booking.info,
+            status: booking.status,
             created_at: booking.created_at,
         }));
     }

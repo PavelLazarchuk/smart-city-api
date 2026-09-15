@@ -20,6 +20,7 @@ export class MetricsService {
     private readonly smsSent: Counter<'provider' | 'purpose' | 'status'>;
     private readonly smsBudgetBlocked: Counter<'window'>;
     private readonly droppedItems: Counter<'route'>;
+    private readonly outboxDeliveries: Counter<'type' | 'target' | 'result'>;
 
     constructor(config: AppConfig) {
         this.registry.setDefaultLabels({ env: config.env, version: config.build.version });
@@ -80,6 +81,12 @@ export class MetricsService {
             labelNames: ['route'],
             registers: [this.registry],
         });
+        this.outboxDeliveries = new Counter({
+            name: 'outbox_deliveries_total',
+            help: 'Outbox delivery attempts by event type, target kind (handler, webhook) and outcome',
+            labelNames: ['type', 'target', 'result'],
+            registers: [this.registry],
+        });
     }
 
     observeHttp(method: string, route: string, status: number, durationMs: number): void {
@@ -114,6 +121,10 @@ export class MetricsService {
 
     countDroppedItems(route: string, count: number): void {
         this.droppedItems.inc({ route }, count);
+    }
+
+    countOutboxDelivery(type: string, target: string, result: 'ok' | 'failed'): void {
+        this.outboxDeliveries.inc({ type, target, result });
     }
 
     render(): Promise<string> {

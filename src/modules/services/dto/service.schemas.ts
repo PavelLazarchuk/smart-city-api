@@ -5,6 +5,7 @@ import { z, type ZodType } from 'zod';
 import { type RequestWithUser } from '../../../common/decorators/current-user.decorator';
 import { ROLES } from '../../../common/decorators/roles.decorator';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
+import { SLUG_MAX_LENGTH, SLUG_PATTERN } from '../../../common/slug';
 import {
     dateOnlySchema,
     enabledSchema,
@@ -18,7 +19,14 @@ import {
     urlSchema,
     uuidSchema,
 } from '../../../common/zod/primitives';
-import { SERVICE_TYPES, SLOT_TYPES, WEEKDAYS } from '../schemas/service.schema';
+import { REVISION_ACTIONS } from '../schemas/service-revision.schema';
+import {
+    FORM_FIELD_TYPES,
+    SERVICE_STATUSES,
+    SERVICE_TYPES,
+    SLOT_TYPES,
+    WEEKDAYS,
+} from '../schemas/service.schema';
 
 const text = z.string().trim().max(5000);
 const limitSchema = z.number().int().min(0).nullable();
@@ -38,6 +46,7 @@ export const bookingResponseSchema = z.object({
     person: z.string().catch(''),
     phone: z.string().catch(''),
     info: z.string().catch(''),
+    status: z.string().catch('confirmed'),
     created_at: isoDateTimeSchema,
 });
 
@@ -163,7 +172,11 @@ export const slotResponseSchema = slotResponseSchemaFor(bookingsOutput);
 
 export const recurrentDateSchema = z.object({
     day: z.enum(WEEKDAYS),
-    time: z.array(z.object({ time: timeOfDaySchema, limit: limitSchema.optional() })).max(200),
+    time: z
+        .array(z.object({ time: timeOfDaySchema, limit: limitSchema.optional() }))
+        .max(200)
+        .default([]),
+    limit: limitSchema.optional(),
 });
 
 export const serviceOptionInputSchema = z.object({
@@ -187,6 +200,7 @@ const serviceOptionResponseSchemaFor = (bookings: z.ZodType) =>
                 z.object({
                     day: z.enum(WEEKDAYS),
                     time: z.array(z.object({ time: outputText, limit: limitSchema.catch(null) })),
+                    limit: limitSchema.catch(null).optional(),
                 }),
             )
             .optional(),
@@ -194,6 +208,84 @@ const serviceOptionResponseSchemaFor = (bookings: z.ZodType) =>
     });
 
 export const serviceOptionResponseSchema = serviceOptionResponseSchemaFor(bookingsOutput);
+
+export const slugSchema = z.string().trim().toLowerCase().min(1).max(SLUG_MAX_LENGTH).regex(SLUG_PATTERN);
+const tagSchema = z.string().trim().min(1).max(50);
+const currencySchema = z.string().regex(/^[A-Z]{3}$/, 'Must be an ISO 4217 code');
+const monthDaySchema = z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Must be MM-DD');
+const fieldKeySchema = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, 'Must be snake_case');
+
+export const workingHoursSchema = z
+    .object({ day: z.enum(WEEKDAYS), from: timeOfDaySchema, to: timeOfDaySchema })
+    .refine((entry) => entry.from < entry.to, { message: 'from must be before to', path: ['to'] });
+
+export const geoPointInputSchema = z.object({
+    lng: z.number().min(-180).max(180),
+    lat: z.number().min(-90).max(90),
+});
+
+export const geoPointOutputSchema = z.object({
+    type: z.literal('Point'),
+    coordinates: z.tuple([z.number(), z.number()]),
+});
+
+export const bookingPolicySchema = z.object({
+    max_active_per_user: z.number().int().min(1).nullable().optional(),
+    lead_time_minutes: z.number().int().min(0).nullable().optional(),
+    max_advance_days: z.number().int().min(1).nullable().optional(),
+    cancel_deadline_minutes: z.number().int().min(0).nullable().optional(),
+    requires_confirmation: z.boolean().optional(),
+});
+export type BookingPolicyInput = z.infer<typeof bookingPolicySchema>;
+
+const bookingPolicyOutputSchema = z.object({
+    max_active_per_user: z.number().int().nullable().catch(null),
+    lead_time_minutes: z.number().int().nullable().catch(null),
+    max_advance_days: z.number().int().nullable().catch(null),
+    cancel_deadline_minutes: z.number().int().nullable().catch(null),
+    requires_confirmation: z.boolean().catch(false),
+});
+
+export const formFieldSchema = z
+    .object({
+        key: fieldKeySchema,
+        label: labelSchema,
+        type: z.enum(FORM_FIELD_TYPES),
+        required: z.boolean().optional(),
+        options: z.array(z.string().trim().min(1).max(100)).min(1).max(50).optional(),
+        placeholder: z.string().trim().max(200).optional(),
+        max_length: z.number().int().min(1).max(5000).nullable().optional(),
+    })
+    .refine((field) => field.type !== 'select' || (field.options?.length ?? 0) > 0, {
+        message: 'A select field needs options',
+        path: ['options'],
+    });
+export type FormFieldInput = z.infer<typeof formFieldSchema>;
+
+const formFieldOutputSchema = z.object({
+    key: z.string(),
+    label: z.string(),
+    type: z.enum(FORM_FIELD_TYPES),
+    required: z.boolean().catch(false),
+    options: z.array(z.string()).optional(),
+    placeholder: z.string().optional(),
+    max_length: z.number().int().nullable().catch(null),
+});
+
+export const requiredDocumentSchema = z.object({
+    key: fieldKeySchema,
+    label: labelSchema,
+    required: z.boolean().optional(),
+});
+
+const requiredDocumentOutputSchema = z.object({
+    key: z.string(),
+    label: z.string(),
+    required: z.boolean().catch(true),
+});
+
+const uniqueKeys = <T extends { key: string }>(items: T[]): boolean =>
+    new Set(items.map((item) => item.key)).size === items.length;
 
 // ----- service -----
 
@@ -225,6 +317,20 @@ export const serviceContentResponseSchema = z.object({
     subscribe: outputText.optional(),
 });
 
+export const includedOrganizationSchema = z.object({
+    id: idOutputSchema,
+    main_label: z.string(),
+    main_category: z.string().optional(),
+    main_image: z.string(),
+    status: z.string().catch('active'),
+});
+
+export const includedCategorySchema = z.object({
+    id: idOutputSchema,
+    label: z.string(),
+    enabled: enabledSchema.catch(false),
+});
+
 const serviceResponseSchemaFor = (bookings: z.ZodType) =>
     z.object({
         id: idOutputSchema,
@@ -232,9 +338,38 @@ const serviceResponseSchemaFor = (bookings: z.ZodType) =>
         category_id: idOutputSchema.nullable(),
         position: positionSchema.catch(0),
         label: z.string(),
+        slug: z.string().optional(),
         enabled: enabledSchema,
+        status: z.enum(SERVICE_STATUSES).catch('draft'),
+        published_at: isoDateTimeSchema.nullable().catch(null),
+        description: outputText.optional(),
+        tags: z.array(z.string()).catch([]),
+        duration_minutes: z.number().int().nullable().catch(null),
+        buffer_minutes: z.number().int().nullable().catch(null),
+        price: z.number().nullable().catch(null),
+        currency: z.string().optional(),
+        address: outputText.optional(),
+        location: geoPointOutputSchema.optional(),
+        working_hours: z
+            .array(z.object({ day: z.enum(WEEKDAYS), from: outputText, to: outputText }))
+            .catch([]),
+        holidays: z.array(z.string()).catch([]),
+        blackout_dates: z.array(z.string()).catch([]),
+        booking_policy: bookingPolicyOutputSchema.catch({
+            max_active_per_user: null,
+            lead_time_minutes: null,
+            max_advance_days: null,
+            cancel_deadline_minutes: null,
+            requires_confirmation: false,
+        }),
+        form_fields: z.array(formFieldOutputSchema).catch([]),
+        required_documents: z.array(requiredDocumentOutputSchema).catch([]),
         value: serviceContentResponseSchema,
         options: z.array(serviceOptionResponseSchemaFor(bookings)),
+        deleted_at: isoDateTimeSchema.nullable().catch(null),
+        distance_m: z.number().optional(),
+        organization: includedOrganizationSchema.optional(),
+        category: includedCategorySchema.nullable().optional(),
         ...timestampsOutputSchema,
     });
 
@@ -253,6 +388,38 @@ export function viewerSeesBookings(request: Request): boolean {
 export const serviceSchemaForViewer = (request: Request): ZodType =>
     viewerSeesBookings(request) ? serviceResponseSchema : maskedServiceResponseSchema;
 
+const descriptiveFields = {
+    slug: slugSchema,
+    status: z.enum(SERVICE_STATUSES),
+    description: text,
+    tags: z.array(tagSchema).max(30),
+    duration_minutes: z
+        .number()
+        .int()
+        .min(1)
+        .max(24 * 60)
+        .nullable(),
+    buffer_minutes: z
+        .number()
+        .int()
+        .min(0)
+        .max(24 * 60)
+        .nullable(),
+    price: z.number().min(0).max(1_000_000_000).nullable(),
+    currency: currencySchema,
+    address: z.string().trim().max(500),
+    location: geoPointInputSchema.nullable(),
+    working_hours: z.array(workingHoursSchema).max(28),
+    holidays: z.array(monthDaySchema).max(100),
+    blackout_dates: z.array(dateOnlySchema).max(400),
+    booking_policy: bookingPolicySchema,
+    form_fields: z.array(formFieldSchema).max(30).refine(uniqueKeys, { message: 'Keys must be unique' }),
+    required_documents: z
+        .array(requiredDocumentSchema)
+        .max(30)
+        .refine(uniqueKeys, { message: 'Keys must be unique' }),
+};
+
 export const createServiceSchema = z.object({
     organization_id: objectIdSchema,
     category_id: objectIdSchema.nullable().optional(),
@@ -260,7 +427,17 @@ export const createServiceSchema = z.object({
     enabled: enabledSchema.optional(),
     value: serviceContentInputSchema.optional(),
     options: z.array(serviceOptionInputSchema).max(50).optional(),
-});
+    ...Object.fromEntries(Object.entries(descriptiveFields).map(([key, schema]) => [key, schema.optional()])),
+}) as z.ZodObject<
+    {
+        organization_id: typeof objectIdSchema;
+        category_id: z.ZodOptional<z.ZodNullable<typeof objectIdSchema>>;
+        label: z.ZodOptional<typeof labelSchema>;
+        enabled: z.ZodOptional<typeof enabledSchema>;
+        value: z.ZodOptional<typeof serviceContentInputSchema>;
+        options: z.ZodOptional<z.ZodArray<typeof serviceOptionInputSchema>>;
+    } & { [K in keyof typeof descriptiveFields]: z.ZodOptional<(typeof descriptiveFields)[K]> }
+>;
 export type CreateServiceInput = z.infer<typeof createServiceSchema>;
 export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 
@@ -271,18 +448,91 @@ export const updateServiceSchema = z
         enabled: enabledSchema,
         value: serviceContentInputSchema,
         options: z.array(serviceOptionInputSchema).max(50),
+        ...descriptiveFields,
     })
     .partial();
 export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
 export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
 
+export const SERVICE_INCLUDES = ['organization', 'category'] as const;
+export type ServiceInclude = (typeof SERVICE_INCLUDES)[number];
+
+const includeSchema = z
+    .string()
+    .optional()
+    .transform((value) =>
+        value
+            ? value
+                  .split(',')
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+            : [],
+    )
+    .pipe(z.array(z.enum(SERVICE_INCLUDES)).max(SERVICE_INCLUDES.length));
+
+const csvTags = z
+    .string()
+    .optional()
+    .transform((value) =>
+        value
+            ? value
+                  .split(',')
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+            : [],
+    )
+    .pipe(z.array(tagSchema).max(10));
+
 export const listServicesQuerySchema = paginationQuerySchema.extend({
     organization_id: objectIdSchema.optional(),
     category_id: objectIdSchema.optional(),
     enabled: z.stringbool().optional(),
+    status: z.enum(SERVICE_STATUSES).optional(),
+    tags: csvTags,
+    q: z.string().trim().min(1).max(200).optional(),
+    deleted: z.stringbool().optional(),
+    include: includeSchema,
+    fields: z.string().optional(),
 });
 export type ListServicesQuery = z.infer<typeof listServicesQuerySchema>;
 export class ListServicesQueryDto extends createZodDto(listServicesQuerySchema) {}
+
+export const getServiceQuerySchema = z.object({ include: includeSchema, fields: z.string().optional() });
+export type GetServiceQuery = z.infer<typeof getServiceQuerySchema>;
+export class GetServiceQueryDto extends createZodDto(getServiceQuerySchema) {}
+
+export const nearbyQuerySchema = z.object({
+    lat: z.coerce.number().min(-90).max(90),
+    lng: z.coerce.number().min(-180).max(180),
+    radius_m: z.coerce.number().int().min(1).max(200_000).default(5000),
+    limit: z.coerce.number().int().min(1).max(100).default(30),
+    tags: csvTags,
+    include: includeSchema,
+    fields: z.string().optional(),
+});
+export type NearbyQuery = z.infer<typeof nearbyQuerySchema>;
+export class NearbyQueryDto extends createZodDto(nearbyQuerySchema) {}
+
+export const setServiceStatusSchema = z.object({ status: z.enum(SERVICE_STATUSES) });
+export class SetServiceStatusDto extends createZodDto(setServiceStatusSchema) {}
+
+export const deleteServiceQuerySchema = z.object({ permanent: z.stringbool().optional() });
+export class DeleteServiceQueryDto extends createZodDto(deleteServiceQuerySchema) {}
+
+export const serviceRevisionResponseSchema = z.object({
+    id: idOutputSchema,
+    service_id: idOutputSchema,
+    organization_id: idOutputSchema,
+    action: z.enum(REVISION_ACTIONS),
+    actor_id: idOutputSchema.nullable(),
+    actor_role: z.string().nullable(),
+    changes: z.record(
+        z.string(),
+        z.object({ before: z.unknown().optional(), after: z.unknown().optional() }),
+    ),
+    ...timestampsOutputSchema,
+});
+export class ServiceRevisionResponseDto extends createZodDto(serviceRevisionResponseSchema) {}
 
 // ----- options and slots as sub-resources -----
 
@@ -369,11 +619,15 @@ export class AvailabilityResponseDto extends createZodDto(availabilityResponseSc
 
 // ----- bookings (input) -----
 
+export const bookingFieldsSchema = z.record(fieldKeySchema, z.unknown());
+
 export const createBookingSchema = z.object({
     option_id: uuidSchema,
     slot_id: uuidSchema,
     time: timeOfDaySchema.optional(),
     info: z.string().trim().max(1000).optional(),
+    fields: bookingFieldsSchema.optional(),
+    documents: z.array(fieldKeySchema).max(30).optional(),
 });
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 export class CreateBookingDto extends createZodDto(createBookingSchema) {}
@@ -385,6 +639,7 @@ export const bookingCreatedResponseSchema = z.object({
     option_id: z.string(),
     slot_id: z.string(),
     child_type: z.enum(SLOT_TYPES),
+    status: z.string(),
     date: outputText.optional(),
     time: outputText.optional(),
     created_at: isoDateTimeSchema,

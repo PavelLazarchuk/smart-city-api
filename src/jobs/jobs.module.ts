@@ -11,17 +11,20 @@ import { NewsModule } from '../modules/news/news.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
 import { ServicesModule } from '../modules/services/services.module';
 import { UsersModule } from '../modules/users/users.module';
+import { BookingRemindersJob } from './booking-reminders.job';
 import { CascadeReconcileJob } from './cascade-reconcile.job';
 import { DebtorReportJob } from './debtor-report.job';
 import { JobLockService } from './job-lock.service';
 import { JobRunner } from './job-runner';
 import { JobsScheduler } from './jobs.scheduler';
 import { NewsExpiryJob } from './news-expiry.job';
+import { OutboxDispatchJob } from './outbox-dispatch.job';
 import { RecurrentSlotsJob } from './recurrent-slots.job';
 import { JobLock, JobLockSchema } from './schemas/job-lock.schema';
 import { SlotExpiryJob } from './slot-expiry.job';
 import { StaleBookingsJob } from './stale-bookings.job';
 import { StorageGcJob } from './storage-gc.job';
+import { TrashPurgeJob } from './trash-purge.job';
 import { UnreferencedImagesJob } from './unreferenced-images.job';
 
 @Module({
@@ -49,6 +52,9 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         StorageGcJob,
         DebtorReportJob,
         UnreferencedImagesJob,
+        BookingRemindersJob,
+        OutboxDispatchJob,
+        TrashPurgeJob,
         JobsScheduler,
     ],
     exports: [
@@ -62,6 +68,9 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         StorageGcJob,
         DebtorReportJob,
         UnreferencedImagesJob,
+        BookingRemindersJob,
+        OutboxDispatchJob,
+        TrashPurgeJob,
     ],
 })
 export class JobsModule {}

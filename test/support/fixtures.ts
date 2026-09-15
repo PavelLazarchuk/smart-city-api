@@ -144,7 +144,10 @@ export class Fixtures {
             category_id: categoryId ? new Types.ObjectId(categoryId) : null,
             position: rest.position ?? next(),
             label: `Service ${counter}`,
+            slug: `service-${counter}-${randomUUID().slice(0, 6)}`,
             enabled: true,
+            status: 'published',
+            published_at: new Date(),
             value: { heading_value: `Service ${counter}` },
             options: [],
             ...rest,
@@ -190,8 +193,12 @@ export class Fixtures {
         person?: string;
         phone?: string;
         info?: string;
+        slot_date?: string | null;
+        status?: 'pending' | 'confirmed' | 'completed' | 'no_show' | 'cancelled';
     }): Promise<{ id: string }> {
         const id = randomUUID();
+        const status = params.status ?? 'confirmed';
+        const active = status === 'pending' || status === 'confirmed';
         await this.model<Booking>(Booking.name).create({
             id,
             service_id: new Types.ObjectId(params.service_id),
@@ -199,14 +206,21 @@ export class Fixtures {
             option_id: params.option_id,
             slot_id: params.slot_id,
             child_type: params.child_type ?? (params.time ? 'date_time' : 'apply'),
-            slot_date: null,
+            slot_date: params.slot_date ?? null,
             slot_time: params.time ?? null,
             service_label: 'Service',
             user_id: new Types.ObjectId(params.user_id),
             person: params.person ?? 'Person',
             phone: params.phone ?? '375290000000',
             info: params.info ?? '',
+            status,
+            active,
+            confirmed_at: status === 'confirmed' ? new Date() : null,
+            finished_at: active ? null : new Date(),
         });
+
+        if (!active) return { id };
+
         const counter = params.time
             ? { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 1 }
             : { 'options.$[option].slots.$[slot].value.booked_count': 1 };
@@ -229,6 +243,7 @@ export class Fixtures {
             organization_id: new Types.ObjectId(organizationId),
             position: overrides.position ?? next(),
             label: `News ${counter}`,
+            slug: `news-${counter}-${randomUUID().slice(0, 6)}`,
             enabled: true,
             date: new Date(),
             is_main: false,

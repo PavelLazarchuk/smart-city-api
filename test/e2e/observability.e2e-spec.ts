@@ -145,6 +145,7 @@ describe('observability (e2e)', () => {
                 position: 0,
                 label: 42,
                 enabled: true,
+                status: 'published',
                 value: {},
                 options: [],
                 created_at: new Date(),

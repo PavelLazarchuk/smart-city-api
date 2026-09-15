@@ -1,7 +1,7 @@
 # Scheduled jobs
 
-Eight background jobs keep booking data, published content, uploaded files and the operational reports in
-shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of the old `services/cron.js`.
+Eleven background jobs keep booking data, published content, uploaded files, notifications and the operational
+reports in shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of the old `services/cron.js`.
 
 ## How they run
 
@@ -26,16 +26,19 @@ shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of the old `se
 
 ## The jobs
 
-| Job                   | Variable                       | Default       | What it does                                         |
-| --------------------- | ------------------------------ | ------------- | ---------------------------------------------------- |
-| `recurrent_slots`     | `JOB_RECURRENT_SLOTS_CRON`     | `0 3 * * *`   | Generates dated slots from recurrent schedules       |
-| `news_expiry`         | `JOB_NEWS_EXPIRY_CRON`         | `0 */2 * * *` | Archives and removes expired news                    |
-| `slot_expiry`         | `JOB_SLOT_EXPIRY_CRON`         | `30 3 * * *`  | Archives and removes slots whose date has passed     |
-| `stale_bookings`      | `JOB_STALE_BOOKINGS_CRON`      | `0 4 * * *`   | Drops bookings whose slot no longer exists           |
-| `cascade_reconcile`   | `JOB_CASCADE_RECONCILE_CRON`   | `30 4 * * *`  | Finishes cascades that never ran, for any parent     |
-| `storage_gc`          | `JOB_STORAGE_GC_CRON`          | `0 5 * * *`   | Deletes stored files no `images` row points at       |
-| `debtor_report`       | `JOB_DEBTOR_REPORT_CRON`       | `0 12 * * *`  | E-mails the "services without upcoming slots" report |
-| `unreferenced_images` | `JOB_UNREFERENCED_IMAGES_CRON` | `30 12 * * *` | E-mails the list of images nothing refers to         |
+| Job                   | Variable                       | Default       | What it does                                          |
+| --------------------- | ------------------------------ | ------------- | ----------------------------------------------------- |
+| `recurrent_slots`     | `JOB_RECURRENT_SLOTS_CRON`     | `0 3 * * *`   | Generates dated slots from recurrent schedules        |
+| `news_expiry`         | `JOB_NEWS_EXPIRY_CRON`         | `0 */2 * * *` | Archives and removes expired news                     |
+| `slot_expiry`         | `JOB_SLOT_EXPIRY_CRON`         | `30 3 * * *`  | Archives and removes slots whose date has passed      |
+| `stale_bookings`      | `JOB_STALE_BOOKINGS_CRON`      | `0 4 * * *`   | Drops bookings whose slot no longer exists            |
+| `cascade_reconcile`   | `JOB_CASCADE_RECONCILE_CRON`   | `30 4 * * *`  | Finishes cascades that never ran, for any parent      |
+| `storage_gc`          | `JOB_STORAGE_GC_CRON`          | `0 5 * * *`   | Deletes stored files no `images` row points at        |
+| `debtor_report`       | `JOB_DEBTOR_REPORT_CRON`       | `0 12 * * *`  | E-mails the "services without upcoming slots" report  |
+| `unreferenced_images` | `JOB_UNREFERENCED_IMAGES_CRON` | `30 12 * * *` | E-mails the list of images nothing refers to          |
+| `outbox_dispatch`     | `JOB_OUTBOX_DISPATCH_CRON`     | `* * * * *`   | Delivers queued events: mail, SMS, webhooks, retries  |
+| `booking_reminders`   | `JOB_BOOKING_REMINDERS_CRON`   | `0 * * * *`   | Emits `booking.reminder` for tomorrow's bookings      |
+| `trash_purge`         | `JOB_TRASH_PURGE_CRON`         | `0 6 * * *`   | Permanently deletes services long enough in the trash |
 
 ### `recurrent_slots` — [recurrent-slots.job.ts](../src/jobs/recurrent-slots.job.ts)
 
@@ -46,6 +49,11 @@ the option's existing slots. It then applies the difference:
 - a date with no slot yet → a new `date_time` slot with the configured times;
 - a date whose slot lacks a configured time → that time is appended;
 - a time that is no longer configured → removed, **unless it holds bookings**, which are never stranded.
+
+A weekday whose `time` list is empty takes its times from the service's `working_hours` for that weekday, cut
+into `duration_minutes + buffer_minutes` steps as long as a whole appointment fits, each with the weekday's
+`limit`. Dates in the service's `blackout_dates`, in its `holidays` (`MM-DD`, every year) or in the
+organization's `holidays` produce nothing. A service in the trash or archived is left alone.
 
 All differences travel as one `bulkWrite`. The job is idempotent: a second run over the same data produces no
 changes and reports `services_updated: 0`.
@@ -64,7 +72,8 @@ Scans services that have `date` or `date_time` slots and, per service and inside
 2. writes an `archives` snapshot of every slot whose date is before today, together with the bookings that
    slot held,
 3. removes those slots by id,
-4. deletes the bookings of those slots.
+4. deletes the still-active bookings of those slots and the slot's waitlist entries; finished bookings
+   (completed, no-show, cancelled) are the outcome statistics and stay until the history TTL.
 
 Reports `services_updated` and `slots_archived`. Archived snapshots expire on their own through the
 `archives` TTL index (`ARCHIVE_RETENTION_DAYS`).
@@ -74,8 +83,8 @@ Reports `services_updated` and `slots_archived`. Archived snapshots expire on th
 A repair job. With bookings in their own collection there is no second copy to reconcile; what is left is a
 booking whose slot was removed by hand or whose service went away outside a cascade. It reads the live slot
 coordinates (a projected read — ids and times only), streams the bookings, and deletes in batches those that
-point at nothing. Reports `bookings_removed`; in a healthy system it is zero, and a non-zero value is worth
-investigating.
+point at nothing. Only active rows are examined — a finished booking's slot is expected to be gone. Reports
+`bookings_removed`; in a healthy system it is zero, and a non-zero value is worth investigating.
 
 ### `cascade_reconcile` — [cascade-reconcile.job.ts](../src/jobs/cascade-reconcile.job.ts)
 
@@ -139,6 +148,27 @@ deleting on that basis would destroy a published page, while mailing a wrong lis
 adds a new field that stores an image URL adds it to that method too. The `.xlsx` goes to
 `REPORT_RECIPIENTS`; with nothing to report, or no recipients, it sends no mail. Reports `rows`, `bytes`
 and `recipients`.
+
+### `outbox_dispatch` — [outbox-dispatch.job.ts](../src/jobs/outbox-dispatch.job.ts)
+
+Drains the transactional outbox ([architecture.md](architecture.md#outbox-and-webhooks)). Every commit that
+emits an event already pokes the dispatcher in-process, so this minute tick is the safety net: retries whose
+backoff has elapsed, and events left behind by a replica that died between its commit and its poke. Each event
+is claimed with a short lease by an atomic `findOneAndUpdate`, so the cron worker and a poked API replica never
+deliver the same event twice. Reports `processed`, `delivered`, `retried`, `failed`.
+
+### `booking_reminders` — [booking-reminders.job.ts](../src/jobs/booking-reminders.job.ts)
+
+Hourly. Finds the active bookings whose `slot_date` is `BOOKING_REMINDER_HOURS` ahead and have no
+`reminder_sent_at`, emits one `booking.reminder` outbox event each (the SMS to the citizen and any webhook
+delivery are the outbox's business, with its retries and the SMS budget), and marks the rows so the next run
+does not repeat them. Reports `date` and `reminders`.
+
+### `trash_purge` — [trash-purge.job.ts](../src/jobs/trash-purge.job.ts)
+
+Empties the trash: a service with `deleted_at` older than `SERVICE_TRASH_RETENTION_DAYS` is removed for good
+through the same cascade a permanent delete runs (bookings, waitlist, archives, revisions), one transaction
+per service. Reports `purged`.
 
 ## Running a job by hand
 

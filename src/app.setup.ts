@@ -8,6 +8,7 @@ import { Logger } from 'nestjs-pino';
 import { resolve } from 'node:path';
 
 import { AppConfig } from './common/config/app-config';
+import { documentErrorResponses } from './common/openapi/error-responses';
 
 /** Everything `main.ts` and the e2e harness must share, so the two can never drift apart. */
 export function configureApp(app: INestApplication): INestApplication {
@@ -44,7 +45,7 @@ export function configureApp(app: INestApplication): INestApplication {
                 .addBearerAuth()
                 .build(),
         );
-        SwaggerModule.setup('api/docs', app, cleanupOpenApiDoc(document), {
+        SwaggerModule.setup('api/docs', app, documentErrorResponses(app, cleanupOpenApiDoc(document)), {
             jsonDocumentUrl: 'api/docs-json',
         });
     }

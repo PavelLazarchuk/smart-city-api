@@ -3,19 +3,20 @@ import { Injectable } from '@nestjs/common';
 import { TransactionRunner } from '../common/database/transaction-runner';
 import { ArchivesService } from '../modules/archives/archives.service';
 import { BookingsRepository } from '../modules/bookings/bookings.repository';
+import { WaitlistRepository } from '../modules/bookings/waitlist.repository';
 import { ServicesService } from '../modules/services/services.service';
 import { formatDateOnly, isSlotExpired } from '../modules/services/slot.logic';
 import { JobRunner } from './job-runner';
 
 export const SLOT_EXPIRY_JOB = 'slot_expiry';
 
-/** Archives expired dated slots with their bookings, then removes both, transactionally. */
 @Injectable()
 export class SlotExpiryJob {
     constructor(
         private readonly services: ServicesService,
         private readonly archives: ArchivesService,
         private readonly bookings: BookingsRepository,
+        private readonly waitlist: WaitlistRepository,
         private readonly tx: TransactionRunner,
         private readonly runner: JobRunner,
     ) {}
@@ -66,7 +67,8 @@ export class SlotExpiryJob {
 
                 for (const [optionId, slotIds] of byOption) {
                     await this.services.pullSlots(id, optionId, slotIds, ctx.session);
-                    await this.bookings.deleteBySlots(id, optionId, slotIds, ctx.session);
+                    await this.bookings.deleteBySlots(id, optionId, slotIds, ctx.session, true);
+                    await this.waitlist.deleteBySlots(id, optionId, slotIds, ctx.session);
                 }
 
                 return expired.length;

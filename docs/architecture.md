@@ -59,6 +59,28 @@ inserted in the same transaction, and a duplicate is refused by a unique index r
 the original `201` back (with `Idempotency-Replayed: true`) instead of a `409` that says nothing about
 whether the first attempt landed.
 
+## Outbox and webhooks
+
+A business write and the record of "something happened" commit together: the booking service inserts an
+`outbox_events` row in the same transaction as the booking (`booking.created`, `booking.cancelled`,
+`booking.rescheduled`, `booking.status_changed`; the reminder job adds `booking.reminder`, a freed place
+`waitlist.slot_available`). After the commit the caller pokes
+[`OutboxService`](../src/common/outbox/outbox.service.ts), which claims due events with a short lease and fans
+each one out to its targets: the internal handlers registered for the type (the `subscribe` e-mail, the
+reminder and waitlist SMS) and every enabled webhook subscribed to it — the organization's own hooks plus the
+platform-wide ones a super-admin created. Every target is retried on its own with exponential backoff up to
+`OUTBOX_MAX_ATTEMPTS`; an event is `failed` only once the budget is spent, and `POST /outbox/events/:id/replay`
+puts it back. The `outbox_dispatch` job is the safety net for retries and for a replica that died between
+commit and poke.
+
+What a subscriber receives is the `payload` — coordinates, status, ids — never the person: names, phone numbers
+and the notification address travel in the event's `internal` field, which only handlers read. A webhook call
+is `POST` with `X-Webhook-Id`, `X-Webhook-Event`, `X-Webhook-Timestamp` and
+`X-Webhook-Signature: sha256=HMAC(secret, "<timestamp>.<body>")`; the secret is shown once, on creation or
+rotation. Because the platform makes these requests on an admin's behalf, the URL is checked against loopback,
+link-local and private ranges when it is saved and again — after DNS resolution — when it is called, redirects
+are not followed, and production demands `https` (`WEBHOOK_ALLOW_PRIVATE_HOSTS` lifts both for development).
+
 ## Validation and serialization
 
 zod is the single source of truth for both directions:
@@ -69,8 +91,10 @@ the sensitive-data e2e suite. Routes that serve two audiences declare both schem
 and the narrow one is used for the public audience: a service page for a citizen is serialized by a schema
 that accepts occupancy markers only, so a forgotten mask cannot leak a name or a phone number. In a list a
 row the schema refuses is dropped rather than failing the page, and the count is reported — `meta.dropped`
-in the response, `response_items_dropped_total` in the metrics. The same schemas generate the OpenAPI document, so Swagger cannot drift from
-the implementation.
+in the response, `response_items_dropped_total` in the metrics. A handler marked `@SparseFields()` accepts
+`?fields=a,b` and trims every serialized row to those keys (plus `id`), refusing a name the schema does not have
+with `400 FIELDS_NOT_ALLOWED`. The same schemas generate the OpenAPI document, so Swagger cannot drift from
+the implementation, and the error responses are generated too ([errors.md](errors.md#errors-in-the-openapi-document)).
 
 ## Providers
 

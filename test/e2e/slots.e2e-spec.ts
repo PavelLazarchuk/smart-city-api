@@ -165,7 +165,7 @@ describe('service options and slots (e2e)', () => {
             .send({ recurrent_dates: [{ day: 'monday', time: [{ time: '09:00', limit: 2 }] }] });
         expect(set.status).toBe(200);
         expect(set.body.data.options[0].recurrent_dates).toEqual([
-            { day: 'monday', time: [{ time: '09:00', limit: 2 }] },
+            { day: 'monday', time: [{ time: '09:00', limit: 2 }], limit: null },
         ]);
         expect(set.body.data.options[0].slots).toHaveLength(1);
 

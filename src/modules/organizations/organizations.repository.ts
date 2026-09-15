@@ -188,6 +188,42 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         return rows[0] ?? null;
     }
 
+    nearby(
+        lng: number,
+        lat: number,
+        radiusM: number,
+        limit: number,
+        filter: FilterQuery<Organization>,
+    ): Promise<(OrganizationEntity & { distance_m: number })[]> {
+        return this.aggregate<OrganizationEntity & { distance_m: number }>([
+            {
+                $geoNear: {
+                    near: { type: 'Point', coordinates: [lng, lat] },
+                    distanceField: 'distance_m',
+                    maxDistance: radiusM,
+                    query: filter,
+                    spherical: true,
+                },
+            },
+            { $limit: limit },
+        ]);
+    }
+
+    async holidays(): Promise<Map<string, string[]>> {
+        const rows = await this.model
+            .find({ 'holidays.0': { $exists: true } }, { holidays: 1 })
+            .lean<{ _id: Types.ObjectId; holidays: string[] }[]>()
+            .exec();
+
+        return new Map(rows.map((row) => [row._id.toHexString(), row.holidays]));
+    }
+
+    findManyByIds(ids: string[]): Promise<OrganizationEntity[]> {
+        if (ids.length === 0) return Promise.resolve([]);
+
+        return this.findMany({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } }, { _id: 1 });
+    }
+
     async countExisting(ids: string[]): Promise<number> {
         return this.count({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } });
     }

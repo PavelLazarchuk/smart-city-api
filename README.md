@@ -87,6 +87,10 @@ Notable switches:
   lock. The window is what stops the lock from being usable as a denial of service against one account.
 - `STORAGE_GC_MIN_AGE` — how long a stored file is left alone before `storage_gc` may call it an orphan.
 - `PHONE_COUNTRY_CODE` — phone numbers are E.164 digits without `+` and must start with this code.
+- `WEBHOOK_ALLOW_PRIVATE_HOSTS` — off by default: webhook targets on loopback or private networks are refused
+  and production demands `https`. `OUTBOX_MAX_ATTEMPTS` / `WEBHOOK_TIMEOUT_MS` bound the retries.
+- `BOOKING_HISTORY_RETENTION_DAYS` / `SERVICE_TRASH_RETENTION_DAYS` — how long finished bookings and
+  soft-deleted services are kept; both applied by the migration / the `trash_purge` job.
 
 > The old repository's `.env.example` and git history contain live credentials (Mongo Atlas, SMPP, SMTP,
 > Mapbox). Rotate them before this service reaches production — see [docs/deployment.md](docs/deployment.md).
@@ -120,6 +124,29 @@ Notable switches:
 - `GET /organizations/:id` returns the tree with every child list capped at `INCLUDE_MAX_ITEMS` and with
   anonymised bookings for every audience; the full booking lists come from `GET /services/:id` and
   `GET /organizations/:id/services`.
+- Services are a catalogue: `slug` (`GET /organizations/:id/services/:slug`), `status` draft/published/archived
+  (`PUT /services/:id/status`; the public sees published only), `description`, `tags`, numeric `price` +
+  `currency`, `address` + `location` (`GET /services/nearby?lat=&lng=&radius_m=`), `working_hours`, `holidays`,
+  `blackout_dates`, `booking_policy`, `form_fields`, `required_documents`. Lists take `?q=` (full text),
+  `?tags=`, `?include=organization,category` and `?fields=` (sparse fieldsets, `400 FIELDS_NOT_ALLOWED` for an
+  unknown name). `DELETE` is a soft delete (`?deleted=true` lists the trash, `POST /services/:id/restore`,
+  `?permanent=true` for super-admins), and `GET /services/:id/history` is the change log.
+- Bookings have a lifecycle: `pending → confirmed → completed | no_show`, or `cancelled`
+  (`PATCH /bookings/:id/status`, admins); `GET /bookings/:id`; `POST /bookings/:id/reschedule` moves one in a
+  single transaction; `GET /bookings/stats` gives no-show and cancellation rates; cancelled and finished rows
+  stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
+  (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told by SMS
+  when a place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
+- Notifications leave through a transactional outbox: the `subscribe` e-mail, reminder and waitlist SMS and
+  webhooks (`/webhooks`, HMAC-signed `POST`s for `booking.*` and `waitlist.*` events; `GET /outbox/events`,
+  `POST /outbox/events/:id/replay`) are delivered after the commit with retries — see
+  [docs/architecture.md](docs/architecture.md#outbox-and-webhooks).
+- News have `slug` (`GET /organizations/:id/news/:slug`), `rubric` (`?rubric=`), `publish_at` (hidden from the
+  public until then), `?q=` and an RSS 2.0 feed at `GET /news/rss?organization_id=&rubric=`.
+- Organizations carry `status` (`temporarily_closed` refuses new bookings), `working_hours`, `holidays`,
+  `address` and `location` (`GET /organizations/nearby`).
+- Every response carries the IETF `RateLimit-*` headers; the OpenAPI document lists every error code a route
+  can answer with ([docs/errors.md](docs/errors.md#errors-in-the-openapi-document)).
 
 The endpoint list with access rules is enforced by the authorization-matrix e2e suite; the live contract is the
 Swagger document generated from the zod schemas.
@@ -133,10 +160,11 @@ src/
                  http (errors, envelope), pagination, zod primitives, decorators, guards, cascade registry,
                  message catalogue
   modules/       auth, users, organizations, categories, services, bookings, news, infosections,
-                 images, archives, sms, analytics, health — each: controller / service / repository / schemas / dto
+                 images, archives, sms, analytics, health, webhooks — each: controller / service / repository / schemas / dto
   integrations/  sms (console, smpp), mail (console, smtp), storage (local, s3) behind provider interfaces
   jobs/          recurrent slots, news expiry, slot expiry, stale bookings, cascade reconcile, storage gc,
-                 debtor report, unreferenced images; job_locks lease carrying each job's last outcome
+                 debtor report, unreferenced images, outbox dispatch, booking reminders, trash purge;
+                 job_locks lease carrying each job's last outcome
                  (what each one does and when: docs/jobs.md)
 migrations/      migrate-mongo migrations (indexes)
 scripts/         seed, migration verification

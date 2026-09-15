@@ -80,6 +80,17 @@ export class AppConfig {
 
     readonly idempotency: { ttlSeconds: number };
 
+    readonly site: { publicUrl: string; defaultCurrency: string };
+
+    readonly outbox: {
+        maxAttempts: number;
+        batchSize: number;
+        webhookTimeoutMs: number;
+        allowPrivateHosts: boolean;
+    };
+
+    readonly bookings: { reminderHours: number; historyRetentionDays: number };
+
     readonly pagination: { defaultLimit: number; maxLimit: number; maxPage: number; includeMaxItems: number };
 
     readonly sms: {
@@ -119,6 +130,7 @@ export class AppConfig {
         archiveDays: number;
         analyticsDays: number;
         smsDays: number;
+        serviceTrashDays: number;
         recurrentHorizonDays: number;
     };
 
@@ -135,6 +147,9 @@ export class AppConfig {
             storageGc: string;
             debtorReport: string;
             unreferencedImages: string;
+            outboxDispatch: string;
+            bookingReminders: string;
+            trashPurge: string;
         };
         cascadeReconcileLimit: number;
         storageGcMinAgeSeconds: number;
@@ -204,6 +219,20 @@ export class AppConfig {
             storage: env.THROTTLE_STORAGE,
         };
         this.idempotency = { ttlSeconds: env.IDEMPOTENCY_TTL };
+        this.site = {
+            publicUrl: env.PUBLIC_SITE_URL.replace(/\/+$/, ''),
+            defaultCurrency: env.DEFAULT_CURRENCY,
+        };
+        this.outbox = {
+            maxAttempts: env.OUTBOX_MAX_ATTEMPTS,
+            batchSize: env.OUTBOX_BATCH_SIZE,
+            webhookTimeoutMs: env.WEBHOOK_TIMEOUT_MS,
+            allowPrivateHosts: env.WEBHOOK_ALLOW_PRIVATE_HOSTS,
+        };
+        this.bookings = {
+            reminderHours: env.BOOKING_REMINDER_HOURS,
+            historyRetentionDays: env.BOOKING_HISTORY_RETENTION_DAYS,
+        };
         this.pagination = {
             defaultLimit: env.PAGINATION_DEFAULT_LIMIT,
             maxLimit: env.PAGINATION_MAX_LIMIT,
@@ -253,6 +282,7 @@ export class AppConfig {
             archiveDays: env.ARCHIVE_RETENTION_DAYS,
             analyticsDays: env.ANALYTICS_RETENTION_DAYS,
             smsDays: env.SMS_RETENTION_DAYS,
+            serviceTrashDays: env.SERVICE_TRASH_RETENTION_DAYS,
             recurrentHorizonDays: env.RECURRENT_HORIZON_DAYS,
         };
         this.jobs = {
@@ -268,6 +298,9 @@ export class AppConfig {
                 storageGc: env.JOB_STORAGE_GC_CRON,
                 debtorReport: env.JOB_DEBTOR_REPORT_CRON,
                 unreferencedImages: env.JOB_UNREFERENCED_IMAGES_CRON,
+                outboxDispatch: env.JOB_OUTBOX_DISPATCH_CRON,
+                bookingReminders: env.JOB_BOOKING_REMINDERS_CRON,
+                trashPurge: env.JOB_TRASH_PURGE_CRON,
             },
             cascadeReconcileLimit: env.JOB_CASCADE_RECONCILE_LIMIT,
             storageGcMinAgeSeconds: env.STORAGE_GC_MIN_AGE,

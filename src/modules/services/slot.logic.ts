@@ -11,6 +11,7 @@ import {
     type SlotValue,
     type TimeEntry,
     WEEKDAYS,
+    type WorkingHours,
 } from './schemas/service.schema';
 
 export function formatDateOnly(date: Date): string {
@@ -78,6 +79,7 @@ export function optionFromInput(input: ServiceOptionInput): ServiceOption {
                 : input.recurrent_dates.map((entry) => ({
                       day: entry.day,
                       time: entry.time.map((time) => ({ time: time.time, limit: time.limit ?? null })),
+                      limit: entry.limit ?? null,
                   })),
         slots: (input.slots ?? []).map(slotFromInput),
     };
@@ -139,6 +141,7 @@ export interface BookingView {
     person: string;
     phone: string;
     info: string;
+    status: string;
     created_at: Date;
 }
 
@@ -167,6 +170,7 @@ export function attachBookings<T extends { id: string; slots: Slot[] }>(
             person: booking.person,
             phone: booking.phone,
             info: booking.info,
+            status: booking.status,
             created_at: booking.created_at,
         };
         bySlot.set(key, [...(bySlot.get(key) ?? []), view]);
@@ -205,15 +209,58 @@ export interface GeneratedDay {
     time: { time: string; limit: number | null }[];
 }
 
+export interface RecurrenceContext {
+    working_hours?: WorkingHours[];
+    duration_minutes?: number | null;
+    buffer_minutes?: number | null;
+    holidays?: string[];
+    blackout_dates?: string[];
+}
+
+function minutesOf(time: string): number {
+    const [hours = 0, minutes = 0] = time.split(':').map(Number);
+
+    return hours * 60 + minutes;
+}
+
+function timeOf(minutes: number): string {
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+export function timesFromWorkingHours(
+    hours: WorkingHours[],
+    day: (typeof WEEKDAYS)[number],
+    durationMinutes: number,
+    bufferMinutes: number,
+    limit: number | null,
+): { time: string; limit: number | null }[] {
+    const step = durationMinutes + bufferMinutes;
+    const starts = new Set<number>();
+
+    for (const interval of hours) {
+        if (interval.day !== day) continue;
+
+        const open = minutesOf(interval.from);
+        const close = minutesOf(interval.to);
+
+        for (let start = open; start + durationMinutes <= close; start += step) starts.add(start);
+    }
+
+    return [...starts].sort((a, b) => a - b).map((start) => ({ time: timeOf(start), limit }));
+}
+
 export function generateRecurrentDays(
     recurrent: RecurrentDate[],
     from: Date,
     horizonDays: number,
+    context: RecurrenceContext = {},
 ): GeneratedDay[] {
     const byWeekday = new Map<number, RecurrentDate>();
 
     for (const entry of recurrent) byWeekday.set(WEEKDAYS.indexOf(entry.day), entry);
 
+    const holidays = new Set(context.holidays ?? []);
+    const blackouts = new Set(context.blackout_dates ?? []);
     const result: GeneratedDay[] = [];
     const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
 
@@ -223,10 +270,25 @@ export function generateRecurrentDays(
 
         if (!config) continue;
 
-        result.push({
-            date: formatDateOnly(cursor),
-            time: config.time.map((time) => ({ time: time.time, limit: time.limit })),
-        });
+        const date = formatDateOnly(cursor);
+
+        if (blackouts.has(date) || holidays.has(date.slice(5))) continue;
+
+        const explicit = config.time.map((time) => ({ time: time.time, limit: time.limit }));
+        const generated =
+            explicit.length === 0 && context.duration_minutes && context.working_hours?.length
+                ? timesFromWorkingHours(
+                      context.working_hours,
+                      config.day,
+                      context.duration_minutes,
+                      context.buffer_minutes ?? 0,
+                      config.limit ?? null,
+                  )
+                : explicit;
+
+        if (generated.length === 0) continue;
+
+        result.push({ date, time: generated });
     }
 
     return result;

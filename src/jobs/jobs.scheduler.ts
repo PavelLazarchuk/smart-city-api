@@ -4,13 +4,16 @@ import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
 
 import { AppConfig } from '../common/config/app-config';
+import { BOOKING_REMINDERS_JOB, BookingRemindersJob } from './booking-reminders.job';
 import { CASCADE_RECONCILE_JOB, CascadeReconcileJob } from './cascade-reconcile.job';
 import { DEBTOR_REPORT_JOB, DebtorReportJob } from './debtor-report.job';
 import { NEWS_EXPIRY_JOB, NewsExpiryJob } from './news-expiry.job';
+import { OUTBOX_DISPATCH_JOB, OutboxDispatchJob } from './outbox-dispatch.job';
 import { RECURRENT_SLOTS_JOB, RecurrentSlotsJob } from './recurrent-slots.job';
 import { SLOT_EXPIRY_JOB, SlotExpiryJob } from './slot-expiry.job';
 import { STALE_BOOKINGS_JOB, StaleBookingsJob } from './stale-bookings.job';
 import { STORAGE_GC_JOB, StorageGcJob } from './storage-gc.job';
+import { TRASH_PURGE_JOB, TrashPurgeJob } from './trash-purge.job';
 import { UNREFERENCED_IMAGES_JOB, UnreferencedImagesJob } from './unreferenced-images.job';
 
 /**
@@ -32,6 +35,9 @@ export class JobsScheduler implements OnModuleInit, OnModuleDestroy {
         private readonly storageGc: StorageGcJob,
         private readonly debtorReport: DebtorReportJob,
         private readonly unreferencedImages: UnreferencedImagesJob,
+        private readonly bookingReminders: BookingRemindersJob,
+        private readonly outboxDispatch: OutboxDispatchJob,
+        private readonly trashPurge: TrashPurgeJob,
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(JobsScheduler.name);
@@ -53,6 +59,9 @@ export class JobsScheduler implements OnModuleInit, OnModuleDestroy {
         this.schedule(STORAGE_GC_JOB, cron.storageGc, () => this.storageGc.run());
         this.schedule(DEBTOR_REPORT_JOB, cron.debtorReport, () => this.debtorReport.run());
         this.schedule(UNREFERENCED_IMAGES_JOB, cron.unreferencedImages, () => this.unreferencedImages.run());
+        this.schedule(BOOKING_REMINDERS_JOB, cron.bookingReminders, () => this.bookingReminders.run());
+        this.schedule(OUTBOX_DISPATCH_JOB, cron.outboxDispatch, () => this.outboxDispatch.run());
+        this.schedule(TRASH_PURGE_JOB, cron.trashPurge, () => this.trashPurge.run());
         this.logger.info({ jobs: this.registered, timezone }, 'jobs scheduled');
     }
 

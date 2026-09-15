@@ -3,7 +3,7 @@ import { type HydratedDocument } from 'mongoose';
 
 import { baseSchemaOptions } from '../../../common/database/schema-options';
 
-export const SMS_PURPOSES = ['verification', 'test'] as const;
+export const SMS_PURPOSES = ['verification', 'test', 'reminder', 'waitlist'] as const;
 export type SmsPurpose = (typeof SMS_PURPOSES)[number];
 
 export const SMS_STATUSES = ['sent', 'failed', 'blocked'] as const;

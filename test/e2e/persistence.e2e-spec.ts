@@ -19,13 +19,16 @@ const migrations: Migration[] = [
     require('../../migrations/20260911000000-bookings-collection.js') as Migration,
     require('../../migrations/20260911100000-images-name-index.js') as Migration,
     require('../../migrations/20260912000000-idempotency-keys.js') as Migration,
+    require('../../migrations/20260914000000-p3-catalogue-and-lifecycle.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-/** Every index the migrations declare, merged per collection in the order they are applied. */
 const DECLARED = migrations.reduce<Migration['INDEXES']>((all, migration) => {
     for (const [collection, indexes] of Object.entries(migration.INDEXES)) {
-        all[collection] = [...(all[collection] ?? []), ...indexes];
+        const kept = (all[collection] ?? []).filter(
+            (index) => !indexes.some((redefined) => redefined.name === index.name),
+        );
+        all[collection] = [...kept, ...indexes];
     }
 
     return all;
@@ -49,6 +52,10 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     bookings: 'Booking',
     sms_counters: 'SmsCounter',
     idempotency_keys: 'IdempotencyKey',
+    waitlist: 'WaitlistEntry',
+    outbox_events: 'OutboxEvent',
+    webhooks: 'Webhook',
+    service_revisions: 'ServiceRevision',
 };
 
 describe('persistence (e2e)', () => {

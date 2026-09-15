@@ -117,6 +117,17 @@ export class CategoriesService implements OnModuleInit {
         await this.tx.run(({ session }) => this.categories.reorder(organizationId, ids, session));
     }
 
+    findManyByIds(ids: string[]): Promise<CategoryEntity[]> {
+        const unique = [...new Set(ids)].filter((id) => Types.ObjectId.isValid(id));
+
+        if (unique.length === 0) return Promise.resolve([]);
+
+        return this.categories.findMany(
+            { _id: { $in: unique.map((id) => new Types.ObjectId(id)) } },
+            { _id: 1 },
+        );
+    }
+
     /** Used by the services module to validate `category_id` against the service's organization. */
     async assertBelongsTo(categoryId: string, organizationId: string): Promise<void> {
         const category = await this.getById(categoryId);

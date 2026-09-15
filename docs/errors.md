@@ -138,6 +138,34 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `IDEMPOTENCY_IN_PROGRESS`              | 409    | The first request with this `Idempotency-Key` is still running — retry shortly                |
 | `IDEMPOTENCY_KEY_REUSED`               | 422    | The same key was used for a different payload                                                 |
 
+### Catalogue (P3)
+
+| Code                    | Status | Meaning                                                            |
+| ----------------------- | ------ | ------------------------------------------------------------------ |
+| `SERVICE_SLUG_TAKEN`    | 409    | Another service of the organization already uses this slug         |
+| `NEWS_SLUG_TAKEN`       | 409    | Another news item of the organization already uses this slug       |
+| `SERVICE_NOT_DELETED`   | 422    | `POST /services/:id/restore` on a service that is not in the trash |
+| `SERVICE_NOT_PUBLISHED` | 422    | A citizen tried to book a draft or archived service                |
+| `ORGANIZATION_CLOSED`   | 422    | The organization is `temporarily_closed`; no new bookings          |
+| `FIELDS_NOT_ALLOWED`    | 400    | `?fields=` named a key the response schema does not have           |
+| `WEBHOOK_NOT_FOUND`     | 404    |                                                                    |
+
+### Booking lifecycle (P3)
+
+| Code                             | Status | Meaning                                                                       |
+| -------------------------------- | ------ | ----------------------------------------------------------------------------- |
+| `BOOKING_LIMIT_REACHED`          | 422    | `booking_policy.max_active_per_user` active bookings already held             |
+| `BOOKING_LEAD_TIME`              | 422    | The slot starts sooner than `booking_policy.lead_time_minutes`                |
+| `BOOKING_TOO_FAR_AHEAD`          | 422    | The slot is beyond `booking_policy.max_advance_days`                          |
+| `BOOKING_CANCEL_DEADLINE_PASSED` | 422    | A citizen cancels or reschedules inside `cancel_deadline_minutes`; admins may |
+| `BOOKING_FIELDS_INVALID`         | 422    | `fields` do not match the service's `form_fields`; `details[]` per field      |
+| `BOOKING_DOCUMENTS_REQUIRED`     | 422    | A required document was not confirmed; `details[]` names it                   |
+| `BOOKING_STATUS_TRANSITION`      | 422    | Not a legal move (`pending → confirmed → completed \| no_show`, `cancelled`)  |
+| `BOOKING_NOT_ACTIVE`             | 422    | Cancel or reschedule of a finished booking                                    |
+| `WAITLIST_NOT_FOUND`             | 404    |                                                                               |
+| `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                  |
+| `SLOT_NOT_FULL`                  | 422    | The waitlist is only for a full slot — book it instead                        |
+
 ### Files and delivery
 
 | Code                                                       | Status |
@@ -158,3 +186,13 @@ refused with `FILE_TYPE_NOT_ALLOWED` before any of it is read.
 `INCLUDE_NOT_ALLOWED`, `SERVICE_MODIFIED` exist in the catalogue but no code path
 throws them today (the conditions are caught earlier, by zod or by a narrower code). They are kept because
 clients may already switch on them; remove one only together with its text.
+
+## Errors in the OpenAPI document
+
+The status of every code lives in [`error-status.ts`](../src/common/http/error-status.ts), and a handler names
+its business-rule codes with `@ApiErrors('SLOT_FULL', …)`. When the Swagger document is built,
+[`documentErrorResponses`](../src/common/openapi/error-responses.ts) adds one response per status to every
+operation — the generic ones from the route's shape (`400` when it takes input, `401`/`403` when it needs a
+bearer, `404` when the path has a parameter, `429` and `500` always) plus the declared ones — each with the
+`ErrorEnvelope` schema and the exact codes enumerated in the description. So `/api/docs-json` now lists what a
+route refuses, not only what it returns.

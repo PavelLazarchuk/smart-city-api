@@ -27,8 +27,17 @@ export class News {
     @Prop({ type: String, required: true })
     label!: string;
 
+    @Prop({ type: String })
+    slug?: string;
+
+    @Prop({ type: String })
+    rubric?: string;
+
     @Prop({ type: Boolean, required: true, default: false })
     enabled!: boolean;
+
+    @Prop({ type: Date, default: null })
+    publish_at!: Date | null;
 
     /** Publication date; promoted out of the bag so it can be sorted and indexed. */
     @Prop({ type: Date, required: true })
@@ -53,3 +62,17 @@ NewsSchema.index({ organization_id: 1, position: 1 });
 NewsSchema.index({ is_main: 1, created_at: -1 }, { partialFilterExpression: { is_main: true } });
 NewsSchema.index({ is_offer: 1, created_at: -1 }, { partialFilterExpression: { is_offer: true } });
 NewsSchema.index({ expires_at: 1 });
+NewsSchema.index(
+    { organization_id: 1, slug: 1 },
+    {
+        unique: true,
+        partialFilterExpression: { slug: { $type: 'string' } },
+        name: 'unique_slug_per_organization',
+    },
+);
+NewsSchema.index({ rubric: 1, date: -1 });
+NewsSchema.index({ publish_at: 1 });
+NewsSchema.index(
+    { label: 'text', 'value.heading_value': 'text', 'value.text_value': 'text' },
+    { name: 'news_text', weights: { label: 10, 'value.heading_value': 6, 'value.text_value': 1 } },
+);

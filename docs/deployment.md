@@ -44,6 +44,8 @@ would both stop delivering codes and publish them. The boot fails with a message
 `SWAGGER_ENABLED` has no default in production either: the document describes the whole API surface, so it
 stays off unless the variable is set explicitly. Everywhere else it defaults to on.
 
+Every response carries the IETF `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` and
+`RateLimit-Policy` fields for the tightest window that applied, next to the legacy `X-RateLimit-*` set.
 Rate limiting applies to every route, not only `/auth/*`: `THROTTLE_GLOBAL_LIMIT` is the soft per-IP ceiling
 for the public read surface, `THROTTLE_LIMIT` the strict one for `/auth/*` and per phone number,
 `THROTTLE_UPLOAD_LIMIT` the one for image uploads. `THROTTLE_STORAGE=mongo` (the default) shares the counters
@@ -54,8 +56,9 @@ across replicas; `memory` is per process.
 
 `autoIndex` is off in production; indexes exist only if migrations ran. TTL retention lives in the migrations
 alone (the Mongoose schemas do not declare it, so dev and production cannot drift apart): changing
-`ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS` or `SMS_RETENTION_DAYS` requires a new migration that
-runs `collMod` on the respective TTL index (`expireAfterSeconds`). `analytics_events` and `sms` expire on
+`ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS`, `SMS_RETENTION_DAYS`, `BOOKING_HISTORY_RETENTION_DAYS`
+or `OUTBOX_RETENTION_DAYS` requires a new migration that runs `collMod` on the respective TTL index
+(`expireAfterSeconds`). `analytics_events` and `sms` expire on
 `created_at` because those rows carry citizen phone numbers and names.
 
 The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE`, `MONGO_MIN_POOL_SIZE`,
@@ -73,6 +76,14 @@ keeps the lock from becoming a weapon: the count is a sliding window, not a runn
 cannot hold a known account shut indefinitely by spending one wrong password per lock period. Raising it
 above `AUTH_LOCKOUT_MAX_SECONDS` buys nothing; below `AUTH_LOCKOUT_SECONDS` the schema refuses it, because
 the counter would then reset while the account is still locked and the escalation could never happen.
+
+## Webhooks
+
+`WEBHOOK_ALLOW_PRIVATE_HOSTS` must stay `false` in production: with it off a webhook URL cannot point at
+loopback, link-local or private addresses (checked on save and, after DNS resolution, on every call), must be
+`https`, may not carry credentials, and redirects are never followed. Keep the outbound egress of the API
+pods restricted as well — the URL check is the second line of defence. Secrets are stored in plain text
+(`select: false`) because the platform must sign with them; treat the database as holding them.
 
 ## Token claims: a one-time re-login on this release
 
@@ -117,5 +128,6 @@ What is exported, beyond the default process and Node metrics:
 | `sms_messages_total{provider,purpose,status}`                    | Spend and delivery failures                             |
 | `sms_budget_blocked_total{window}`                               | The budget cap was hit                                  |
 | `response_items_dropped_total{route}`                            | List rows the response schema refused — schema drift    |
+| `outbox_deliveries_total{type,target,result}`                    | Notification and webhook attempts; alert on `failed`    |
 
 Route labels are patterns (`/api/v1/services/:id`), never URLs, so the label set stays bounded.

@@ -59,6 +59,9 @@ const defaults: Record<string, string> = {
     JOBS_TIMEZONE: 'UTC',
     JOB_LOCK_TTL_SECONDS: '5',
     REPORT_RECIPIENTS: 'reports@example.com',
+    WEBHOOK_ALLOW_PRIVATE_HOSTS: 'true',
+    WEBHOOK_TIMEOUT_MS: '2000',
+    PUBLIC_SITE_URL: 'https://city.example.com',
 };
 
 for (const [key, value] of Object.entries(defaults)) {
