@@ -60,7 +60,6 @@ const keyListSchema = z
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 export const LOGIN_METHODS = ['password', 'sms'] as const;
 
-/** Every environment variable the app reads. The app refuses to boot when this schema does not parse. */
 export const envSchema = z
     .object({
         NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -69,6 +68,8 @@ export const envSchema = z
         LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
         SWAGGER_ENABLED: z.stringbool().optional(),
         CORS_ORIGINS: csv,
+        UPLOADS_CORS_ORIGINS: csv,
+        UPLOADS_CACHE_MAX_AGE: durationSchema.default(3600),
         BODY_LIMIT: z.string().default('1mb'),
         TRUST_PROXY: z.stringbool().default(false),
 

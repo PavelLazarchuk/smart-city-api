@@ -230,4 +230,66 @@ describe('tokens, sessions, password policy and uploads (e2e)', () => {
             expectError(await upload(broken), 400, 'IMAGE_UNREADABLE');
         });
     });
+    describe('response headers', () => {
+        it('locks down the API with a content security policy and same-origin resource policy', async () => {
+            const res = await t.http.get(`${t.prefix}/organizations`);
+            expect(res.status).toBe(200);
+            expect(res.headers['content-security-policy']).toContain("default-src 'none'");
+            expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+            expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+            expect(res.headers['referrer-policy']).toBe('no-referrer');
+        });
+
+        it('serves the Swagger UI under a policy that allows its own scripts', async () => {
+            const res = await t.http.get('/api/docs');
+            expect(res.headers['content-security-policy']).toContain("script-src 'self' 'unsafe-inline'");
+        });
+
+        it('marks authenticated responses private and keeps them out of search indexes', async () => {
+            const res = await t.http.get(`${t.prefix}/auth/me`).set('Authorization', await fx.bearer(admin));
+            expect(res.status).toBe(200);
+            expect(res.headers['cache-control']).toBe('private, no-store, max-age=0');
+            expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
+            expect(res.headers['vary']).toContain('Authorization');
+        });
+
+        it('treats a public route answered for a signed-in caller as private too', async () => {
+            const anonymous = await t.http.get(`${t.prefix}/organizations`);
+            expect(anonymous.headers['cache-control']).toBeUndefined();
+            expect(anonymous.headers['x-robots-tag']).toBeUndefined();
+
+            const signed = await t.http
+                .get(`${t.prefix}/organizations`)
+                .set('Authorization', await fx.bearer(admin));
+            expect(signed.headers['cache-control']).toBe('private, no-store, max-age=0');
+            expect(signed.headers['x-robots-tag']).toBe('noindex, nofollow');
+        });
+
+        it('shares uploads only with allow-listed origins', async () => {
+            const image = await sharp({
+                create: { width: 16, height: 16, channels: 3, background: '#112233' },
+            })
+                .jpeg()
+                .toBuffer();
+            const created = await t.http
+                .post(`${t.prefix}/organizations/${organization.id}/images`)
+                .set('Authorization', await fx.bearer(admin))
+                .attach('file', image, { filename: 'photo.jpg', contentType: 'image/jpeg' });
+            expect(created.status).toBe(201);
+            const path = `/uploads/${created.body.data.name as string}`;
+
+            const [allowedOrigin = ''] = t.config.storage.corsOrigins;
+            const allowed = await t.http.get(path).set('Origin', allowedOrigin);
+            expect(allowed.status).toBe(200);
+            expect(allowed.headers['cross-origin-resource-policy']).toBe('cross-origin');
+            expect(allowed.headers['access-control-allow-origin']).toBe(allowedOrigin);
+            expect(allowed.headers['cache-control']).toBe(
+                `public, max-age=${t.config.storage.cacheMaxAgeSeconds}`,
+            );
+
+            const foreign = await t.http.get(path).set('Origin', 'https://evil.example.com');
+            expect(foreign.headers['cross-origin-resource-policy']).toBe('same-origin');
+            expect(foreign.headers['access-control-allow-origin']).toBeUndefined();
+        });
+    });
 });

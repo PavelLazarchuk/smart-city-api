@@ -14,7 +14,6 @@ function keySet(kid: string, secret: string, previous: { kid: string; secret: st
     return { kid, secret, accepted };
 }
 
-/** Typed view over the validated environment. Sections are plain objects, so tests can override values. */
 export class AppConfig {
     readonly env: Env['NODE_ENV'];
     readonly isProduction: boolean;
@@ -115,6 +114,8 @@ export class AppConfig {
     readonly storage: {
         provider: Env['STORAGE_PROVIDER'];
         local: { dir: string; publicUrl: string };
+        corsOrigins: string[];
+        cacheMaxAgeSeconds: number;
         s3: {
             bucket?: string;
             region?: string;
@@ -264,6 +265,8 @@ export class AppConfig {
         this.storage = {
             provider: env.STORAGE_PROVIDER,
             local: { dir: env.STORAGE_LOCAL_DIR, publicUrl: env.STORAGE_PUBLIC_URL.replace(/\/+$/, '') },
+            corsOrigins: env.UPLOADS_CORS_ORIGINS.length > 0 ? env.UPLOADS_CORS_ORIGINS : env.CORS_ORIGINS,
+            cacheMaxAgeSeconds: env.UPLOADS_CACHE_MAX_AGE,
             s3: {
                 bucket: env.S3_BUCKET,
                 region: env.S3_REGION,

@@ -2,22 +2,21 @@ import { type INestApplication } from '@nestjs/common';
 import { type NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
-import helmet from 'helmet';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { Logger } from 'nestjs-pino';
 import { resolve } from 'node:path';
 
 import { AppConfig } from './common/config/app-config';
+import { securityHeaders, uploadsHeaders } from './common/http/security-headers';
 import { documentErrorResponses } from './common/openapi/error-responses';
 
-/** Everything `main.ts` and the e2e harness must share, so the two can never drift apart. */
 export function configureApp(app: INestApplication): INestApplication {
     const config = app.get(AppConfig);
     const express = app as NestExpressApplication;
 
     app.useLogger(app.get(Logger));
     app.setGlobalPrefix(config.http.prefix);
-    app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+    app.use(securityHeaders());
     app.use(compression());
     app.enableCors({
         origin: config.http.corsOrigins.length > 0 ? config.http.corsOrigins : false,
@@ -30,6 +29,7 @@ export function configureApp(app: INestApplication): INestApplication {
     if (config.http.trustProxy) express.set('trust proxy', 1);
 
     if (config.storage.provider === 'local') {
+        app.use('/uploads', uploadsHeaders(config.storage.corsOrigins, config.storage.cacheMaxAgeSeconds));
         express.useStaticAssets(resolve(config.storage.local.dir), { prefix: '/uploads/', index: false });
     }
 

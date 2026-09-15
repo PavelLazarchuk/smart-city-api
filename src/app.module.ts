@@ -13,6 +13,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { OrganizationScopeGuard } from './common/guards/organization-scope.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/http/http-exception.filter';
+import { PrivacyHeadersInterceptor } from './common/http/privacy-headers.interceptor';
 import { ResponseInterceptor } from './common/http/response.interceptor';
 import { LoggingModule } from './common/logging/logging.module';
 import { MetricsMiddleware } from './common/metrics/metrics.middleware';
@@ -71,6 +72,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     providers: [
         { provide: APP_PIPE, useClass: ZodValidationPipe },
         { provide: APP_FILTER, useClass: HttpExceptionFilter },
+        { provide: APP_INTERCEPTOR, useClass: PrivacyHeadersInterceptor },
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
         { provide: APP_GUARD, useClass: RateLimitGuard },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
