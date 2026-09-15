@@ -16,6 +16,7 @@ import { type Response } from 'express';
 
 import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
+import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
@@ -44,16 +45,19 @@ export class CategoriesController {
     @Public()
     @ApiPaginated(CategoryResponseDto)
     @SerializePaginated(categoryResponseSchema)
-    list(@Query() query: ListCategoriesQueryDto): Promise<PaginatedResult<CategoryEntity>> {
-        return this.categories.list(query);
+    list(
+        @Query() query: ListCategoriesQueryDto,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<PaginatedResult<CategoryEntity>> {
+        return this.categories.list(query, user);
     }
 
     @Get(':id')
     @Public()
     @ApiData(CategoryResponseDto)
     @Serialize(categoryResponseSchema)
-    getOne(@Param('id') id: string): Promise<CategoryEntity> {
-        return this.categories.getById(id);
+    getOne(@Param('id') id: string, @CurrentUser() user?: AuthUser): Promise<CategoryEntity> {
+        return this.categories.getById(id, user);
     }
 
     @Post()

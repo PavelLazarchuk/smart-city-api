@@ -2,6 +2,8 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
+import { administers, publishedClause } from '../../common/content/visibility';
+import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
 import { ApiError } from '../../common/http/api-error';
@@ -40,13 +42,16 @@ export class CategoriesService implements OnModuleInit {
         });
     }
 
-    list(query: ListCategoriesQuery): Promise<PaginatedResult<CategoryEntity>> {
+    list(query: ListCategoriesQuery, viewer?: AuthUser): Promise<PaginatedResult<CategoryEntity>> {
         const pagination = this.pagination.resolve(query, {
             sortable: CATEGORY_SORTABLE,
             defaultSort: 'position',
             defaultOrder: 'asc',
         });
         const filter: FilterQuery<Category> = {};
+        const visibility = publishedClause(viewer);
+
+        if (visibility) filter['$and'] = [visibility];
 
         if (query.organization_id) filter['organization_id'] = new Types.ObjectId(query.organization_id);
 
@@ -55,7 +60,17 @@ export class CategoriesService implements OnModuleInit {
         return this.categories.paginate(filter, pagination);
     }
 
-    async getById(id: string): Promise<CategoryEntity> {
+    /** Public read: a draft is visible only to the admins of the organization that owns it. */
+    async getById(id: string, viewer?: AuthUser): Promise<CategoryEntity> {
+        const category = await this.loadForAdmin(id);
+
+        if (!category.enabled && !administers(viewer, category.organization_id.toHexString()))
+            throw ApiError.notFound('CATEGORY_NOT_FOUND');
+
+        return category;
+    }
+
+    private async loadForAdmin(id: string): Promise<CategoryEntity> {
         const category = await this.categories.findById(id);
 
         if (!category) throw ApiError.notFound('CATEGORY_NOT_FOUND');
@@ -77,7 +92,7 @@ export class CategoriesService implements OnModuleInit {
     }
 
     async update(id: string, input: UpdateCategoryInput): Promise<CategoryEntity> {
-        await this.getById(id);
+        await this.loadForAdmin(id);
         const set: Record<string, unknown> = {};
         const unset: Record<string, 1> = {};
 
@@ -98,7 +113,7 @@ export class CategoriesService implements OnModuleInit {
 
         const updated = Object.keys(update).length
             ? await this.categories.updateById(id, update)
-            : await this.getById(id);
+            : await this.loadForAdmin(id);
 
         if (!updated) throw ApiError.notFound('CATEGORY_NOT_FOUND');
 
@@ -106,7 +121,7 @@ export class CategoriesService implements OnModuleInit {
     }
 
     async delete(id: string): Promise<void> {
-        await this.getById(id);
+        await this.loadForAdmin(id);
         await this.tx.run(async (ctx) => {
             await this.cascade.run('category', id, ctx);
             await this.categories.deleteById(id, ctx.session);
@@ -130,7 +145,7 @@ export class CategoriesService implements OnModuleInit {
 
     /** Used by the services module to validate `category_id` against the service's organization. */
     async assertBelongsTo(categoryId: string, organizationId: string): Promise<void> {
-        const category = await this.getById(categoryId);
+        const category = await this.loadForAdmin(categoryId);
 
         if (category.organization_id.toHexString() !== organizationId) {
             throw ApiError.unprocessable('CATEGORY_ORGANIZATION_MISMATCH');

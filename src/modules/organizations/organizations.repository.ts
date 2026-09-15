@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { type FilterQuery, Model, type PipelineStage, Types } from 'mongoose';
 
+import { publishedClause } from '../../common/content/visibility';
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
+import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { type ResolvedPagination } from '../../common/pagination/pagination.service';
 import { type OrganizationInclude } from './dto/organization.schemas';
@@ -38,13 +40,28 @@ const CHILD_COLLECTIONS: Record<OrganizationInclude, { from: string; sort: Recor
     images: { from: 'images', sort: { created_at: -1, _id: 1 } },
 };
 
-function countLookup(include: OrganizationInclude): PipelineStage.Lookup {
+function childVisibility(include: OrganizationInclude, viewer?: AuthUser): Record<string, unknown>[] {
+    if (include === 'images') return [];
+
+    const clauses: Record<string, unknown>[] = [];
+
+    if (include === 'services') clauses.push({ deleted_at: null });
+
+    const published = publishedClause(viewer);
+
+    if (published) clauses.push(published);
+
+    return clauses;
+}
+
+function countLookup(include: OrganizationInclude, viewer?: AuthUser): PipelineStage.Lookup {
     return {
         $lookup: {
             from: CHILD_COLLECTIONS[include].from,
             let: { organization_id: '$_id' },
             pipeline: [
                 { $match: { $expr: { $eq: ['$organization_id', '$$organization_id'] } } },
+                ...childVisibility(include, viewer).map((clause) => ({ $match: clause })),
                 { $count: 'count' },
             ],
             as: `count_${include}`,
@@ -52,7 +69,7 @@ function countLookup(include: OrganizationInclude): PipelineStage.Lookup {
     };
 }
 
-function rowsLookup(include: OrganizationInclude, limit: number): PipelineStage.Lookup {
+function rowsLookup(include: OrganizationInclude, limit: number, viewer?: AuthUser): PipelineStage.Lookup {
     const { from, sort } = CHILD_COLLECTIONS[include];
 
     return {
@@ -61,6 +78,7 @@ function rowsLookup(include: OrganizationInclude, limit: number): PipelineStage.
             let: { organization_id: '$_id' },
             pipeline: [
                 { $match: { $expr: { $eq: ['$organization_id', '$$organization_id'] } } },
+                ...childVisibility(include, viewer).map((clause) => ({ $match: clause })),
                 { $sort: sort },
                 { $limit: limit },
             ],
@@ -82,7 +100,12 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
     async list(
         filter: FilterQuery<Organization>,
         pagination: ResolvedPagination,
-        options: { empty: boolean; include: OrganizationInclude[]; includeLimit: number },
+        options: {
+            empty: boolean;
+            include: OrganizationInclude[];
+            includeLimit: number;
+            viewer?: AuthUser;
+        },
     ): Promise<PaginatedResult<OrganizationListRow>> {
         const includes = [...new Set(options.include)];
         const emptyStages: PipelineStage[] = options.empty
@@ -118,8 +141,10 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
             { $sort: pagination.sort },
             { $skip: pagination.skip },
             { $limit: pagination.limit },
-            ...(Object.keys(CHILD_COLLECTIONS) as OrganizationInclude[]).map(countLookup),
-            ...includes.map((include) => rowsLookup(include, options.includeLimit)),
+            ...(Object.keys(CHILD_COLLECTIONS) as OrganizationInclude[]).map((include) =>
+                countLookup(include, options.viewer),
+            ),
+            ...includes.map((include) => rowsLookup(include, options.includeLimit, options.viewer)),
             {
                 $addFields: {
                     counts: Object.fromEntries(
@@ -156,7 +181,7 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
      * `limit` and services drop their booking documents. Occupancy survives as `booked_count`; the full
      * booking list has its own paginated routes.
      */
-    async findTree(id: string, limit: number): Promise<OrganizationTreeRow | null> {
+    async findTree(id: string, limit: number, viewer?: AuthUser): Promise<OrganizationTreeRow | null> {
         if (!Types.ObjectId.isValid(id)) return null;
 
         const rows = await this.aggregate<OrganizationTreeRow>([
@@ -167,6 +192,7 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
                     let: { organization_id: '$_id' },
                     pipeline: [
                         { $match: { $expr: { $eq: ['$organization_id', '$$organization_id'] } } },
+                        ...childVisibility(include, viewer).map((clause) => ({ $match: clause })),
                         { $sort: CHILD_COLLECTIONS[include].sort },
                         { $limit: limit },
                         ...(include === 'services'

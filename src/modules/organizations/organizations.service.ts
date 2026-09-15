@@ -66,6 +66,7 @@ export class OrganizationsService {
             empty: query.empty === true,
             include: query.include,
             includeLimit: this.config.pagination.includeMaxItems,
+            viewer,
         });
 
         if (query.include.includes('services'))
@@ -129,8 +130,8 @@ export class OrganizationsService {
     }
 
     /** Tree; services are split into `categories[].services` and the organization's own `services`. */
-    async getTree(id: string): Promise<OrganizationTree> {
-        const row = await this.organizations.findTree(id, this.config.pagination.includeMaxItems);
+    async getTree(id: string, viewer?: AuthUser): Promise<OrganizationTree> {
+        const row = await this.organizations.findTree(id, this.config.pagination.includeMaxItems, viewer);
 
         if (!row) throw ApiError.notFound('ORGANIZATION_NOT_FOUND');
 

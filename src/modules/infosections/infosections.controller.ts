@@ -16,6 +16,7 @@ import { type Response } from 'express';
 
 import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
+import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
@@ -40,16 +41,19 @@ export class InfoSectionsController {
     @Public()
     @ApiPaginated(InfoSectionResponseDto)
     @SerializePaginated(infoSectionResponseSchema)
-    list(@Query() query: ListInfoSectionsQueryDto): Promise<PaginatedResult<InfoSectionEntity>> {
-        return this.infosections.list(query);
+    list(
+        @Query() query: ListInfoSectionsQueryDto,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<PaginatedResult<InfoSectionEntity>> {
+        return this.infosections.list(query, user);
     }
 
     @Get(':id')
     @Public()
     @ApiData(InfoSectionResponseDto)
     @Serialize(infoSectionResponseSchema)
-    getOne(@Param('id') id: string): Promise<InfoSectionEntity> {
-        return this.infosections.getById(id);
+    getOne(@Param('id') id: string, @CurrentUser() user?: AuthUser): Promise<InfoSectionEntity> {
+        return this.infosections.getById(id, user);
     }
 
     @Post()

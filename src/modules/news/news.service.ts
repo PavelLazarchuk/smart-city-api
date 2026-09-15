@@ -5,6 +5,7 @@ import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ROLES } from '../../common/decorators/roles.decorator';
+import { administers, publishedClause } from '../../common/content/visibility';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
 import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -51,7 +52,13 @@ export class NewsService implements OnModuleInit {
             defaultSort: scoped ? 'position' : 'date',
             defaultOrder: scoped ? 'asc' : 'desc',
         });
-        const filter: FilterQuery<News> = this.scheduledFilter(viewer);
+        const filter: FilterQuery<News> = {};
+        const clauses = [this.scheduledFilter(viewer), publishedClause(viewer)].filter(
+            (clause): clause is Record<string, unknown> =>
+                clause !== undefined && Object.keys(clause).length > 0,
+        );
+
+        if (clauses.length) filter['$and'] = clauses;
 
         if (query.organization_id) filter['organization_id'] = new Types.ObjectId(query.organization_id);
 
@@ -84,10 +91,15 @@ export class NewsService implements OnModuleInit {
         );
     }
 
+    private isHidden(item: NewsEntity, viewer?: AuthUser): boolean {
+        return !item.enabled && !administers(viewer, item.organization_id.toHexString());
+    }
+
     async getById(id: string, viewer?: AuthUser): Promise<NewsEntity> {
         const item = await this.news.findById(id);
 
-        if (!item || this.isScheduled(item, viewer)) throw ApiError.notFound('NEWS_NOT_FOUND');
+        if (!item || this.isScheduled(item, viewer) || this.isHidden(item, viewer))
+            throw ApiError.notFound('NEWS_NOT_FOUND');
 
         return item;
     }
@@ -95,7 +107,8 @@ export class NewsService implements OnModuleInit {
     async getBySlug(organizationId: string, slug: string, viewer?: AuthUser): Promise<NewsEntity> {
         const item = await this.news.findBySlug(organizationId, slug);
 
-        if (!item || this.isScheduled(item, viewer)) throw ApiError.notFound('NEWS_NOT_FOUND');
+        if (!item || this.isScheduled(item, viewer) || this.isHidden(item, viewer))
+            throw ApiError.notFound('NEWS_NOT_FOUND');
 
         return item;
     }

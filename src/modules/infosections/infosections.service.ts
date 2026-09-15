@@ -2,6 +2,8 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
+import { administers, publishedClause } from '../../common/content/visibility';
+import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
 import { ApiError } from '../../common/http/api-error';
@@ -40,13 +42,16 @@ export class InfoSectionsService implements OnModuleInit {
         });
     }
 
-    list(query: ListInfoSectionsQuery): Promise<PaginatedResult<InfoSectionEntity>> {
+    list(query: ListInfoSectionsQuery, viewer?: AuthUser): Promise<PaginatedResult<InfoSectionEntity>> {
         const pagination = this.pagination.resolve(query, {
             sortable: INFOSECTION_SORTABLE,
             defaultSort: 'position',
             defaultOrder: 'asc',
         });
         const filter: FilterQuery<InfoSection> = {};
+        const visibility = publishedClause(viewer);
+
+        if (visibility) filter['$and'] = [visibility];
 
         if (query.organization_id) filter['organization_id'] = new Types.ObjectId(query.organization_id);
 
@@ -55,7 +60,16 @@ export class InfoSectionsService implements OnModuleInit {
         return this.infosections.paginate(filter, pagination);
     }
 
-    async getById(id: string): Promise<InfoSectionEntity> {
+    async getById(id: string, viewer?: AuthUser): Promise<InfoSectionEntity> {
+        const item = await this.loadForAdmin(id);
+
+        if (!item.enabled && !administers(viewer, item.organization_id.toHexString()))
+            throw ApiError.notFound('INFOSECTION_NOT_FOUND');
+
+        return item;
+    }
+
+    private async loadForAdmin(id: string): Promise<InfoSectionEntity> {
         const item = await this.infosections.findById(id);
 
         if (!item) throw ApiError.notFound('INFOSECTION_NOT_FOUND');
@@ -78,7 +92,7 @@ export class InfoSectionsService implements OnModuleInit {
     }
 
     async update(id: string, input: UpdateInfoSectionInput): Promise<InfoSectionEntity> {
-        await this.getById(id);
+        await this.loadForAdmin(id);
         const set: Record<string, unknown> = {};
 
         if (input.label !== undefined) set['label'] = input.label;
@@ -92,7 +106,7 @@ export class InfoSectionsService implements OnModuleInit {
 
         const updated = Object.keys(set).length
             ? await this.infosections.updateById(id, { $set: set })
-            : await this.getById(id);
+            : await this.loadForAdmin(id);
 
         if (!updated) throw ApiError.notFound('INFOSECTION_NOT_FOUND');
 
@@ -100,7 +114,7 @@ export class InfoSectionsService implements OnModuleInit {
     }
 
     async delete(id: string): Promise<void> {
-        await this.getById(id);
+        await this.loadForAdmin(id);
         await this.infosections.deleteById(id);
     }
 

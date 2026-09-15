@@ -640,8 +640,8 @@ export const bookingCreatedResponseSchema = z.object({
     slot_id: z.string(),
     child_type: z.enum(SLOT_TYPES),
     status: z.string(),
-    date: outputText.optional(),
-    time: outputText.optional(),
+    date: outputText.nullish(),
+    time: outputText.nullish(),
     created_at: isoDateTimeSchema,
 });
 export type BookingCreated = z.infer<typeof bookingCreatedResponseSchema>;

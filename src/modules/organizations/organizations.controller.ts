@@ -119,8 +119,8 @@ export class OrganizationsController {
 
         return { organization_id: tree._id.toHexString(), organization_label: tree.main_label };
     })
-    getOne(@Param('id') id: string): Promise<OrganizationTree> {
-        return this.organizations.getTree(id);
+    getOne(@Param('id') id: string, @CurrentUser() user?: AuthUser): Promise<OrganizationTree> {
+        return this.organizations.getTree(id, user);
     }
 
     @Patch(':id')
@@ -148,10 +148,11 @@ export class OrganizationsController {
     async listNews(
         @Param('id') id: string,
         @Query() query: PaginationQueryDto,
+        @CurrentUser() user?: AuthUser,
     ): Promise<PaginatedResult<unknown>> {
         await this.organizations.assertExists(id);
 
-        return this.news.list({ ...query, organization_id: id });
+        return this.news.list({ ...query, organization_id: id }, user);
     }
 
     @Get(':id/infosections')
@@ -161,10 +162,11 @@ export class OrganizationsController {
     async listInfoSections(
         @Param('id') id: string,
         @Query() query: PaginationQueryDto,
+        @CurrentUser() user?: AuthUser,
     ): Promise<PaginatedResult<unknown>> {
         await this.organizations.assertExists(id);
 
-        return this.infosections.list({ ...query, organization_id: id });
+        return this.infosections.list({ ...query, organization_id: id }, user);
     }
 
     @Get(':id/categories')
@@ -174,10 +176,11 @@ export class OrganizationsController {
     async listCategories(
         @Param('id') id: string,
         @Query() query: PaginationQueryDto,
+        @CurrentUser() user?: AuthUser,
     ): Promise<PaginatedResult<unknown>> {
         await this.organizations.assertExists(id);
 
-        return this.categories.list({ ...query, organization_id: id });
+        return this.categories.list({ ...query, organization_id: id }, user);
     }
 
     @Get(':id/services')
