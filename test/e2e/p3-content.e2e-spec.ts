@@ -118,6 +118,23 @@ describe('news, organizations, rate-limit headers and OpenAPI errors (e2e)', () 
             const all = await t.http.get(`${t.prefix}/news/rss`);
             expect((all.text.match(/<item>/g) ?? []).length).toBe(2);
         });
+
+        it('takes the enclosure type and size from the stored image, and the extension otherwise', async () => {
+            const image = await fx.image(organization.id, { mime_type: 'image/webp', size: 2048 });
+            await create({ label: 'Stored image', enabled: true, value: { image_value: image.src } });
+            await create({
+                label: 'External image',
+                enabled: true,
+                value: { image_value: 'https://cdn.example.com/photo.png?v=2' },
+            });
+
+            const res = await t.http.get(`${t.prefix}/news/rss?organization_id=${organization.id}`);
+            expect(res.status).toBe(200);
+            expect(res.text).toContain(`<enclosure url="${image.src}" type="image/webp" length="2048" />`);
+            expect(res.text).toContain(
+                '<enclosure url="https://cdn.example.com/photo.png?v=2" type="image/png" length="0" />',
+            );
+        });
     });
 
     describe('organizations', () => {

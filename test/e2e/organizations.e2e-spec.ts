@@ -199,7 +199,7 @@ describe('organizations (e2e)', () => {
     });
 
     describe('GET /organizations/:id', () => {
-        it('returns the full tree with two independent arrays and masks bookings for the public', async () => {
+        it('returns the tree with two independent arrays and services cut down to cards', async () => {
             const organization = await fx.organization();
             const category = await fx.category(organization.id);
             const option = fx.bookableOption(2);
@@ -230,20 +230,25 @@ describe('organizations (e2e)', () => {
             expect(res.body.data.news).toHaveLength(1);
             expect(res.body.data.infosections).toHaveLength(1);
             const nested = res.body.data.categories[0].services[0];
+            expect(nested.id).toBe(booked.id);
+            expect(nested.options).toBeUndefined();
+            expect(nested.options_count).toBe(1);
             expect(nested.value.subscribe).toBeUndefined();
-            expect(nested.options[0].slots[0].value.time[0].bookings).toEqual([{ status: 'reserved' }]);
+            expect(nested).toMatchObject({
+                label: expect.any(String),
+                status: 'published',
+                slug: expect.any(String),
+            });
             expect(JSON.stringify(res.body)).not.toContain('Secret Person');
             expectNoSensitiveKeys(res.body);
-
-            expect(nested.options[0].slots[0].value.time[0].booked_count).toBe(1);
 
             const admin = await fx.admin([organization.id]);
             const asAdmin = await t.http
                 .get(`${t.prefix}/organizations/${organization.id}`)
                 .set('Authorization', await fx.bearer(admin));
             const adminNested = asAdmin.body.data.categories[0].services[0];
+            expect(adminNested.options).toBeUndefined();
             expect(adminNested.value.subscribe).toBeUndefined();
-            expect(adminNested.options[0].slots[0].value.time[0].bookings).toEqual([{ status: 'reserved' }]);
             expect(JSON.stringify(asAdmin.body)).not.toContain('Secret Person');
 
             const service = await t.http
@@ -259,6 +264,25 @@ describe('organizations (e2e)', () => {
                 .get(`${t.prefix}/organizations/${organization.id}`)
                 .set('Authorization', await fx.bearer(foreignAdmin));
             expect(JSON.stringify(asForeign.body)).not.toContain('Secret Person');
+        });
+
+        it('trims the tree itself with ?fields= and refuses an unknown name', async () => {
+            const organization = await fx.organization();
+            await fx.service(organization.id);
+            await fx.news(organization.id);
+
+            const res = await t.http.get(
+                `${t.prefix}/organizations/${organization.id}?fields=main_label,services`,
+            );
+            expect(res.status).toBe(200);
+            expect(Object.keys(res.body.data).sort()).toEqual(['id', 'main_label', 'services']);
+            expect(res.body.data.services).toHaveLength(1);
+
+            expectError(
+                await t.http.get(`${t.prefix}/organizations/${organization.id}?fields=options`),
+                400,
+                'FIELDS_NOT_ALLOWED',
+            );
         });
 
         it('records an analytics event for the view', async () => {

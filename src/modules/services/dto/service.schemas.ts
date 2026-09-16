@@ -33,10 +33,6 @@ const limitSchema = z.number().int().min(0).nullable();
 
 // ----- bookings (output) -----
 
-/**
- * Output schemas validate stored data, so their string checks are structural only: a legacy row with a
- * malformed e-mail or date must serialize, not 500. Format is enforced by the input schemas below.
- */
 const outputText = z.string();
 
 /** Full booking, visible to the organization's admins and super-admins. */
@@ -53,16 +49,7 @@ export const bookingResponseSchema = z.object({
 /** Anonymised booking for everyone else. */
 export const maskedBookingSchema = z.object({ status: z.literal('reserved') });
 
-/**
- * Bookings live in their own collection, so a slot document carries none: the array is grafted on
- * for admins and rebuilt as markers for everyone else. Defaulting to `[]` keeps a slot nobody has
- * booked serializable instead of turning it into a 500.
- */
 const bookingsOutput = z.array(z.union([bookingResponseSchema, maskedBookingSchema])).default([]);
-/**
- * Public routes serialize through this instead: the union above would happily pass a full booking, so a
- * forgotten `masker.mask()` would be the only thing standing between a client and leaked PII.
- */
 const maskedBookingsOutput = z.array(maskedBookingSchema).default([]);
 
 // ----- slots -----
@@ -379,6 +366,59 @@ export class ServiceResponseDto extends createZodDto(serviceResponseSchema) {}
 export const maskedServiceResponseSchema = serviceResponseSchemaFor(maskedBookingsOutput);
 export class MaskedServiceResponseDto extends createZodDto(maskedServiceResponseSchema) {}
 
+export const serviceCardContentSchema = z.object({
+    heading_value: outputText.optional(),
+    image_value: outputText.optional(),
+    price_value: outputText.optional(),
+});
+
+export const serviceCardSchema = z.object({
+    id: idOutputSchema,
+    organization_id: idOutputSchema,
+    category_id: idOutputSchema.nullable(),
+    position: positionSchema.catch(0),
+    label: z.string(),
+    slug: z.string().optional(),
+    enabled: enabledSchema,
+    status: z.enum(SERVICE_STATUSES).catch('draft'),
+    published_at: isoDateTimeSchema.nullable().catch(null),
+    description: outputText.optional(),
+    tags: z.array(z.string()).catch([]),
+    duration_minutes: z.number().int().nullable().catch(null),
+    price: z.number().nullable().catch(null),
+    currency: z.string().optional(),
+    address: outputText.optional(),
+    location: geoPointOutputSchema.optional(),
+    value: serviceCardContentSchema,
+    options_count: z.number().int().min(0).catch(0),
+    ...timestampsOutputSchema,
+});
+export type ServiceCard = z.infer<typeof serviceCardSchema>;
+export class ServiceCardDto extends createZodDto(serviceCardSchema) {}
+
+export const SERVICE_CARD_FIELDS = [
+    'organization_id',
+    'category_id',
+    'position',
+    'label',
+    'slug',
+    'enabled',
+    'status',
+    'published_at',
+    'description',
+    'tags',
+    'duration_minutes',
+    'price',
+    'currency',
+    'address',
+    'location',
+    'value.heading_value',
+    'value.image_value',
+    'value.price_value',
+    'created_at',
+    'updated_at',
+] as const;
+
 export function viewerSeesBookings(request: Request): boolean {
     const { user } = request as Request & RequestWithUser;
 
@@ -549,14 +589,8 @@ export class UpdateOptionDto extends createZodDto(updateOptionSchema) {}
 export const createOptionSchema = serviceOptionInputSchema;
 export class CreateOptionDto extends createZodDto(createOptionSchema) {}
 
-/** Discriminated by `child_type`, so it is parsed with `parseBody` rather than a DTO class. */
 export const createSlotSchema = slotInputSchema;
 
-/**
- * A slot patch names only what changes. `time` is the full list for a `date_time` slot: entries it
- * omits are removed, and removing one that still holds bookings is refused rather than silently
- * stranding them.
- */
 export const updateSlotSchema = z
     .object({
         label: labelSchema,

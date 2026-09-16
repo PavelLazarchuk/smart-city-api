@@ -11,6 +11,7 @@ import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { slugify, uniqueSlug } from '../../common/slug';
+import { ImagesRepository } from '../images/images.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
     type CreateNewsInput,
@@ -19,6 +20,7 @@ import {
     type UpdateNewsInput,
 } from './dto/news.schemas';
 import { type NewsEntity, NewsRepository } from './news.repository';
+import { type RssEnclosure } from './rss';
 import { type News } from './schemas/news.schema';
 
 const NEWS_SORTABLE = ['position', 'date', 'created_at', 'label'] as const;
@@ -28,6 +30,7 @@ export class NewsService implements OnModuleInit {
     constructor(
         private readonly news: NewsRepository,
         private readonly organizations: OrganizationsService,
+        private readonly images: ImagesRepository,
         private readonly pagination: PaginationService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
@@ -121,6 +124,19 @@ export class NewsService implements OnModuleInit {
         if (query.rubric) filter['rubric'] = query.rubric;
 
         return this.news.feed(filter, query.limit);
+    }
+
+    async enclosures(items: NewsEntity[]): Promise<Map<string, RssEnclosure>> {
+        const urls = [
+            ...new Set(
+                items
+                    .map((item) => item.value.image_value)
+                    .filter((url): url is string => Boolean(url && url.length > 0)),
+            ),
+        ];
+        const rows = await this.images.findBySrc(urls);
+
+        return new Map(rows.map((row) => [row.src, { type: row.mime_type, length: row.size }]));
     }
 
     async create(input: CreateNewsInput): Promise<NewsEntity> {

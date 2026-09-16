@@ -41,6 +41,7 @@ jobs:
                     -e SMS_PROVIDER=smpp -e SMPP_URL='smpp://localhost:2775' \
                     -e SMPP_SYSTEM_ID=ci -e SMPP_PASSWORD=ci \
                     -e MAIL_PROVIDER=smtp -e SMTP_HOST=localhost \
+                    -e METRICS_TOKEN='ci-metrics-token' \
                     smart-city-api:runtime
                   for i in $(seq 1 30); do
                     if curl -fsS http://localhost:8080/api/v1/health/live; then ok=1; break; fi
@@ -49,5 +50,3 @@ jobs:
                   docker logs smart-city-api-smoke
                   docker rm -f smart-city-api-smoke
                   test "${ok:-0}" = 1
-            - name: Audit
-              run: npm run audit

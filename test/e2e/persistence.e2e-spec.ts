@@ -20,6 +20,7 @@ const migrations: Migration[] = [
     require('../../migrations/20260911100000-images-name-index.js') as Migration,
     require('../../migrations/20260912000000-idempotency-keys.js') as Migration,
     require('../../migrations/20260914000000-p3-catalogue-and-lifecycle.js') as Migration,
+    require('../../migrations/20260916000000-images-src-index.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 

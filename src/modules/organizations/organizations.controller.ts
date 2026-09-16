@@ -25,6 +25,7 @@ import {
     SerializeBy,
     SerializeList,
     SerializePaginated,
+    SparseFields,
 } from '../../common/http/serialize.decorator';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -112,8 +113,9 @@ export class OrganizationsController {
     @Get(':id')
     @Public()
     @ApiData(OrganizationDetailDto)
-    @ApiErrors('ORGANIZATION_NOT_FOUND')
+    @ApiErrors('ORGANIZATION_NOT_FOUND', 'FIELDS_NOT_ALLOWED')
     @Serialize(organizationDetailSchema)
+    @SparseFields()
     @TrackEvent(EVENT_TYPES.ORGANIZATION_VIEWED, (result) => {
         const tree = result as OrganizationTree;
 

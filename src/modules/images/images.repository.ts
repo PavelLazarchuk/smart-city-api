@@ -21,6 +21,15 @@ export class ImagesRepository extends BaseRepository<Image> {
         return this.deleteMany({ organization_id: new Types.ObjectId(organizationId) }, session);
     }
 
+    async findBySrc(srcs: string[]): Promise<{ src: string; mime_type: string; size: number }[]> {
+        if (srcs.length === 0) return [];
+
+        return this.model
+            .find({ src: { $in: srcs } }, { src: 1, mime_type: 1, size: 1, _id: 0 })
+            .lean<{ src: string; mime_type: string; size: number }[]>()
+            .exec();
+    }
+
     /** Which of these storage keys still have a row — the `storage_gc` question, asked per batch. */
     async existingNames(names: string[]): Promise<Set<string>> {
         const rows = await this.model

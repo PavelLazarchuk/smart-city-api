@@ -7,6 +7,7 @@ import { BaseRepository, type Lean } from '../../common/database/base.repository
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { type ResolvedPagination } from '../../common/pagination/pagination.service';
+import { SERVICE_CARD_FIELDS } from '../services/dto/service.schemas';
 import { type OrganizationInclude } from './dto/organization.schemas';
 import { Organization } from './schemas/organization.schema';
 
@@ -178,8 +179,7 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
      * The tree in one aggregation; services are split by category in the service layer.
      *
      * The result is a single document under the 16 MB BSON limit, so every child list is capped at
-     * `limit` and services drop their booking documents. Occupancy survives as `booked_count`; the full
-     * booking list has its own paginated routes.
+     * `limit` and services are cut down to `serviceCardSchema`.
      */
     async findTree(id: string, limit: number, viewer?: AuthUser): Promise<OrganizationTreeRow | null> {
         if (!Types.ObjectId.isValid(id)) return null;
@@ -199,8 +199,10 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
                             ? [
                                   {
                                       $project: {
-                                          'options.slots.value.bookings': 0,
-                                          'options.slots.value.time.bookings': 0,
+                                          ...Object.fromEntries(
+                                              SERVICE_CARD_FIELDS.map((field) => [field, 1]),
+                                          ),
+                                          options_count: { $size: { $ifNull: ['$options', []] } },
                                       },
                                   },
                               ]

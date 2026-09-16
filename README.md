@@ -121,9 +121,11 @@ Notable switches:
 - Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
   `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
   `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.
-- `GET /organizations/:id` returns the tree with every child list capped at `INCLUDE_MAX_ITEMS` and with
-  anonymised bookings for every audience; the full booking lists come from `GET /services/:id` and
-  `GET /organizations/:id/services`.
+- `GET /organizations/:id` returns the tree with every child list capped at `INCLUDE_MAX_ITEMS`. Services
+  appear as cards — the fields a tile needs plus `options_count`, without `options`, so without slots or
+  bookings; the full document comes from `GET /services/:id` or `GET /organizations/:id/services/:slug`,
+  free capacity from `GET /services/:id/availability`, and the booking lists from `GET /services/:id` and
+  `GET /organizations/:id/services`. `?fields=` trims the tree itself to the branches a screen renders.
 - Services are a catalogue: `slug` (`GET /organizations/:id/services/:slug`), `status` draft/published/archived
   (`PUT /services/:id/status`; the public sees published only), `description`, `tags`, numeric `price` +
   `currency`, `address` + `location` (`GET /services/nearby?lat=&lng=&radius_m=`), `working_hours`, `holidays`,
@@ -142,7 +144,8 @@ Notable switches:
   `POST /outbox/events/:id/replay`) are delivered after the commit with retries — see
   [docs/architecture.md](docs/architecture.md#outbox-and-webhooks).
 - News have `slug` (`GET /organizations/:id/news/:slug`), `rubric` (`?rubric=`), `publish_at` (hidden from the
-  public until then), `?q=` and an RSS 2.0 feed at `GET /news/rss?organization_id=&rubric=`.
+  public until then), `?q=` and an RSS 2.0 feed at `GET /news/rss?organization_id=&rubric=`, whose
+  `<enclosure>` carries the type and size of the stored image, or the type its extension implies.
 - Organizations carry `status` (`temporarily_closed` refuses new bookings), `working_hours`, `holidays`,
   `address` and `location` (`GET /organizations/nearby`).
 - Every response carries the IETF `RateLimit-*` headers; the OpenAPI document lists every error code a route

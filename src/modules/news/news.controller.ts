@@ -58,6 +58,7 @@ export class NewsController {
     @Public()
     async rss(@Query() query: RssQueryDto, @Res() res: Response): Promise<void> {
         const items = await this.news.feed(query);
+        const images = await this.news.enclosures(items);
         const site = this.config.site.publicUrl;
         const xml = renderRss(
             {
@@ -68,6 +69,7 @@ export class NewsController {
                     `${site}/organizations/${item.organization_id.toHexString()}/news/${item.slug ?? item._id.toHexString()}`,
             },
             items,
+            images,
         );
         res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=300');

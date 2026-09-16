@@ -19,6 +19,7 @@ import {
     geoPointInputSchema,
     geoPointOutputSchema,
     maskedServiceResponseSchema,
+    serviceCardSchema,
     serviceResponseSchema,
     viewerSeesBookings,
     workingHoursSchema,
@@ -77,13 +78,13 @@ export const organizationListSchemaForViewer = (request: Request): ZodType =>
 
 /**
  * Detail: the tree with two independent top-level arrays. Child lists are capped at
- * `INCLUDE_MAX_ITEMS` and services carry anonymised bookings only.
+ * `INCLUDE_MAX_ITEMS` and services appear as cards.
  */
 export const organizationDetailSchema = organizationBaseResponseSchema.extend({
     news: z.array(newsResponseSchema),
     infosections: z.array(infoSectionResponseSchema),
-    categories: z.array(categoryResponseSchema.extend({ services: z.array(maskedServiceResponseSchema) })),
-    services: z.array(maskedServiceResponseSchema),
+    categories: z.array(categoryResponseSchema.extend({ services: z.array(serviceCardSchema) })),
+    services: z.array(serviceCardSchema),
     images: z.array(imageResponseSchema),
 });
 export type OrganizationDetail = z.infer<typeof organizationDetailSchema>;

@@ -84,11 +84,11 @@ describe('public read limits (e2e)', () => {
             expect(res.status).toBe(200);
             expect(res.body.data.services).toHaveLength(limit);
             expect(res.body.data.news).toHaveLength(limit);
-            const entry = res.body.data.services[0].options[0].slots[0].value.time[0];
-            expect(entry.booked_count).toBe(20);
-            expect(entry.bookings).toEqual(Array.from({ length: 20 }, () => ({ status: 'reserved' })));
+            const card = res.body.data.services[0];
+            expect(card.options).toBeUndefined();
+            expect(card.options_count).toBe(1);
             expect(JSON.stringify(res.body)).not.toContain('Secret Person');
-            expect(Buffer.byteLength(JSON.stringify(res.body))).toBeLessThan(1_000_000);
+            expect(Buffer.byteLength(JSON.stringify(res.body))).toBeLessThan(200_000);
         });
     });
 

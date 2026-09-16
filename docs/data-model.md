@@ -76,6 +76,10 @@ copies. Four things to know about the shape that replaced it:
   into the response only for the organization's admins and super-admins; everyone else gets
   `{ "status": "reserved" }` markers rebuilt from `booked_count`, and a public route issues no booking query
   at all.
+- **The tree carries cards, not services.** `GET /organizations/:id` projects every service down to
+  `serviceCardSchema` inside the aggregation — the tile's fields plus `options_count` — so `options` and
+  everything under it stay in the database. One tree is bounded by the number of services, not by how many
+  slots they carry; the full service, its free capacity and its bookings each have their own route.
 
 `users.password_hash`, `verification_codes.code_hash`, `sessions.refresh_token_hash` and `webhooks.secret` are
 `select: false` — they are not even loaded unless a code path asks.

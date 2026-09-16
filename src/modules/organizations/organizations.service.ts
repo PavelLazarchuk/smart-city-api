@@ -26,11 +26,16 @@ import { type Organization } from './schemas/organization.schema';
 
 const ORGANIZATION_SORTABLE = ['created_at', 'main_label', 'main_category'] as const;
 
+export type ServiceCardRow = Record<string, unknown> & {
+    _id: Types.ObjectId;
+    category_id?: Types.ObjectId | null;
+};
+
 export interface OrganizationTree extends OrganizationEntity {
     news: unknown[];
     infosections: unknown[];
-    categories: (Record<string, unknown> & { _id: Types.ObjectId; services: ServiceView[] })[];
-    services: ServiceView[];
+    categories: (Record<string, unknown> & { _id: Types.ObjectId; services: ServiceCardRow[] })[];
+    services: ServiceCardRow[];
     images: unknown[];
 }
 
@@ -135,14 +140,12 @@ export class OrganizationsService {
 
         if (!row) throw ApiError.notFound('ORGANIZATION_NOT_FOUND');
 
-        const services = (row.services as ServiceView[]).map((service) => this.masker.maskCounts(service));
-        const byCategory = new Map<string, ServiceView[]>();
-        const direct: ServiceView[] = [];
+        const services = row.services as ServiceCardRow[];
+        const byCategory = new Map<string, ServiceCardRow[]>();
+        const direct: ServiceCardRow[] = [];
 
         for (const service of services) {
-            const categoryId = service.category_id
-                ? (service.category_id as Types.ObjectId).toHexString()
-                : null;
+            const categoryId = service.category_id ? service.category_id.toHexString() : null;
 
             if (!categoryId) {
                 direct.push(service);
