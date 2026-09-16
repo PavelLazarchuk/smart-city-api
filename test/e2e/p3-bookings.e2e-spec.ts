@@ -591,13 +591,19 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 );
                 expect(delivery!.headers['x-webhook-event']).toBe('booking.created');
 
-                const events = await t.http
-                    .get(`${t.prefix}/outbox/events?type=booking.created`)
-                    .set('Authorization', adminBearer);
-                expect(events.body.data).toHaveLength(1);
-                expect(events.body.data[0]).toMatchObject({ status: 'delivered' });
+                // The hook records the request before it answers, so the row reaches
+                // "delivered" only once the dispatcher has written the outcome back.
+                const events = await waitFor(async () => {
+                    const res = await t.http
+                        .get(`${t.prefix}/outbox/events?type=booking.created`)
+                        .set('Authorization', adminBearer);
+
+                    return res.body.data.length === 1 && res.body.data[0].status === 'delivered' ? res : null;
+                });
+                expect(events!.body.data).toHaveLength(1);
+                expect(events!.body.data[0]).toMatchObject({ status: 'delivered' });
                 expect(
-                    events.body.data[0].deliveries.map((d: { target: string; status: string }) => [
+                    events!.body.data[0].deliveries.map((d: { target: string; status: string }) => [
                         d.target.split(':')[0],
                         d.status,
                     ]),
@@ -630,8 +636,17 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 expect(hookRow.body.data.consecutive_failures).toBe(1);
 
                 hook.status.code = 204;
-                const summary = await t.app.get(OutboxService).dispatch(new Date(Date.now() + 10 * 60_000));
-                expect(summary).toMatchObject({ processed: 1, delivered: 1 });
+                // A dispatch that lands on a pass still draining in the background gets that
+                // pass's summary, run against the real clock, so retry until ours does the work.
+                const summary = await waitFor(async () => {
+                    const pass = await t.app.get(OutboxService).dispatch(new Date(Date.now() + 10 * 60_000));
+
+                    return pass.delivered === 1 ? pass : null;
+                });
+                // A concurrent rerun can fold its own claims into the summary, so only the
+                // single delivery is fixed; the processed count is not.
+                expect(summary!.delivered).toBe(1);
+                expect(summary!.processed).toBeGreaterThanOrEqual(1);
                 expect(hook.received).toHaveLength(3);
 
                 const test = await t.http
