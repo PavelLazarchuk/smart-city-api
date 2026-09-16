@@ -34,8 +34,18 @@ jobs:
                   docker build --target dev -t smart-city-api:dev .
             - name: Docker smoke test (container answers /health/live)
               run: |
-                  docker run -d --name smart-city-api-smoke -p 8080:8080 \
-                    -e MONGO_URI='mongodb://127.0.0.1:27017/smoke' \
+                  set -e
+                  docker network create smoke-net
+                  docker run -d --name smoke-mongo --network smoke-net \
+                    mongo:8.2 --replSet rs0 --bind_ip_all
+                  for i in $(seq 1 30); do
+                    if docker exec smoke-mongo mongosh --quiet --eval \
+                      'try { rs.status().ok } catch (e) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "smoke-mongo:27017" }] }).ok }' \
+                      | grep -q 1; then break; fi
+                    sleep 2
+                  done
+                  docker run -d --name smart-city-api-smoke --network smoke-net -p 8080:8080 \
+                    -e MONGO_URI='mongodb://smoke-mongo:27017/smoke?replicaSet=rs0' \
                     -e JWT_ACCESS_SECRET='ci-access-secret-ci-access-secret-000000' \
                     -e JWT_REFRESH_SECRET='ci-refresh-secret-ci-refresh-secret-0000' \
                     -e SMS_PROVIDER=smpp -e SMPP_URL='smpp://localhost:2775' \
@@ -48,5 +58,7 @@ jobs:
                     sleep 2
                   done
                   docker logs smart-city-api-smoke
-                  docker rm -f smart-city-api-smoke
+                  docker logs smoke-mongo | tail -20
+                  docker rm -f smart-city-api-smoke smoke-mongo
+                  docker network rm smoke-net
                   test "${ok:-0}" = 1
