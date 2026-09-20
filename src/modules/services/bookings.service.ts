@@ -9,6 +9,7 @@ import { ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError, type ApiErrorDetail } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import { type OutboxEventEntity } from '../../common/outbox/outbox.repository';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
@@ -35,6 +36,7 @@ import { type WaitlistEntry } from '../bookings/schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { SmsService } from '../sms/sms.service';
+import { UsersService } from '../users/users.service';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
 import { BOOKABLE_SLOT_TYPES, type ServiceOption, type Slot } from './schemas/service.schema';
@@ -143,6 +145,19 @@ function text(value: unknown): string {
     return typeof value === 'string' ? value : '';
 }
 
+function notice(event: OutboxEventEntity): { service: string; date?: string; time?: string; phone: string } {
+    return {
+        service: text(event.payload['service_label']),
+        date: (event.payload['date'] as string | null) ?? undefined,
+        time: (event.payload['time'] as string | null) ?? undefined,
+        phone: text(event.internal?.['phone']),
+    };
+}
+
+function recipientEmail(event: OutboxEventEntity): string {
+    return text(event.internal?.['email']);
+}
+
 function slotStart(date: string | null | undefined, time: string | null | undefined): Date | null {
     if (!date) return null;
 
@@ -165,6 +180,7 @@ export class BookingsService implements OnModuleInit {
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
         private readonly organizations: OrganizationsService,
+        private readonly users: UsersService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
         private readonly outbox: OutboxService,
@@ -211,35 +227,33 @@ export class BookingsService implements OnModuleInit {
                 name: text(internal['person']),
             });
         });
+        this.outbox.registerHandler('booking.reminder', 'mail', async (event) => {
+            const email = recipientEmail(event);
+
+            if (!email) return;
+
+            await this.mail.sendBookingReminder(email, notice(event));
+        });
         this.outbox.registerHandler('booking.reminder', 'sms', async (event) => {
-            const phone = event.internal?.['phone'];
+            const { phone, ...data } = notice(event);
 
-            if (typeof phone !== 'string' || !phone) return;
+            if (recipientEmail(event) || !phone) return;
 
-            await this.sms.send(
-                phone,
-                texts.sms.reminder({
-                    service: text(event.payload['service_label']),
-                    date: (event.payload['date'] as string | null) ?? undefined,
-                    time: (event.payload['time'] as string | null) ?? undefined,
-                }),
-                'reminder',
-            );
+            await this.sms.send(phone, texts.sms.reminder(data), 'reminder');
+        });
+        this.outbox.registerHandler('waitlist.slot_available', 'mail', async (event) => {
+            const email = recipientEmail(event);
+
+            if (!email) return;
+
+            await this.mail.sendWaitlistNotification(email, notice(event));
         });
         this.outbox.registerHandler('waitlist.slot_available', 'sms', async (event) => {
-            const phone = event.internal?.['phone'];
+            const { phone, ...data } = notice(event);
 
-            if (typeof phone !== 'string' || !phone) return;
+            if (recipientEmail(event) || !phone) return;
 
-            await this.sms.send(
-                phone,
-                texts.sms.waitlist({
-                    service: text(event.payload['service_label']),
-                    date: (event.payload['date'] as string | null) ?? undefined,
-                    time: (event.payload['time'] as string | null) ?? undefined,
-                }),
-                'waitlist',
-            );
+            await this.sms.send(phone, texts.sms.waitlist(data), 'waitlist');
         });
     }
 
@@ -710,6 +724,8 @@ export class BookingsService implements OnModuleInit {
 
         if (!entry) return;
 
+        const user = await this.users.findById(entry.user_id.toHexString());
+
         await this.outbox.enqueue(
             'waitlist.slot_available',
             {
@@ -723,7 +739,11 @@ export class BookingsService implements OnModuleInit {
                 user_id: entry.user_id.toHexString(),
                 service_label: entry.service_label,
             },
-            { organizationId: entry.organization_id, internal: { phone: entry.phone }, session: ctx.session },
+            {
+                organizationId: entry.organization_id,
+                internal: { phone: entry.phone, email: user?.email ?? null },
+                session: ctx.session,
+            },
         );
     }
 

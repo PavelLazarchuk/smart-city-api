@@ -67,11 +67,14 @@ A business write and the record of "something happened" commit together: the boo
 `waitlist.slot_available`). After the commit the caller pokes
 [`OutboxService`](../src/common/outbox/outbox.service.ts), which claims due events with a short lease and fans
 each one out to its targets: the internal handlers registered for the type (the `subscribe` e-mail, the
-reminder and waitlist SMS) and every enabled webhook subscribed to it — the organization's own hooks plus the
-platform-wide ones a super-admin created. Every target is retried on its own with exponential backoff up to
-`OUTBOX_MAX_ATTEMPTS`; an event is `failed` only once the budget is spent, and `POST /outbox/events/:id/replay`
-puts it back. The `outbox_dispatch` job is the safety net for retries and for a replica that died between
-commit and poke.
+reminder and the freed-place notice) and every enabled webhook subscribed to it — the organization's own hooks
+plus the platform-wide ones a super-admin created. `booking.reminder` and `waitlist.slot_available` each have
+two handlers, `mail` and `sms`, which read the recipient captured in the event's `internal`: the mail one sends
+when the account has an `email`, the SMS one only when it has none, so exactly one channel is used per event
+and a mail failure is retried as mail rather than turning into an SMS. Every target is retried on its own with
+exponential backoff up to `OUTBOX_MAX_ATTEMPTS`; an event is `failed` only once the budget is spent, and
+`POST /outbox/events/:id/replay` puts it back. The `outbox_dispatch` job is the safety net for retries and for
+a replica that died between commit and poke.
 
 What a subscriber receives is the `payload` — coordinates, status, ids — never the person: names, phone numbers
 and the notification address travel in the event's `internal` field, which only handlers read. A webhook call

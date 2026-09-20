@@ -193,6 +193,42 @@ describe('users (e2e)', () => {
             expect(byAdmin.body.data.phone).toBeUndefined();
         });
 
+        it('lets the account set, normalise, share and clear its contact e-mail', async () => {
+            const citizen = await fx.citizen();
+            const other = await fx.citizen();
+            const bearer = await fx.bearer(citizen);
+
+            const set = await t.http
+                .patch(`${t.prefix}/users/${citizen.id}`)
+                .set('Authorization', bearer)
+                .send({ email: '  Anna@Example.COM ' });
+            expect(set.status).toBe(200);
+            expect(set.body.data.email).toBe('anna@example.com');
+
+            const shared = await t.http
+                .patch(`${t.prefix}/users/${other.id}`)
+                .set('Authorization', await fx.bearer(other))
+                .send({ email: 'anna@example.com' });
+            expect(shared.status).toBe(200);
+            expect(shared.body.data.email).toBe('anna@example.com');
+
+            expectError(
+                await t.http
+                    .patch(`${t.prefix}/users/${citizen.id}`)
+                    .set('Authorization', bearer)
+                    .send({ email: 'not-an-address' }),
+                400,
+                'VALIDATION_ERROR',
+            );
+
+            const cleared = await t.http
+                .patch(`${t.prefix}/users/${citizen.id}`)
+                .set('Authorization', bearer)
+                .send({ email: null });
+            expect(cleared.status).toBe(200);
+            expect(cleared.body.data.email).toBeUndefined();
+        });
+
         it('rejects an invalid PATCH body with 400, never 500', async () => {
             const superAdmin = await fx.superAdmin();
             const citizen = await fx.citizen();

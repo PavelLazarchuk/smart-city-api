@@ -137,9 +137,12 @@ Notable switches:
   (`PATCH /bookings/:id/status`, admins); `GET /bookings/:id`; `POST /bookings/:id/reschedule` moves one in a
   single transaction; `GET /bookings/stats` gives no-show and cancellation rates; cancelled and finished rows
   stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
-  (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told by SMS
-  when a place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
-- Notifications leave through a transactional outbox: the `subscribe` e-mail, reminder and waitlist SMS and
+  (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told when a
+  place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
+- A citizen may keep an `email` on the account (at registration or later via `PATCH /users/:id`, `null` clears
+  it). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
+  the booking was made with, since one mailbox may serve several accounts.
+- Notifications leave through a transactional outbox: the `subscribe` e-mail, reminders, freed-place notices and
   webhooks (`/webhooks`, HMAC-signed `POST`s for `booking.*` and `waitlist.*` events; `GET /outbox/events`,
   `POST /outbox/events/:id/replay`) are delivered after the commit with retries — see
   [docs/architecture.md](docs/architecture.md#outbox-and-webhooks).

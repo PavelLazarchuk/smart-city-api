@@ -154,16 +154,24 @@ export class AuthService {
 
         if (user) {
             this.assertMethodEnabled(user.role, 'sms');
+            const patch: { name?: string; email?: string } = {};
 
-            if (input.name && input.name !== user.name) {
-                await this.users.updateName(user._id.toHexString(), input.name);
-                user = { ...user, name: input.name };
+            if (input.name && input.name !== user.name) patch.name = input.name;
+
+            if (input.email && input.email !== user.email) patch.email = input.email;
+
+            if (Object.keys(patch).length > 0) {
+                user = await this.users.updateSelf(user._id.toHexString(), patch);
             }
         } else {
             if (this.config.auth.citizenLoginMethod !== 'sms')
                 throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
-            user = await this.users.createCitizen({ phone: input.phone, name: input.name ?? '' });
+            user = await this.users.createCitizen({
+                phone: input.phone,
+                name: input.name ?? '',
+                email: input.email,
+            });
         }
 
         return this.startSession(user, client);

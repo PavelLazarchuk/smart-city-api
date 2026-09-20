@@ -88,12 +88,12 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `OTP_EXPIRED`                     | 401    | Past `OTP_TTL_SECONDS`; request a new one                                                         |
 | `OTP_ATTEMPTS_EXCEEDED`           | 401    | Beyond `OTP_MAX_ATTEMPTS`; request a new one                                                      |
 | `LOGIN_METHOD_DISABLED`           | 403    | This audience signs in the other way (`AUTH_*_LOGIN_METHOD`)                                      |
-| `PASSWORD_TOO_SHORT`              | 422    | Below `PASSWORD_MIN_LENGTH`                                                                       |
-| `PASSWORD_TOO_LONG`               | 422    | Above `PASSWORD_MAX_LENGTH`                                                                       |
+| `PASSWORD_TOO_SHORT`              | 422    | Fewer than 8 characters                                                                           |
+| `PASSWORD_TOO_LONG`               | 422    | More than 20 characters                                                                           |
 | `PASSWORD_TOO_WEAK`               | 422    | `details[]` lists the missing character classes                                                   |
 | `PASSWORD_UNCHANGED`              | 422    | The new password equals the current one                                                           |
 | `SESSION_NOT_FOUND`               | 404    | `DELETE /auth/sessions/:sid` — not a session of the calling account                               |
-| `LOGIN_TOO_SHORT`                 | 422    |                                                                                                   |
+| `LOGIN_TOO_SHORT`                 | 422    | Fewer than 6 characters                                                                           |
 | `PHONE_COUNTRY_NOT_SUPPORTED`     | 422    | The number does not start with `PHONE_COUNTRY_CODE`                                               |
 
 ### Users

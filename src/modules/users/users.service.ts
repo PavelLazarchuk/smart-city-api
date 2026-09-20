@@ -23,9 +23,10 @@ import {
 import { type UserEntity, UsersRepository } from './users.repository';
 import { type User } from './schemas/user.schema';
 
+const LOGIN_MIN_LENGTH = 6;
+
 const USER_SORTABLE = ['created_at', 'name', 'login', 'role'] as const;
 
-/** `GET /users/:id/bookings` keeps the field names it had while bookings lived on the account. */
 export interface UserBookingView {
     id: string;
     service_id: Types.ObjectId;
@@ -121,12 +122,18 @@ export class UsersService implements OnModuleInit {
             password_hash: input.password ? await this.passwords.hash(input.password) : undefined,
             name: input.name,
             phone: input.phone,
+            email: input.email,
             role: input.role,
             organization_ids: (input.organization_ids ?? []).map((id) => new Types.ObjectId(id)),
         });
     }
 
-    async createCitizen(input: { phone: string; name: string; password?: string }): Promise<UserEntity> {
+    async createCitizen(input: {
+        phone: string;
+        name: string;
+        password?: string;
+        email?: string;
+    }): Promise<UserEntity> {
         this.phonePolicy.assertSupported(input.phone);
 
         if (input.password) this.passwords.assertPolicy(input.password);
@@ -136,6 +143,7 @@ export class UsersService implements OnModuleInit {
         return this.users.create({
             phone: input.phone,
             name: input.name,
+            email: input.email,
             password_hash: input.password ? await this.passwords.hash(input.password) : undefined,
             role: ROLES.COMMON_USER,
             organization_ids: [],
@@ -144,8 +152,17 @@ export class UsersService implements OnModuleInit {
 
     async updateSelf(id: string, input: UpdateSelfInput): Promise<UserEntity> {
         await this.getById(id);
-        const set = input.name === undefined ? {} : { name: input.name };
-        const updated = await this.users.updateFields(id, set);
+        const set: Record<string, unknown> = {};
+        const unset: string[] = [];
+
+        if (input.name !== undefined) set['name'] = input.name;
+
+        if (input.email !== undefined) {
+            if (input.email === null) unset.push('email');
+            else set['email'] = input.email;
+        }
+
+        const updated = await this.users.updateFields(id, set, unset);
 
         if (!updated) throw ApiError.notFound('USER_NOT_FOUND');
 
@@ -189,6 +206,11 @@ export class UsersService implements OnModuleInit {
         if (input.name !== undefined) {
             if (input.name === null) unset.push('name');
             else set['name'] = input.name;
+        }
+
+        if (input.email !== undefined) {
+            if (input.email === null) unset.push('email');
+            else set['email'] = input.email;
         }
 
         if (input.password !== undefined) {
@@ -322,8 +344,8 @@ export class UsersService implements OnModuleInit {
         return this.users.findById(id);
     }
 
-    async updateName(id: string, name: string): Promise<void> {
-        await this.users.updateFields(id, { name });
+    findEmailsByIds(ids: string[]): Promise<Map<string, string>> {
+        return this.users.findEmailsByIds(ids);
     }
 
     /**
@@ -353,7 +375,7 @@ export class UsersService implements OnModuleInit {
     }
 
     private assertLoginPolicy(login: string): void {
-        if (login.length < this.passwords.loginMinLength) throw ApiError.unprocessable('LOGIN_TOO_SHORT');
+        if (login.length < LOGIN_MIN_LENGTH) throw ApiError.unprocessable('LOGIN_TOO_SHORT');
     }
 
     private async assertUnique(login?: string, phone?: string, exceptId?: string): Promise<void> {

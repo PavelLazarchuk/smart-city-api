@@ -4,6 +4,9 @@ import * as argon2 from 'argon2';
 import { AppConfig } from '../../common/config/app-config';
 import { ApiError } from '../../common/http/api-error';
 
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 20;
+
 const PASSWORD_CLASSES = [
     { pattern: /[a-z]/, message: 'At least one lowercase latin letter' },
     { pattern: /[A-Z]/, message: 'At least one uppercase latin letter' },
@@ -16,10 +19,6 @@ export class PasswordService {
     private dummyHash?: Promise<string>;
 
     constructor(private readonly config: AppConfig) {}
-
-    get loginMinLength(): number {
-        return this.config.auth.loginMinLength;
-    }
 
     hash(plain: string): Promise<string> {
         const { memoryCost, timeCost, parallelism } = this.config.auth.argon2;
@@ -45,16 +44,14 @@ export class PasswordService {
     }
 
     assertPolicy(password: string): void {
-        const { passwordMinLength, passwordMaxLength } = this.config.auth;
-
-        if (password.length < passwordMinLength)
+        if (password.length < PASSWORD_MIN_LENGTH)
             throw ApiError.unprocessable('PASSWORD_TOO_SHORT', [
-                { path: 'password', message: `At least ${passwordMinLength} characters` },
+                { path: 'password', message: `At least ${PASSWORD_MIN_LENGTH} characters` },
             ]);
 
-        if (password.length > passwordMaxLength)
+        if (password.length > PASSWORD_MAX_LENGTH)
             throw ApiError.unprocessable('PASSWORD_TOO_LONG', [
-                { path: 'password', message: `At most ${passwordMaxLength} characters` },
+                { path: 'password', message: `At most ${PASSWORD_MAX_LENGTH} characters` },
             ]);
 
         const missing = PASSWORD_CLASSES.filter((entry) => !entry.pattern.test(password)).map((entry) => ({

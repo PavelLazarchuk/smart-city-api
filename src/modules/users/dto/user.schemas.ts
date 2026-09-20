@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ROLE_VALUES } from '../../../common/decorators/roles.decorator';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
+    emailSchema,
     idOutputSchema,
     isoDateTimeSchema,
     loginSchema,
@@ -19,6 +20,7 @@ export const userResponseSchema = z.object({
     login: z.string().optional(),
     name: z.string().optional(),
     phone: z.string().optional(),
+    email: z.string().optional(),
     role: z.enum(ROLE_VALUES),
     organization_ids: z.array(idOutputSchema),
     ...timestampsOutputSchema,
@@ -47,6 +49,7 @@ export const createUserSchema = z.object({
     login: loginSchema.optional(),
     password: passwordSchema.optional(),
     phone: phoneSchema.optional(),
+    email: emailSchema.optional(),
     name: nameSchema.optional(),
     role: z.enum(ROLE_VALUES),
     organization_ids: z.array(objectIdSchema).max(100).optional(),
@@ -54,7 +57,7 @@ export const createUserSchema = z.object({
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export class CreateUserDto extends createZodDto(createUserSchema) {}
 
-export const updateSelfSchema = z.object({ name: nameSchema }).partial();
+export const updateSelfSchema = z.object({ name: nameSchema, email: emailSchema.nullable() }).partial();
 export type UpdateSelfInput = z.infer<typeof updateSelfSchema>;
 export class UpdateSelfDto extends createZodDto(updateSelfSchema) {}
 
@@ -64,6 +67,7 @@ export const updateUserAdminSchema = z
         login: loginSchema.nullable(),
         name: nameSchema.nullable(),
         phone: phoneSchema.nullable(),
+        email: emailSchema.nullable(),
         password: passwordSchema,
         role: z.enum(ROLE_VALUES),
     })

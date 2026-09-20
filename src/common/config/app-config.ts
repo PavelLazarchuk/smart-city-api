@@ -55,9 +55,6 @@ export class AppConfig {
         refreshTtlSeconds: number;
         adminLoginMethod: LoginMethod;
         citizenLoginMethod: LoginMethod;
-        passwordMinLength: number;
-        passwordMaxLength: number;
-        loginMinLength: number;
         maxFailedAttempts: number;
         lockoutSeconds: number;
         lockoutMaxSeconds: number;
@@ -193,9 +190,6 @@ export class AppConfig {
             refreshTtlSeconds: env.JWT_REFRESH_TTL,
             adminLoginMethod: env.AUTH_ADMIN_LOGIN_METHOD,
             citizenLoginMethod: env.AUTH_CITIZEN_LOGIN_METHOD,
-            passwordMinLength: env.PASSWORD_MIN_LENGTH,
-            passwordMaxLength: env.PASSWORD_MAX_LENGTH,
-            loginMinLength: env.LOGIN_MIN_LENGTH,
             maxFailedAttempts: env.AUTH_MAX_FAILED_ATTEMPTS,
             lockoutSeconds: env.AUTH_LOCKOUT_SECONDS,
             lockoutMaxSeconds: env.AUTH_LOCKOUT_MAX_SECONDS,

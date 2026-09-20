@@ -29,7 +29,7 @@ in a `select: false` field, so it is not even loaded unless a code path asks for
 ### Password policy
 
 Every path that sets a password — registration, `POST /users`, `PATCH /users/:id`, `PATCH /auth/password` —
-requires `PASSWORD_MIN_LENGTH`…`PASSWORD_MAX_LENGTH` characters (8–20 by default) with at least one
+requires 8–20 characters with at least one
 lowercase latin letter, one uppercase latin letter, one digit and one special (non-alphanumeric) character.
 A refusal is `422 PASSWORD_TOO_SHORT` / `PASSWORD_TOO_LONG` / `PASSWORD_TOO_WEAK`, and `details[]` lists
 every requirement that failed at once, so a form can show them all instead of one per attempt.
@@ -74,6 +74,11 @@ session id answers `404 SESSION_NOT_FOUND`; refresh-token hashes never leave the
 Changing a password takes `current_password` (required for accounts that have one), `new_password` and
 `new_password_confirmation`, which must repeat `new_password` exactly, and revokes the account's other
 sessions.
+
+Both `POST /auth/register` and `POST /auth/otp/verify` take an optional `email`. It is stored on the account
+as a contact address, never as a login identifier: it is not unique, it is not verified, and no sign-in method
+uses it. `PATCH /users/:id` changes it later, `"email": null` clears it. When it is set, booking reminders and
+freed-place notices go to it instead of by SMS.
 
 ## Endpoints
 

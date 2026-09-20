@@ -32,8 +32,6 @@ const defaults: Record<string, string> = {
     ARGON2_MEMORY_COST: '4096',
     ARGON2_TIME_COST: '1',
     ARGON2_PARALLELISM: '1',
-    PASSWORD_MIN_LENGTH: '8',
-    LOGIN_MIN_LENGTH: '5',
     OTP_LENGTH: '6',
     OTP_TTL_SECONDS: '300',
     OTP_MAX_ATTEMPTS: '3',

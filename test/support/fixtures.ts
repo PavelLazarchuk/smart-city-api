@@ -43,6 +43,7 @@ export class Fixtures {
             phone: string;
             password: string;
             name: string;
+            email: string;
             organization_ids: string[];
         }> = {},
     ): Promise<FixtureUser> {
@@ -57,6 +58,7 @@ export class Fixtures {
             role,
             login,
             phone,
+            email: overrides.email,
             name: overrides.name ?? `User ${n}`,
             password_hash: password ? await passwords.hash(password) : undefined,
             organization_ids: (overrides.organization_ids ?? []).map((id) => new Types.ObjectId(id)),
@@ -82,7 +84,7 @@ export class Fixtures {
     }
 
     citizen(
-        overrides: Partial<{ phone: string; name: string; password: string }> = {},
+        overrides: Partial<{ phone: string; name: string; password: string; email: string }> = {},
     ): Promise<FixtureUser> {
         return this.user({ role: ROLES.COMMON_USER, ...overrides });
     }

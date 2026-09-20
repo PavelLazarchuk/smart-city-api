@@ -4,6 +4,7 @@ import { AppConfig } from '../common/config/app-config';
 import { OutboxService } from '../common/outbox/outbox.service';
 import { BookingsRepository } from '../modules/bookings/bookings.repository';
 import { formatDateOnly } from '../modules/services/slot.logic';
+import { UsersService } from '../modules/users/users.service';
 import { JobRunner } from './job-runner';
 
 export const BOOKING_REMINDERS_JOB = 'booking_reminders';
@@ -14,6 +15,7 @@ const BATCH = 200;
 export class BookingRemindersJob {
     constructor(
         private readonly bookings: BookingsRepository,
+        private readonly users: UsersService,
         private readonly outbox: OutboxService,
         private readonly config: AppConfig,
         private readonly runner: JobRunner,
@@ -33,6 +35,10 @@ export class BookingRemindersJob {
 
             if (due.length === 0) break;
 
+            const emails = await this.users.findEmailsByIds(
+                due.map((booking) => booking.user_id.toHexString()),
+            );
+
             for (const booking of due) {
                 await this.outbox.enqueue(
                     'booking.reminder',
@@ -48,7 +54,13 @@ export class BookingRemindersJob {
                         status: booking.status,
                         service_label: booking.service_label,
                     },
-                    { organizationId: booking.organization_id, internal: { phone: booking.phone } },
+                    {
+                        organizationId: booking.organization_id,
+                        internal: {
+                            phone: booking.phone,
+                            email: emails.get(booking.user_id.toHexString()) ?? null,
+                        },
+                    },
                 );
             }
 

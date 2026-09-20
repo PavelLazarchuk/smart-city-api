@@ -160,9 +160,11 @@ deliver the same event twice. Reports `processed`, `delivered`, `retried`, `fail
 ### `booking_reminders` — [booking-reminders.job.ts](../src/jobs/booking-reminders.job.ts)
 
 Hourly. Finds the active bookings whose `slot_date` is `BOOKING_REMINDER_HOURS` ahead and have no
-`reminder_sent_at`, emits one `booking.reminder` outbox event each (the SMS to the citizen and any webhook
+`reminder_sent_at`, resolves the citizen's `users.email` in one query per batch, emits one `booking.reminder`
+outbox event each with that address next to the booking phone (the message to the citizen and any webhook
 delivery are the outbox's business, with its retries and the SMS budget), and marks the rows so the next run
-does not repeat them. Reports `date` and `reminders`.
+does not repeat them. An account with an e-mail is reminded by e-mail, one without it by SMS. Reports `date`
+and `reminders`.
 
 ### `trash_purge` — [trash-purge.job.ts](../src/jobs/trash-purge.job.ts)
 

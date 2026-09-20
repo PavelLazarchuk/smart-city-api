@@ -36,4 +36,26 @@ export class MailService {
             text: texts.mail.bookingBody(data),
         });
     }
+
+    sendBookingReminder(
+        to: string,
+        data: { service: string; date?: string; time?: string; phone: string },
+    ): Promise<void> {
+        return this.send({
+            to: [to],
+            subject: texts.mail.reminderSubject,
+            text: texts.mail.reminderBody(data),
+        });
+    }
+
+    sendWaitlistNotification(
+        to: string,
+        data: { service: string; date?: string; time?: string; phone: string },
+    ): Promise<void> {
+        return this.send({
+            to: [to],
+            subject: texts.mail.waitlistSubject,
+            text: texts.mail.waitlistBody(data),
+        });
+    }
 }

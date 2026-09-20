@@ -21,6 +21,9 @@ export class User {
     @Prop({ type: String })
     phone?: string;
 
+    @Prop({ type: String })
+    email?: string;
+
     @Prop({ type: String, enum: ROLE_VALUES, required: true, default: ROLES.COMMON_USER })
     role!: Role;
 

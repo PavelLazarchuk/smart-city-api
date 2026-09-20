@@ -131,11 +131,6 @@ describe('env schema', () => {
         expect(config.auth.issuer).toBe('smart-city-api');
     });
 
-    it('keeps the password length bounds ordered', () => {
-        expect(() => validateEnv({ ...base, PASSWORD_MIN_LENGTH: '30' })).toThrow(/PASSWORD_MIN_LENGTH/);
-        expect(new AppConfig(validateEnv(base)).auth.passwordMaxLength).toBe(20);
-    });
-
     it('refuses to boot on missing or malformed values with a readable message', () => {
         expect(() => validateEnv({})).toThrow(/MONGO_URI/);
         expect(() => validateEnv({ ...base, JWT_ACCESS_SECRET: 'short' })).toThrow(/JWT_ACCESS_SECRET/);

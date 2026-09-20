@@ -59,6 +59,18 @@ export class UsersRepository extends BaseRepository<User> {
         return this.findOne({ login }, session);
     }
 
+    async findEmailsByIds(ids: string[]): Promise<Map<string, string>> {
+        if (ids.length === 0) return new Map();
+
+        const rows = await this.model
+            .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) }, email: { $type: 'string' } })
+            .select('email')
+            .lean<{ _id: Types.ObjectId; email: string }[]>()
+            .exec();
+
+        return new Map(rows.map((row) => [row._id.toHexString(), row.email]));
+    }
+
     countOtherSuperAdmins(exceptId: string): Promise<number> {
         return this.count({ role: 'super-admin', _id: { $ne: new Types.ObjectId(exceptId) } });
     }

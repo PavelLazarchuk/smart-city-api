@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 import {
+    emailSchema,
     idOutputSchema,
     isoDateTimeSchema,
     loginSchema,
@@ -28,6 +29,7 @@ export const registerRequestSchema = z.object({
     phone: phoneSchema,
     password: passwordSchema,
     name: nameSchema,
+    email: emailSchema.optional(),
 });
 export type RegisterInput = z.infer<typeof registerRequestSchema>;
 export class RegisterDto extends createZodDto(registerRequestSchema) {}
@@ -39,6 +41,7 @@ export const otpVerifySchema = z.object({
     phone: phoneSchema,
     code: z.string().regex(/^\d{4,10}$/, 'Must be the numeric verification code'),
     name: nameSchema.optional(),
+    email: emailSchema.optional(),
 });
 export type OtpVerifyInput = z.infer<typeof otpVerifySchema>;
 export class OtpVerifyDto extends createZodDto(otpVerifySchema) {}

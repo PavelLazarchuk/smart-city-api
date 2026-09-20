@@ -1,7 +1,3 @@
-/**
- * Message catalogue. Every user-facing text lives here so that localisation later is a data change,
- * not a code change. Keys are stable error codes returned to clients.
- */
 export const ERROR_CODES = {
     VALIDATION_ERROR: 'VALIDATION_ERROR',
     UNAUTHENTICATED: 'UNAUTHENTICATED',
@@ -236,6 +232,18 @@ export const texts = {
                 `Name: ${data.name}`,
             ].join('\n'),
         bookingConfirmedSubject: 'Smart City: booking confirmed',
+        reminderSubject: 'Smart City: booking reminder',
+        reminderBody: (data: { service: string; date?: string; time?: string; phone: string }): string =>
+            [
+                `Reminder: ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}.`,
+                `Booked with phone ${data.phone || 'not specified'}.`,
+            ].join('\n'),
+        waitlistSubject: 'Smart City: a place is free',
+        waitlistBody: (data: { service: string; date?: string; time?: string; phone: string }): string =>
+            [
+                `A place is free for ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}. Book it now.`,
+                `You are on the waiting list with phone ${data.phone || 'not specified'}.`,
+            ].join('\n'),
         reportSubject: 'Smart City: services without upcoming slots',
         reportBody: (count: number): string =>
             `The attached report lists ${count} service(s) that currently have no upcoming booking slots.`,

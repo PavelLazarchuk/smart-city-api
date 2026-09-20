@@ -4,6 +4,7 @@ import { type AddressInfo } from 'node:net';
 import { Types } from 'mongoose';
 
 import { OutboxService } from '../../src/common/outbox/outbox.service';
+import { ConsoleMailProvider } from '../../src/integrations/mail/console-mail.provider';
 import { BookingRemindersJob } from '../../src/jobs/booking-reminders.job';
 import { expectError, waitFor } from '../support/assertions';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
@@ -504,6 +505,57 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
         });
     });
 
+    describe('waitlist notice channel', () => {
+        it('tells the first in line by e-mail when the account has one', async () => {
+            const mail = jest.spyOn(t.app.get(ConsoleMailProvider), 'send').mockResolvedValue(undefined);
+
+            try {
+                const service = await serviceWith({}, 2, '10:00', 1);
+                const target = { option_id: uuid(1), slot_id: uuid(2), time: '10:00' };
+                const holder = await fx.bearer(await fx.citizen());
+                const held = await book(service.id, target, holder);
+                expect(held.status).toBe(201);
+                expect(
+                    (
+                        await t.http
+                            .patch(`${t.prefix}/users/${citizen.id}`)
+                            .set('Authorization', bearer)
+                            .send({ email: 'anna@example.com' })
+                    ).status,
+                ).toBe(200);
+                expect(
+                    (
+                        await t.http
+                            .post(`${t.prefix}/services/${service.id}/waitlist`)
+                            .set('Authorization', bearer)
+                            .send(target)
+                    ).status,
+                ).toBe(201);
+                expect(
+                    (
+                        await t.http
+                            .delete(`${t.prefix}/bookings/${held.body.data.booking_id}`)
+                            .set('Authorization', holder)
+                    ).status,
+                ).toBe(204);
+
+                await waitFor(
+                    async () =>
+                        (await fx
+                            .collection('OutboxEvent')
+                            .countDocuments({ type: 'waitlist.slot_available', status: 'delivered' })) === 1,
+                );
+                expect(mail.mock.calls).toHaveLength(1);
+                const message = mail.mock.calls[0]![0] as { to: string[]; text: string };
+                expect(message.to).toEqual(['anna@example.com']);
+                expect(message.text).toContain('375291234567');
+                expect(await fx.collection('Sms').countDocuments({ purpose: 'waitlist' })).toBe(0);
+            } finally {
+                mail.mockRestore();
+            }
+        });
+    });
+
     describe('reminders', () => {
         it('emits one reminder per active booking of the target day, once', async () => {
             const service = await serviceWith({}, 1);
@@ -522,6 +574,36 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             );
             const sms = await fx.collection<{ phone: string }>('Sms').findOne({ purpose: 'reminder' }).lean();
             expect(sms?.phone).toBe('375291234567');
+        });
+
+        it('sends the reminder by e-mail when the account has one, naming the booking phone', async () => {
+            const mail = jest.spyOn(t.app.get(ConsoleMailProvider), 'send').mockResolvedValue(undefined);
+
+            try {
+                const withEmail = await t.http
+                    .patch(`${t.prefix}/users/${citizen.id}`)
+                    .set('Authorization', bearer)
+                    .send({ email: 'anna@example.com' });
+                expect(withEmail.status).toBe(200);
+
+                const service = await serviceWith({}, 1);
+                await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' });
+                const job = t.app.get(BookingRemindersJob);
+                expect(await job.execute(new Date())).toEqual({ date: dateOnly(1), reminders: 1 });
+                await waitFor(
+                    async () =>
+                        (await fx
+                            .collection('OutboxEvent')
+                            .countDocuments({ type: 'booking.reminder', status: 'delivered' })) === 1,
+                );
+                expect(mail.mock.calls).toHaveLength(1);
+                const message = mail.mock.calls[0]![0] as { to: string[]; text: string };
+                expect(message.to).toEqual(['anna@example.com']);
+                expect(message.text).toContain('375291234567');
+                expect(await fx.collection('Sms').countDocuments({ purpose: 'reminder' })).toBe(0);
+            } finally {
+                mail.mockRestore();
+            }
         });
     });
 

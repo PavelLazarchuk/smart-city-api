@@ -6,6 +6,7 @@ import { BookingsModule } from '../bookings/bookings.module';
 import { CategoriesModule } from '../categories/categories.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { SmsModule } from '../sms/sms.module';
+import { UsersModule } from '../users/users.module';
 import { BookingsService } from './bookings.service';
 import { ServiceRevision, ServiceRevisionSchema } from './schemas/service-revision.schema';
 import { Service, ServiceSchema } from './schemas/service.schema';
@@ -26,6 +27,7 @@ import { ServicesService } from './services.service';
         CategoriesModule,
         MailModule,
         SmsModule,
+        UsersModule,
     ],
     controllers: [ServicesController],
     providers: [

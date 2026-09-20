@@ -105,9 +105,6 @@ export const envSchema = z
         ARGON2_MEMORY_COST: positiveInt(19456),
         ARGON2_TIME_COST: positiveInt(2),
         ARGON2_PARALLELISM: positiveInt(1),
-        PASSWORD_MIN_LENGTH: positiveInt(8),
-        PASSWORD_MAX_LENGTH: positiveInt(20),
-        LOGIN_MIN_LENGTH: positiveInt(5),
         AUTH_MAX_FAILED_ATTEMPTS: positiveInt(5),
         AUTH_LOCKOUT_SECONDS: positiveInt(300),
         AUTH_LOCKOUT_MAX_SECONDS: positiveInt(3600),
@@ -269,14 +266,6 @@ export const envSchema = z
                         message: `${key} is required when STORAGE_PROVIDER=s3`,
                     });
             }
-        }
-
-        if (env.PASSWORD_MIN_LENGTH > env.PASSWORD_MAX_LENGTH) {
-            ctx.addIssue({
-                code: 'custom',
-                path: ['PASSWORD_MIN_LENGTH'],
-                message: 'PASSWORD_MIN_LENGTH must not exceed PASSWORD_MAX_LENGTH',
-            });
         }
 
         if (env.PAGINATION_DEFAULT_LIMIT > env.PAGINATION_MAX_LIMIT) {
