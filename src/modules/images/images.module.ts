@@ -15,7 +15,7 @@ import { Image, ImageSchema } from './schemas/image.schema';
     imports: [
         MongooseModule.forFeature([{ name: Image.name, schema: ImageSchema }]),
         /**
-         * `BODY_LIMIT` never reaches multipart, so the cap is multer's own and applies while the stream is read.
+         * The JSON body limit never reaches multipart, so the cap is multer's own and applies while the stream is read.
          * The magic-byte check in the service still has the final word on the type.
          */
         MulterModule.registerAsync({

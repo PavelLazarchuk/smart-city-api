@@ -72,7 +72,7 @@ describe('public read limits (e2e)', () => {
                         user_id: (await fx.client()).id,
                         time: '10:00',
                         person: 'Secret Person',
-                        phone: '375291112233',
+                        phone: '4915291112233',
                         info: 'x'.repeat(200),
                     });
                 }

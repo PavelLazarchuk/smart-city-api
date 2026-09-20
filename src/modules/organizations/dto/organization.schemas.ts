@@ -75,7 +75,7 @@ export class MaskedOrganizationListItemDto extends createZodDto(maskedOrganizati
 export const organizationListSchemaForViewer = (request: Request): ZodType =>
     viewerSeesBookings(request) ? organizationListItemSchema : maskedOrganizationListItemSchema;
 
-/** Child lists are capped at `INCLUDE_MAX_ITEMS` and services appear as cards. */
+/** Child lists are capped at `PAGINATION.includeMaxItems` and services appear as cards. */
 export const organizationDetailSchema = organizationBaseResponseSchema.extend({
     news: z.array(newsResponseSchema),
     infosections: z.array(infoSectionResponseSchema),

@@ -144,7 +144,7 @@ describe('jobs (e2e)', () => {
                 user_id: client.id,
                 time: '18:00',
                 person: 'Anna',
-                phone: '375291112233',
+                phone: '4915291112233',
             });
 
             expect(await t.app.get(RecurrentSlotsJob).execute(new Date(2026, 8, 5))).toEqual({

@@ -15,7 +15,7 @@ export const archiveResponseSchema = z.object({
 });
 export class ArchiveResponseDto extends createZodDto(archiveResponseSchema) {}
 
-/** Snapshots are opaque JSON, but not unbounded: `BODY_LIMIT` alone is a very generous ceiling. */
+/** Snapshots are opaque JSON, but not unbounded: the HTTP body limit alone is a very generous ceiling. */
 export const MAX_ARCHIVE_DATA_BYTES = 64 * 1024;
 
 export const createArchiveSchema = z.object({

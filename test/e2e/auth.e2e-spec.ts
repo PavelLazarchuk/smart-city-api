@@ -104,7 +104,7 @@ describe('auth (e2e)', () => {
                 .send({ phone: client.phone, password: 'wrong-password' });
             const unknown = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ phone: '375299999999', password: 'wrong-password' });
+                .send({ phone: '4915299999999', password: 'wrong-password' });
             expect(known.status).toBe(unknown.status);
             expect(known.body.error.code).toBe(unknown.body.error.code);
         });
@@ -124,7 +124,7 @@ describe('auth (e2e)', () => {
         it('is disabled while the client method is sms', async () => {
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'Client-Pass1', name: 'New' });
+                .send({ phone: '4915291112233', password: 'Client-Pass1', name: 'New' });
             expectError(res, 403, 'LOGIN_METHOD_DISABLED');
         });
 
@@ -132,12 +132,12 @@ describe('auth (e2e)', () => {
             t.app.get(AppConfig).auth.clientLoginMethod = 'password';
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'Client-Pass1', name: 'New' });
+                .send({ phone: '4915291112233', password: 'Client-Pass1', name: 'New' });
             expect(res.status).toBe(201);
-            expect(res.body.data.user.phone).toBe('375291112233');
+            expect(res.body.data.user.phone).toBe('4915291112233');
             const dup = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'Client-Pass1', name: 'New' });
+                .send({ phone: '4915291112233', password: 'Client-Pass1', name: 'New' });
             expectError(dup, 409, 'PHONE_TAKEN');
         });
 
@@ -145,58 +145,58 @@ describe('auth (e2e)', () => {
             t.app.get(AppConfig).auth.clientLoginMethod = 'password';
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'short', name: 'New' });
+                .send({ phone: '4915291112233', password: 'short', name: 'New' });
             expectError(res, 422, 'PASSWORD_TOO_SHORT');
         });
     });
 
     describe('OTP flow', () => {
         it('request stores a hashed code, creates no user, and answers identically for unknown phones', async () => {
-            const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291000001' });
+            const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '4915291000001' });
             expect(res.status).toBe(200);
-            expect(res.body.data).toEqual({ phone: '375291000001', expires_in: 300 });
+            expect(res.body.data).toEqual({ phone: '4915291000001', expires_in: 300 });
             expect(sentCodes).toHaveLength(1);
             const codes = t.app.get<Model<VerificationCode>>('VerificationCodeModel');
-            const stored = await codes.findOne({ phone: '375291000001' }).select('+code_hash').lean();
+            const stored = await codes.findOne({ phone: '4915291000001' }).select('+code_hash').lean();
             expect(stored?.code_hash).toBeDefined();
             expect(stored?.code_hash).not.toBe(sentCodes[0]);
-            const users = await fx.collection('User').countDocuments({ phone: '375291000001' });
+            const users = await fx.collection('User').countDocuments({ phone: '4915291000001' });
             expect(users).toBe(0);
         });
 
         it('verify creates the client on first success and returns a pair', async () => {
-            await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291000002' });
+            await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '4915291000002' });
             const res = await t.http
                 .post(`${t.prefix}/auth/otp/verify`)
-                .send({ phone: '375291000002', code: sentCodes[0], name: 'Anna' });
+                .send({ phone: '4915291000002', code: sentCodes[0], name: 'Anna' });
             expect(res.status).toBe(200);
             expect(res.body.data.user.role).toBe('common-user');
             expect(res.body.data.user.name).toBe('Anna');
             expectNoSensitiveKeys(res.body);
             const again = await t.http
                 .post(`${t.prefix}/auth/otp/verify`)
-                .send({ phone: '375291000002', code: sentCodes[0] });
+                .send({ phone: '4915291000002', code: sentCodes[0] });
             expectError(again, 401, 'OTP_INVALID');
         });
 
         it('counts attempts and locks after the configured maximum', async () => {
-            await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291000003' });
+            await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '4915291000003' });
 
             for (let i = 0; i < 3; i += 1) {
                 const bad = await t.http
                     .post(`${t.prefix}/auth/otp/verify`)
-                    .send({ phone: '375291000003', code: '000000' });
+                    .send({ phone: '4915291000003', code: '000000' });
                 expectError(bad, 401, 'OTP_INVALID');
             }
 
             const locked = await t.http
                 .post(`${t.prefix}/auth/otp/verify`)
-                .send({ phone: '375291000003', code: sentCodes[0] });
+                .send({ phone: '4915291000003', code: sentCodes[0] });
             expectError(locked, 401, 'OTP_ATTEMPTS_EXCEEDED');
         });
 
         it('a new code does not reset the guessing budget of the number', async () => {
-            const phone = '375291000005';
+            const phone = '4915291000005';
             await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone });
 
             for (let i = 0; i < 2; i += 1) {
@@ -221,13 +221,13 @@ describe('auth (e2e)', () => {
         });
 
         it('rejects phones outside the configured country', async () => {
-            const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '491511234567' });
+            const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291234567' });
             expectError(res, 422, 'PHONE_COUNTRY_NOT_SUPPORTED');
         });
 
         it('is disabled entirely when neither audience uses sms', async () => {
             t.app.get(AppConfig).auth.clientLoginMethod = 'password';
-            const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291000004' });
+            const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '4915291000004' });
             expectError(res, 403, 'LOGIN_METHOD_DISABLED');
         });
     });

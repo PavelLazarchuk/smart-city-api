@@ -129,8 +129,8 @@ describe('cross-cutting guards (e2e)', () => {
 
         beforeEach(async () => {
             organization = await fx.organization();
-            client = await fx.client({ phone: '375291234567', name: 'Private Client' });
-            stranger = await fx.client({ phone: '375297654321' });
+            client = await fx.client({ phone: '4915291234567', name: 'Private Client' });
+            stranger = await fx.client({ phone: '4915297654321' });
             admin = await fx.admin([organization.id]);
             const option = fx.bookableOption(3);
             serviceId = (
@@ -147,7 +147,7 @@ describe('cross-cutting guards (e2e)', () => {
                 user_id: client.id,
                 time: '10:00',
                 person: 'Private Client',
-                phone: '375291234567',
+                phone: '4915291234567',
                 info: 'allergy',
             });
             await fx.news(organization.id);
@@ -172,7 +172,7 @@ describe('cross-cutting guards (e2e)', () => {
                 expect(anonymous.status).toBe(200);
                 expectNoSensitiveKeys(anonymous.body);
                 const text = JSON.stringify(anonymous.body);
-                expect(text).not.toContain('375291234567');
+                expect(text).not.toContain('4915291234567');
                 expect(text).not.toContain('Private Client');
                 expect(text).not.toContain('internal@example.com');
                 expect(collectKeys(anonymous.body).has('subscribe')).toBe(false);
@@ -180,7 +180,7 @@ describe('cross-cutting guards (e2e)', () => {
                 const asStranger = await t.http
                     .get(`${t.prefix}${route}`)
                     .set('Authorization', await fx.bearer(stranger));
-                expect(JSON.stringify(asStranger.body)).not.toContain('375291234567');
+                expect(JSON.stringify(asStranger.body)).not.toContain('4915291234567');
             }
         });
 
@@ -212,7 +212,7 @@ describe('cross-cutting guards (e2e)', () => {
 
             const withBooking = (await t.http.get(`${t.prefix}/services/${serviceId}`)).body.data;
             withBooking.options[0].slots[0].value.time[0].bookings = [
-                { id: 'x', user_id: client.id, person: 'Private Client', phone: '375291234567', info: '' },
+                { id: 'x', user_id: client.id, person: 'Private Client', phone: '4915291234567', info: '' },
             ];
             expect(maskedServiceResponseSchema.safeParse(withBooking).success).toBe(false);
         });
@@ -221,7 +221,7 @@ describe('cross-cutting guards (e2e)', () => {
             const own = await t.http
                 .get(`${t.prefix}/services/${serviceId}`)
                 .set('Authorization', await fx.bearer(admin));
-            expect(JSON.stringify(own.body)).toContain('375291234567');
+            expect(JSON.stringify(own.body)).toContain('4915291234567');
             expectNoSensitiveKeys(own.body);
             const users = await t.http
                 .get(`${t.prefix}/users`)

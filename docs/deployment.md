@@ -51,20 +51,19 @@ for the public read surface, `THROTTLE_LIMIT` the strict one for `/auth/*` and p
 `THROTTLE_UPLOAD_LIMIT` the one for image uploads. `THROTTLE_STORAGE=mongo` (the default) shares the counters
 across replicas; `memory` is per process.
 
-`PAGINATION_MAX_PAGE` caps offset pagination depth — a request beyond it is answered with
+Offset pagination depth is capped at 1000 pages — a request beyond it is answered with
 `422 PAGE_OUT_OF_RANGE` instead of an unbounded `$skip`.
 
 `autoIndex` is off in production; indexes exist only if migrations ran. TTL retention lives in the migrations
-alone (the Mongoose schemas do not declare it, so dev and production cannot drift apart): changing
-`ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS`, `SMS_RETENTION_DAYS`, `BOOKING_HISTORY_RETENTION_DAYS`
-or `OUTBOX_RETENTION_DAYS` requires a new migration that runs `collMod` on the respective TTL index
-(`expireAfterSeconds`). `analytics_events` and `sms` expire on
-`created_at` because those rows carry client phone numbers and names.
+alone (the Mongoose schemas do not declare it, so dev and production cannot drift apart), and each window is
+a constant in the migration that creates the index. Changing one requires a new migration that runs `collMod`
+on that TTL index (`expireAfterSeconds`). `analytics_events` and `sms` expire on `created_at` because those
+rows carry client phone numbers and names.
 
-The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE`, `MONGO_MIN_POOL_SIZE`,
-`MONGO_SERVER_SELECTION_TIMEOUT_MS`, `MONGO_SOCKET_TIMEOUT_MS`, `MONGO_RETRY_WRITES`,
-`MONGO_WRITE_CONCERN` and `MONGO_READ_PREFERENCE` rather than by whatever the URI happens to carry, so a
-copied connection string cannot quietly change the durability of every write.
+The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE`, `MONGO_SERVER_SELECTION_TIMEOUT_MS` and
+`MONGO_SOCKET_TIMEOUT_MS`, and by the fixed `retryWrites` / `majority` / `primary` settings in
+[src/common/config/constants.ts](../src/common/config/constants.ts), rather than by whatever the URI happens
+to carry, so a copied connection string cannot quietly change the durability of every write.
 
 `SMS_HOURLY_LIMIT` and `SMS_DAILY_LIMIT` cap outgoing messages across every sender and replica: past the
 cap a send is refused with `422 SMS_BUDGET_EXCEEDED`, the attempt is logged in `sms` with status `blocked`,

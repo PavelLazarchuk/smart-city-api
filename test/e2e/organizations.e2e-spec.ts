@@ -216,7 +216,7 @@ describe('organizations (e2e)', () => {
                 user_id: (await fx.client()).id,
                 time: '10:00',
                 person: 'Secret Person',
-                phone: '375291112233',
+                phone: '4915291112233',
             });
             await fx.service(organization.id);
             await fx.news(organization.id);

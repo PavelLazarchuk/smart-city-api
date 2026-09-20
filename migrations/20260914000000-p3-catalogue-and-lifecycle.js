@@ -1,5 +1,6 @@
-const BOOKING_HISTORY_RETENTION_DAYS = Number(process.env.BOOKING_HISTORY_RETENTION_DAYS || 365);
-const OUTBOX_RETENTION_DAYS = Number(process.env.OUTBOX_RETENTION_DAYS || 30);
+// Pinned here, not in the environment: an existing TTL index only changes through a later collMod migration.
+const BOOKING_HISTORY_RETENTION_DAYS = 365;
+const OUTBOX_RETENTION_DAYS = 30;
 
 const SLUG_PARTIAL = { slug: { $type: 'string' } };
 

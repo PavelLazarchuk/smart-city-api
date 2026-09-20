@@ -135,8 +135,5 @@ describe('env schema', () => {
         expect(() => validateEnv({})).toThrow(/MONGO_URI/);
         expect(() => validateEnv({ ...base, JWT_ACCESS_SECRET: 'short' })).toThrow(/JWT_ACCESS_SECRET/);
         expect(() => validateEnv({ ...base, SMS_PROVIDER: 'smpp' })).toThrow(/SMPP_URL/);
-        expect(() =>
-            validateEnv({ ...base, PAGINATION_DEFAULT_LIMIT: '200', PAGINATION_MAX_LIMIT: '100' }),
-        ).toThrow(/PAGINATION_DEFAULT_LIMIT/);
     });
 });

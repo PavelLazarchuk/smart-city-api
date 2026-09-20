@@ -23,7 +23,7 @@ An account created for an audience must carry what that method needs (`ADMIN_PAS
 `LOGIN_METHOD_DISABLED`. Flipping a method on a live system is not a supported migration — see
 [deployment.md](deployment.md).
 
-Passwords are argon2id (`ARGON2_MEMORY_COST` / `ARGON2_TIME_COST` / `ARGON2_PARALLELISM`) and the hash lives
+Passwords are argon2id (parameters in [constants.ts](../src/common/config/constants.ts)) and the hash lives
 in a `select: false` field, so it is not even loaded unless a code path asks for it.
 
 ### Password policy

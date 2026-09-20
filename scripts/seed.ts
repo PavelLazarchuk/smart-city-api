@@ -12,7 +12,7 @@ import { UsersService } from '../src/modules/users/users.service';
 const SEED = {
     superAdmin: { login: 'superadmin', password: 'Superadmin-Pass1', name: 'Super Admin' },
     admin: { login: 'cityadmin', password: 'Cityadmin-Pass1', name: 'City Admin' },
-    client: { phone: '375290000001', name: 'Client One' },
+    client: { phone: '4915290000001', name: 'Client One' },
     organization: {
         main_label: 'City Clinic No. 1',
         main_category: 'healthcare',

@@ -45,12 +45,12 @@ against a database that already has the index is safe.
 
 ## Changing a TTL window
 
-`ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS`, `SMS_RETENTION_DAYS`, `BOOKING_HISTORY_RETENTION_DAYS` and
-`OUTBOX_RETENTION_DAYS` are read by the migration when
-the TTL index is created — they are **not** read at runtime, and the Mongoose schemas deliberately do not declare TTL at all.
-Changing the variable alone changes nothing on an existing database.
+Each retention window is a constant at the top of the migration that creates its TTL index — archives,
+analytics events, SMS, finished bookings and outbox events. Nothing reads them at runtime, and the Mongoose
+schemas deliberately do not declare TTL at all. They are not environment variables on purpose: an existing
+index ignores a new value, so changing one is always a migration.
 
-To change retention: set the new value and add a migration that runs `collMod` on the collection with the new
+To change retention: add a migration that runs `collMod` on the collection with the new
 `expireAfterSeconds` for that index (MongoDB refuses a plain `createIndex` with different options on an
 existing index). Roll it back the same way, with the previous value.
 

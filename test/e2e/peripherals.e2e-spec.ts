@@ -225,15 +225,15 @@ describe('images, archives, sms, analytics (e2e)', () => {
                 await t.http
                     .post(`${t.prefix}/sms/test`)
                     .set('Authorization', await fx.bearer(admin))
-                    .send({ phone: '375291112233' }),
+                    .send({ phone: '4915291112233' }),
                 403,
             );
             const sent = await t.http
                 .post(`${t.prefix}/sms/test`)
                 .set('Authorization', bearer)
-                .send({ phone: '375291112233' });
+                .send({ phone: '4915291112233' });
             expect(sent.status).toBe(200);
-            expect(sent.body.data).toEqual({ phone: '375291112233', status: 'sent' });
+            expect(sent.body.data).toEqual({ phone: '4915291112233', status: 'sent' });
             expect(spy).toHaveBeenCalledTimes(1);
 
             spy.mockRejectedValueOnce(new Error('smpp down'));
@@ -241,7 +241,7 @@ describe('images, archives, sms, analytics (e2e)', () => {
                 await t.http
                     .post(`${t.prefix}/sms/test`)
                     .set('Authorization', bearer)
-                    .send({ phone: '375291112233' }),
+                    .send({ phone: '4915291112233' }),
                 422,
                 'SMS_DELIVERY_FAILED',
             );

@@ -204,7 +204,7 @@ describe('persistence (e2e)', () => {
             await expect(
                 users.create({
                     role: 'common-user',
-                    phone: '375290000001',
+                    phone: '4915290000001',
                     organization_ids: [],
                     bookings: [],
                 }),
@@ -212,7 +212,7 @@ describe('persistence (e2e)', () => {
             await expect(
                 users.create({
                     role: 'common-user',
-                    phone: '375290000001',
+                    phone: '4915290000001',
                     organization_ids: [],
                     bookings: [],
                 }),

@@ -28,7 +28,7 @@ const booking = (
     service_label: 'S',
     user_id: new Types.ObjectId(),
     person: 'P',
-    phone: '375290000000',
+    phone: '4915290000000',
     info: '',
     fields: {},
     documents: [],

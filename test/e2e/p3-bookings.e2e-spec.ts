@@ -73,7 +73,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
         organization = await fx.organization();
         admin = await fx.admin([organization.id]);
         adminBearer = await fx.bearer(admin);
-        client = await fx.client({ name: 'Anna', phone: '375291234567' });
+        client = await fx.client({ name: 'Anna', phone: '4915291234567' });
         bearer = await fx.bearer(client);
     });
 
@@ -443,7 +443,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 409,
                 'WAITLIST_ALREADY_JOINED',
             );
-            const second = await fx.bearer(await fx.client({ phone: '375297777777' }));
+            const second = await fx.bearer(await fx.client({ phone: '4915297777777' }));
             expect(
                 (
                     await t.http
@@ -477,7 +477,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 async () =>
                     (await fx
                         .collection('Sms')
-                        .countDocuments({ purpose: 'waitlist', phone: '375291234567' })) === 1,
+                        .countDocuments({ purpose: 'waitlist', phone: '4915291234567' })) === 1,
             );
 
             expect((await book(service.id, target)).status).toBe(201);
@@ -548,7 +548,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 expect(mail.mock.calls).toHaveLength(1);
                 const message = mail.mock.calls[0]![0] as { to: string[]; text: string };
                 expect(message.to).toEqual(['anna@example.com']);
-                expect(message.text).toContain('375291234567');
+                expect(message.text).toContain('4915291234567');
                 expect(await fx.collection('Sms').countDocuments({ purpose: 'waitlist' })).toBe(0);
             } finally {
                 mail.mockRestore();
@@ -573,7 +573,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 async () => (await fx.collection('Sms').countDocuments({ purpose: 'reminder' })) === 1,
             );
             const sms = await fx.collection<{ phone: string }>('Sms').findOne({ purpose: 'reminder' }).lean();
-            expect(sms?.phone).toBe('375291234567');
+            expect(sms?.phone).toBe('4915291234567');
         });
 
         it('sends the reminder by e-mail when the account has one, naming the booking phone', async () => {
@@ -599,7 +599,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 expect(mail.mock.calls).toHaveLength(1);
                 const message = mail.mock.calls[0]![0] as { to: string[]; text: string };
                 expect(message.to).toEqual(['anna@example.com']);
-                expect(message.text).toContain('375291234567');
+                expect(message.text).toContain('4915291234567');
                 expect(await fx.collection('Sms').countDocuments({ purpose: 'reminder' })).toBe(0);
             } finally {
                 mail.mockRestore();
@@ -665,7 +665,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                     service_id: service.id,
                     status: 'confirmed',
                 });
-                expect(JSON.stringify(body)).not.toContain('375291234567');
+                expect(JSON.stringify(body)).not.toContain('4915291234567');
                 expect(JSON.stringify(body)).not.toContain('clinic@example.com');
                 const timestamp = delivery!.headers['x-webhook-timestamp'] as string;
                 expect(delivery!.headers['x-webhook-signature']).toBe(

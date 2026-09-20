@@ -9,9 +9,9 @@ reports in shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of 
   ([`JobsScheduler`](../src/jobs/jobs.scheduler.ts)). API replicas normally run with `JOBS_ENABLED=false`.
 - **Who executes.** Every run takes a lease in the `job_locks` collection
   ([`JobLockService`](../src/jobs/job-lock.service.ts)): one atomic upsert per job name, renewed while the job
-  works and released afterwards, with `JOB_LOCK_TTL_SECONDS` as the expiry. Several workers may therefore be
+  works and released afterwards, with `JOB_LOCK_TTL_SECONDS` (5 minutes) as the expiry. Several workers may therefore be
   scheduled at once — a tick runs exactly once, and a crashed holder's lease simply expires.
-- **Timezone.** Cron expressions are evaluated in `JOBS_TIMEZONE` (e.g. `Europe/Minsk`), not in UTC.
+- **Timezone.** Cron expressions are evaluated in `JOBS_TIMEZONE` (e.g. `Europe/Berlin`), not in UTC.
 - **Logging.** [`JobRunner`](../src/jobs/job-runner.ts) logs `job started` / `job finished` with the duration
   and the job's own result object, `job skipped: lock held elsewhere` when the lease is taken, and
   `job failed` with the stack. A failing job never crashes the process.
@@ -26,19 +26,22 @@ reports in shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of 
 
 ## The jobs
 
-| Job                   | Variable                       | Default       | What it does                                          |
-| --------------------- | ------------------------------ | ------------- | ----------------------------------------------------- |
-| `recurrent_slots`     | `JOB_RECURRENT_SLOTS_CRON`     | `0 3 * * *`   | Generates dated slots from recurrent schedules        |
-| `news_expiry`         | `JOB_NEWS_EXPIRY_CRON`         | `0 */2 * * *` | Archives and removes expired news                     |
-| `slot_expiry`         | `JOB_SLOT_EXPIRY_CRON`         | `30 3 * * *`  | Archives and removes slots whose date has passed      |
-| `stale_bookings`      | `JOB_STALE_BOOKINGS_CRON`      | `0 4 * * *`   | Drops bookings whose slot no longer exists            |
-| `cascade_reconcile`   | `JOB_CASCADE_RECONCILE_CRON`   | `30 4 * * *`  | Finishes cascades that never ran, for any parent      |
-| `storage_gc`          | `JOB_STORAGE_GC_CRON`          | `0 5 * * *`   | Deletes stored files no `images` row points at        |
-| `debtor_report`       | `JOB_DEBTOR_REPORT_CRON`       | `0 12 * * *`  | E-mails the "services without upcoming slots" report  |
-| `unreferenced_images` | `JOB_UNREFERENCED_IMAGES_CRON` | `30 12 * * *` | E-mails the list of images nothing refers to          |
-| `outbox_dispatch`     | `JOB_OUTBOX_DISPATCH_CRON`     | `* * * * *`   | Delivers queued events: mail, SMS, webhooks, retries  |
-| `booking_reminders`   | `JOB_BOOKING_REMINDERS_CRON`   | `0 * * * *`   | Emits `booking.reminder` for tomorrow's bookings      |
-| `trash_purge`         | `JOB_TRASH_PURGE_CRON`         | `0 6 * * *`   | Permanently deletes services long enough in the trash |
+Schedules are constants in [constants.ts](../src/common/config/constants.ts), not environment variables: the
+jobs are ordered relative to each other, so a per-deployment override would be a way to break that order.
+
+| Job                   | Schedule      | What it does                                          |
+| --------------------- | ------------- | ----------------------------------------------------- |
+| `recurrent_slots`     | `0 3 * * *`   | Generates dated slots from recurrent schedules        |
+| `news_expiry`         | `0 */2 * * *` | Archives and removes expired news                     |
+| `slot_expiry`         | `30 3 * * *`  | Archives and removes slots whose date has passed      |
+| `stale_bookings`      | `0 4 * * *`   | Drops bookings whose slot no longer exists            |
+| `cascade_reconcile`   | `30 4 * * *`  | Finishes cascades that never ran, for any parent      |
+| `storage_gc`          | `0 5 * * *`   | Deletes stored files no `images` row points at        |
+| `debtor_report`       | `0 12 * * *`  | E-mails the "services without upcoming slots" report  |
+| `unreferenced_images` | `30 12 * * *` | E-mails the list of images nothing refers to          |
+| `outbox_dispatch`     | `* * * * *`   | Delivers queued events: mail, SMS, webhooks, retries  |
+| `booking_reminders`   | `0 * * * *`   | Emits `booking.reminder` for tomorrow's bookings      |
+| `trash_purge`         | `0 6 * * *`   | Permanently deletes services long enough in the trash |
 
 ### `recurrent_slots` — [recurrent-slots.job.ts](../src/jobs/recurrent-slots.job.ts)
 
@@ -76,7 +79,7 @@ Scans services that have `date` or `date_time` slots and, per service and inside
    (completed, no-show, cancelled) are the outcome statistics and stay until the history TTL.
 
 Reports `services_updated` and `slots_archived`. Archived snapshots expire on their own through the
-`archives` TTL index (`ARCHIVE_RETENTION_DAYS`).
+`archives` TTL index (30 days).
 
 ### `stale_bookings` — [stale-bookings.job.ts](../src/jobs/stale-bookings.job.ts)
 
@@ -103,7 +106,7 @@ as `left_behind` and left alone: no hook claims it, and this job does not improv
 
 The one way this job could do real damage is by believing an empty or half-restored `organizations`
 collection — every child would then look like an orphan, and the hooks would faithfully delete all of them.
-Past `JOB_CASCADE_RECONCILE_LIMIT` (default 25) dangling organizations it therefore touches nothing, logs
+Past `JOB_CASCADE_RECONCILE_LIMIT` (25) dangling organizations it therefore touches nothing, logs
 `cascade reconcile refused`, and returns `refused: true`; a genuine backlog of that size is a deliberate
 operation, not a nightly repair.
 
@@ -121,7 +124,7 @@ grows.
 The job streams the store's own listing (`StorageProvider.list()` — a directory walk locally, paged
 `ListObjectsV2` on S3), and for each batch of two hundred keys asks `images` which of them still have a row.
 Two guards keep a live upload safe: a key is a candidate only once the file is older than
-`STORAGE_GC_MIN_AGE` (default `24h`), which covers the window between `put` and the row being written, and
+`STORAGE_GC_MIN_AGE_SECONDS` (24h), which covers the window between `put` and the row being written, and
 the row lookup happens immediately before the delete rather than from a snapshot taken at the start. A third
 guard limits the blast radius: only keys shaped exactly like the ones the upload path writes
 (`<organization id>/<uuid><extension>`) are ever deleted, so a bucket shared with backups or static assets

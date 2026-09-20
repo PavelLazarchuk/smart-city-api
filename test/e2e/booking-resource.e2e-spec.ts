@@ -34,7 +34,7 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
         await t.clearDatabase();
         organization = await fx.organization();
         admin = await fx.admin([organization.id]);
-        client = await fx.client({ name: 'Anna', phone: '375291234567' });
+        client = await fx.client({ name: 'Anna', phone: '4915291234567' });
         bearer = await fx.bearer(client);
         adminBearer = await fx.bearer(admin);
         option = fx.bookableOption(3);
@@ -59,7 +59,7 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
 
             const byAdmin = await t.http.get(`${t.prefix}/bookings`).set('Authorization', adminBearer);
             expect(byAdmin.body.data).toHaveLength(1);
-            expect(byAdmin.body.data[0].phone).toBe('375291234567');
+            expect(byAdmin.body.data[0].phone).toBe('4915291234567');
 
             const byService = await t.http
                 .get(`${t.prefix}/services/${serviceId}/bookings?option_id=${option.id}`)
@@ -152,7 +152,7 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
             expect(res.body.data.service_id).toBe(serviceId);
             const slot = res.body.data.options[0].slots[0];
             expect(slot.time).toEqual([{ time: '10:00', limit: 3, booked_count: 1, available: 2 }]);
-            expect(JSON.stringify(res.body)).not.toContain('375291234567');
+            expect(JSON.stringify(res.body)).not.toContain('4915291234567');
             expect(JSON.stringify(res.body)).not.toContain('Anna');
         });
 

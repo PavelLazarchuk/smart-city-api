@@ -155,7 +155,7 @@ describe('account protection (e2e)', () => {
                 const res = await t.http
                     .post(`${t.prefix}/sms/test`)
                     .set('Authorization', bearer)
-                    .send({ phone: '375291112233' });
+                    .send({ phone: '4915291112233' });
                 expect(res.status).toBe(200);
             }
 
@@ -163,7 +163,7 @@ describe('account protection (e2e)', () => {
                 await t.http
                     .post(`${t.prefix}/sms/test`)
                     .set('Authorization', bearer)
-                    .send({ phone: '375291112233' }),
+                    .send({ phone: '4915291112233' }),
                 422,
                 'SMS_BUDGET_EXCEEDED',
             );
@@ -179,10 +179,10 @@ describe('account protection (e2e)', () => {
             await t.http
                 .post(`${t.prefix}/sms/test`)
                 .set('Authorization', await fx.bearer(superAdmin))
-                .send({ phone: '375291112233' });
+                .send({ phone: '4915291112233' });
 
             // The OTP route swallows delivery problems so that it cannot be used to probe for accounts.
-            const otp = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291112244' });
+            const otp = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '4915291112244' });
             expect(otp.status).toBe(200);
             expect(smsProvider).toHaveBeenCalledTimes(1);
             await waitFor(async () => (await fx.collection('Sms').countDocuments({ status: 'blocked' })) > 0);
@@ -191,7 +191,7 @@ describe('account protection (e2e)', () => {
 
     describe('personal data lifetime', () => {
         it('does not record the phone of an anonymous one-time code request', async () => {
-            await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291112255' });
+            await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '4915291112255' });
             const event = await waitFor(() =>
                 fx
                     .collection<{ user_phone?: string; user_name?: string }>('AnalyticsEvent')
@@ -205,7 +205,7 @@ describe('account protection (e2e)', () => {
         it('anonymises the analytics of a deleted account instead of leaving its name and phone behind', async () => {
             const organization = await fx.organization();
             const superAdmin = await fx.superAdmin();
-            const client = await fx.client({ name: 'Anna', phone: '375291112266' });
+            const client = await fx.client({ name: 'Anna', phone: '4915291112266' });
             await t.http
                 .get(`${t.prefix}/organizations/${organization.id}`)
                 .set('Authorization', await fx.bearer(client));

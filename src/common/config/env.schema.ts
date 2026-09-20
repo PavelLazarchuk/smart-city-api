@@ -68,20 +68,12 @@ export const envSchema = z
         SWAGGER_ENABLED: z.stringbool().optional(),
         CORS_ORIGINS: csv,
         UPLOADS_CORS_ORIGINS: csv,
-        UPLOADS_CACHE_MAX_AGE: durationSchema.default(3600),
-        BODY_LIMIT: z.string().default('1mb'),
         TRUST_PROXY: z.stringbool().default(false),
 
         MONGO_URI: z.string().min(1),
         MONGO_MAX_POOL_SIZE: positiveInt(20),
-        MONGO_MIN_POOL_SIZE: z.coerce.number().int().min(0).default(0),
         MONGO_SERVER_SELECTION_TIMEOUT_MS: positiveInt(10_000),
         MONGO_SOCKET_TIMEOUT_MS: positiveInt(45_000),
-        MONGO_RETRY_WRITES: z.stringbool().default(true),
-        MONGO_WRITE_CONCERN: z.enum(['majority', '1']).default('majority'),
-        MONGO_READ_PREFERENCE: z
-            .enum(['primary', 'primaryPreferred', 'secondary', 'secondaryPreferred', 'nearest'])
-            .default('primary'),
 
         METRICS_ENABLED: z.stringbool().default(true),
         METRICS_TOKEN: optionalString,
@@ -101,9 +93,6 @@ export const envSchema = z
         JWT_REFRESH_TTL: durationSchema.default(7 * 24 * 3600),
         AUTH_ADMIN_LOGIN_METHOD: z.enum(LOGIN_METHODS).default('password'),
         AUTH_CLIENT_LOGIN_METHOD: z.enum(LOGIN_METHODS).default('sms'),
-        ARGON2_MEMORY_COST: positiveInt(19456),
-        ARGON2_TIME_COST: positiveInt(2),
-        ARGON2_PARALLELISM: positiveInt(1),
         AUTH_MAX_FAILED_ATTEMPTS: positiveInt(5),
         AUTH_LOCKOUT_SECONDS: positiveInt(300),
         AUTH_LOCKOUT_MAX_SECONDS: positiveInt(3600),
@@ -116,7 +105,7 @@ export const envSchema = z
         PHONE_COUNTRY_CODE: z
             .string()
             .regex(/^\d{1,3}$/)
-            .default('375'),
+            .default('49'),
 
         THROTTLE_TTL_SECONDS: positiveInt(60),
         THROTTLE_LIMIT: positiveInt(10),
@@ -124,25 +113,14 @@ export const envSchema = z
         THROTTLE_UPLOAD_LIMIT: positiveInt(20),
         THROTTLE_STORAGE: z.enum(['mongo', 'memory']).default('mongo'),
 
-        IDEMPOTENCY_TTL: durationSchema.default(24 * 3600),
-
         PUBLIC_SITE_URL: z.url().default('http://localhost:5173'),
         DEFAULT_CURRENCY: z
             .string()
             .regex(/^[A-Z]{3}$/)
-            .default('BYN'),
+            .default('USD'),
 
-        OUTBOX_MAX_ATTEMPTS: positiveInt(8),
-        OUTBOX_RETENTION_DAYS: positiveInt(30),
-        OUTBOX_BATCH_SIZE: positiveInt(100),
-        WEBHOOK_TIMEOUT_MS: positiveInt(5000),
         WEBHOOK_ALLOW_PRIVATE_HOSTS: z.stringbool().default(false),
         BOOKING_REMINDER_HOURS: positiveInt(24),
-
-        PAGINATION_DEFAULT_LIMIT: positiveInt(30),
-        PAGINATION_MAX_LIMIT: positiveInt(100),
-        PAGINATION_MAX_PAGE: positiveInt(1000),
-        INCLUDE_MAX_ITEMS: positiveInt(50),
 
         SMS_PROVIDER: z.enum(['console', 'smpp']).default('console'),
         SMPP_URL: optionalString,
@@ -159,7 +137,6 @@ export const envSchema = z
         SMTP_USER: optionalString,
         SMTP_PASSWORD: optionalString,
         SMTP_REJECT_UNAUTHORIZED: z.stringbool().default(true),
-        MAIL_FROM_NAME: z.string().default('Smart City'),
         MAIL_FROM_ADDRESS: z.email().default('noreply@example.com'),
 
         STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
@@ -171,8 +148,6 @@ export const envSchema = z
         S3_ACCESS_KEY_ID: optionalString,
         S3_SECRET_ACCESS_KEY: optionalString,
         UPLOAD_MAX_BYTES: positiveInt(10 * 1024 * 1024),
-        UPLOAD_MAX_PIXELS: positiveInt(40_000_000),
-        UPLOAD_MAX_DIMENSION: positiveInt(10_000),
         UPLOAD_ALLOWED_MIME: z
             .string()
             .default('image/jpeg,image/png')
@@ -183,31 +158,11 @@ export const envSchema = z
                     .filter(Boolean),
             ),
 
-        ARCHIVE_RETENTION_DAYS: positiveInt(30),
-        ANALYTICS_RETENTION_DAYS: positiveInt(365),
-        SMS_RETENTION_DAYS: positiveInt(365),
-        BOOKING_HISTORY_RETENTION_DAYS: positiveInt(365),
         SERVICE_TRASH_RETENTION_DAYS: positiveInt(30),
         RECURRENT_HORIZON_DAYS: positiveInt(30),
 
         JOBS_ENABLED: z.stringbool().default(false),
         JOBS_TIMEZONE: z.string().default('UTC'),
-        JOB_LOCK_TTL_SECONDS: positiveInt(300),
-        JOB_RECURRENT_SLOTS_CRON: z.string().default('0 3 * * *'),
-        JOB_NEWS_EXPIRY_CRON: z.string().default('0 */2 * * *'),
-        JOB_SLOT_EXPIRY_CRON: z.string().default('30 3 * * *'),
-        JOB_STALE_BOOKINGS_CRON: z.string().default('0 4 * * *'),
-        JOB_CASCADE_RECONCILE_CRON: z.string().default('30 4 * * *'),
-        /** Above this many dangling organizations `cascade_reconcile` reports and deletes nothing. */
-        JOB_CASCADE_RECONCILE_LIMIT: positiveInt(25),
-        JOB_STORAGE_GC_CRON: z.string().default('0 5 * * *'),
-        JOB_DEBTOR_REPORT_CRON: z.string().default('0 12 * * *'),
-        JOB_UNREFERENCED_IMAGES_CRON: z.string().default('30 12 * * *'),
-        JOB_OUTBOX_DISPATCH_CRON: z.string().default('* * * * *'),
-        JOB_BOOKING_REMINDERS_CRON: z.string().default('0 * * * *'),
-        JOB_TRASH_PURGE_CRON: z.string().default('0 6 * * *'),
-        /** How long a stored file is left alone before `storage_gc` may treat it as an orphan. */
-        STORAGE_GC_MIN_AGE: durationSchema.default(24 * 3600),
         REPORT_RECIPIENTS: csv,
     })
     .superRefine((env, ctx) => {
@@ -265,14 +220,6 @@ export const envSchema = z
                         message: `${key} is required when STORAGE_PROVIDER=s3`,
                     });
             }
-        }
-
-        if (env.PAGINATION_DEFAULT_LIMIT > env.PAGINATION_MAX_LIMIT) {
-            ctx.addIssue({
-                code: 'custom',
-                path: ['PAGINATION_DEFAULT_LIMIT'],
-                message: 'PAGINATION_DEFAULT_LIMIT must not exceed PAGINATION_MAX_LIMIT',
-            });
         }
 
         if (env.AUTH_LOCKOUT_MAX_SECONDS < env.AUTH_LOCKOUT_SECONDS) {

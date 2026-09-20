@@ -121,7 +121,7 @@ pending ──confirmed──▶ confirmed ──▶ completed ⇄ no_show
 the statistics without blocking the client from booking the slot again. Only active rows count against
 capacity, appear in the default listings (`?status=all` lifts the filter) and are grafted into a service for
 its admins. `finished_at` is set on every terminal status and carries the history TTL
-(`BOOKING_HISTORY_RETENTION_DAYS`). Deleting an account deletes its active bookings (capacity released) and
+(365 days). Deleting an account deletes its active bookings (capacity released) and
 anonymises the finished ones — the outcome survives, the person does not.
 
 ## Indexes
@@ -158,10 +158,10 @@ Shape of the set:
 - **Text** — `organizations.main_label` for search.
 - **TTL** — `sessions.expires_at`, `verification_codes.expires_at`, `rate_limits.expires_at` (all
   `expireAfterSeconds: 0`), plus `sms_counters.expires_at` and `idempotency_keys.expires_at`; `archives.created_at` at
-  `ARCHIVE_RETENTION_DAYS`; `analytics_events.created_at` at `ANALYTICS_RETENTION_DAYS` and
-  `sms.created_at` at `SMS_RETENTION_DAYS`, because those rows carry client phone numbers and names;
-  `bookings.finished_at` at `BOOKING_HISTORY_RETENTION_DAYS` (a live booking has no `finished_at`, so it never
-  expires) and `outbox_events.created_at` at `OUTBOX_RETENTION_DAYS`.
+  30 days; `analytics_events.created_at` and `sms.created_at` at 365 days, because those rows carry client
+  phone numbers and names; `bookings.finished_at` at 365 days (a live booking has no `finished_at`, so it never
+  expires) and `outbox_events.created_at` at 30 days. Each window is a constant in the migration that creates
+  the index.
   Deleting an account also strips `user_id`, `user_name` and `user_phone` from its analytics events, so the
   statistics survive the account without pointing at a person.
 

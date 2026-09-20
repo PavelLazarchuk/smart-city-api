@@ -20,7 +20,7 @@ import { TransactionRunner } from './transaction-runner';
                 minPoolSize: config.mongo.minPoolSize,
                 retryWrites: config.mongo.retryWrites,
                 retryReads: true,
-                writeConcern: { w: config.mongo.writeConcern === '1' ? 1 : 'majority' },
+                writeConcern: { w: config.mongo.writeConcern },
                 readPreference: config.mongo.readPreference,
             }),
         }),

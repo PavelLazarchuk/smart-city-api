@@ -1,3 +1,19 @@
+import {
+    ARGON2_PARAMS,
+    ARGON2_TEST_PARAMS,
+    HTTP_BODY_LIMIT,
+    IDEMPOTENCY_TTL_SECONDS,
+    JOB_CASCADE_RECONCILE_LIMIT,
+    JOB_CRON,
+    JOB_LOCK_TTL_SECONDS,
+    MAIL_FROM_NAME,
+    MONGO_CONNECTION,
+    OUTBOX,
+    PAGINATION,
+    STORAGE_GC_MIN_AGE_SECONDS,
+    UPLOAD_LIMITS,
+    UPLOADS_CACHE_MAX_AGE_SECONDS,
+} from './constants';
 import { type Env, type LoginMethod } from './env.schema';
 
 export interface JwtKeySet {
@@ -38,8 +54,8 @@ export class AppConfig {
         serverSelectionTimeoutMs: number;
         socketTimeoutMs: number;
         retryWrites: boolean;
-        writeConcern: Env['MONGO_WRITE_CONCERN'];
-        readPreference: Env['MONGO_READ_PREFERENCE'];
+        writeConcern: typeof MONGO_CONNECTION.writeConcern;
+        readPreference: typeof MONGO_CONNECTION.readPreference;
     };
 
     readonly metrics: { enabled: boolean; token?: string };
@@ -85,7 +101,7 @@ export class AppConfig {
         allowPrivateHosts: boolean;
     };
 
-    readonly bookings: { reminderHours: number; historyRetentionDays: number };
+    readonly bookings: { reminderHours: number };
 
     readonly pagination: { defaultLimit: number; maxLimit: number; maxPage: number; includeMaxItems: number };
 
@@ -124,13 +140,7 @@ export class AppConfig {
 
     readonly upload: { maxBytes: number; maxPixels: number; maxDimension: number; allowedMime: string[] };
 
-    readonly retention: {
-        archiveDays: number;
-        analyticsDays: number;
-        smsDays: number;
-        serviceTrashDays: number;
-        recurrentHorizonDays: number;
-    };
+    readonly retention: { serviceTrashDays: number; recurrentHorizonDays: number };
 
     readonly jobs: {
         enabled: boolean;
@@ -163,7 +173,7 @@ export class AppConfig {
             port: env.PORT,
             prefix: env.API_PREFIX.replace(/^\/+|\/+$/g, ''),
             corsOrigins: env.CORS_ORIGINS,
-            bodyLimit: env.BODY_LIMIT,
+            bodyLimit: HTTP_BODY_LIMIT,
             trustProxy: env.TRUST_PROXY,
             swaggerEnabled: env.SWAGGER_ENABLED ?? env.NODE_ENV !== 'production',
         };
@@ -172,12 +182,12 @@ export class AppConfig {
             uri: env.MONGO_URI,
             autoIndex: env.NODE_ENV !== 'production',
             maxPoolSize: env.MONGO_MAX_POOL_SIZE,
-            minPoolSize: Math.min(env.MONGO_MIN_POOL_SIZE, env.MONGO_MAX_POOL_SIZE),
+            minPoolSize: MONGO_CONNECTION.minPoolSize,
             serverSelectionTimeoutMs: env.MONGO_SERVER_SELECTION_TIMEOUT_MS,
             socketTimeoutMs: env.MONGO_SOCKET_TIMEOUT_MS,
-            retryWrites: env.MONGO_RETRY_WRITES,
-            writeConcern: env.MONGO_WRITE_CONCERN,
-            readPreference: env.MONGO_READ_PREFERENCE,
+            retryWrites: MONGO_CONNECTION.retryWrites,
+            writeConcern: MONGO_CONNECTION.writeConcern,
+            readPreference: MONGO_CONNECTION.readPreference,
         };
         this.metrics = { enabled: env.METRICS_ENABLED, token: env.METRICS_TOKEN };
         this.build = { version: env.BUILD_VERSION ?? '1.0.0', sha: env.BUILD_SHA };
@@ -194,11 +204,7 @@ export class AppConfig {
             lockoutSeconds: env.AUTH_LOCKOUT_SECONDS,
             lockoutMaxSeconds: env.AUTH_LOCKOUT_MAX_SECONDS,
             failedAttemptWindowSeconds: env.AUTH_FAILED_ATTEMPT_WINDOW_SECONDS,
-            argon2: {
-                memoryCost: env.ARGON2_MEMORY_COST,
-                timeCost: env.ARGON2_TIME_COST,
-                parallelism: env.ARGON2_PARALLELISM,
-            },
+            argon2: env.NODE_ENV === 'test' ? ARGON2_TEST_PARAMS : ARGON2_PARAMS,
         };
         this.otp = {
             length: env.OTP_LENGTH,
@@ -213,27 +219,19 @@ export class AppConfig {
             uploadLimit: env.THROTTLE_UPLOAD_LIMIT,
             storage: env.THROTTLE_STORAGE,
         };
-        this.idempotency = { ttlSeconds: env.IDEMPOTENCY_TTL };
+        this.idempotency = { ttlSeconds: IDEMPOTENCY_TTL_SECONDS };
         this.site = {
             publicUrl: env.PUBLIC_SITE_URL.replace(/\/+$/, ''),
             defaultCurrency: env.DEFAULT_CURRENCY,
         };
         this.outbox = {
-            maxAttempts: env.OUTBOX_MAX_ATTEMPTS,
-            batchSize: env.OUTBOX_BATCH_SIZE,
-            webhookTimeoutMs: env.WEBHOOK_TIMEOUT_MS,
+            maxAttempts: OUTBOX.maxAttempts,
+            batchSize: OUTBOX.batchSize,
+            webhookTimeoutMs: OUTBOX.webhookTimeoutMs,
             allowPrivateHosts: env.WEBHOOK_ALLOW_PRIVATE_HOSTS,
         };
-        this.bookings = {
-            reminderHours: env.BOOKING_REMINDER_HOURS,
-            historyRetentionDays: env.BOOKING_HISTORY_RETENTION_DAYS,
-        };
-        this.pagination = {
-            defaultLimit: env.PAGINATION_DEFAULT_LIMIT,
-            maxLimit: env.PAGINATION_MAX_LIMIT,
-            maxPage: env.PAGINATION_MAX_PAGE,
-            includeMaxItems: env.INCLUDE_MAX_ITEMS,
-        };
+        this.bookings = { reminderHours: env.BOOKING_REMINDER_HOURS };
+        this.pagination = { ...PAGINATION };
         this.sms = {
             provider: env.SMS_PROVIDER,
             smpp: {
@@ -246,7 +244,7 @@ export class AppConfig {
         };
         this.mail = {
             provider: env.MAIL_PROVIDER,
-            from: { name: env.MAIL_FROM_NAME, address: env.MAIL_FROM_ADDRESS },
+            from: { name: MAIL_FROM_NAME, address: env.MAIL_FROM_ADDRESS },
             smtp: {
                 host: env.SMTP_HOST,
                 port: env.SMTP_PORT,
@@ -260,7 +258,7 @@ export class AppConfig {
             provider: env.STORAGE_PROVIDER,
             local: { dir: env.STORAGE_LOCAL_DIR, publicUrl: env.STORAGE_PUBLIC_URL.replace(/\/+$/, '') },
             corsOrigins: env.UPLOADS_CORS_ORIGINS.length > 0 ? env.UPLOADS_CORS_ORIGINS : env.CORS_ORIGINS,
-            cacheMaxAgeSeconds: env.UPLOADS_CACHE_MAX_AGE,
+            cacheMaxAgeSeconds: UPLOADS_CACHE_MAX_AGE_SECONDS,
             s3: {
                 bucket: env.S3_BUCKET,
                 region: env.S3_REGION,
@@ -271,36 +269,21 @@ export class AppConfig {
         };
         this.upload = {
             maxBytes: env.UPLOAD_MAX_BYTES,
-            maxPixels: env.UPLOAD_MAX_PIXELS,
-            maxDimension: env.UPLOAD_MAX_DIMENSION,
+            maxPixels: UPLOAD_LIMITS.maxPixels,
+            maxDimension: UPLOAD_LIMITS.maxDimension,
             allowedMime: env.UPLOAD_ALLOWED_MIME,
         };
         this.retention = {
-            archiveDays: env.ARCHIVE_RETENTION_DAYS,
-            analyticsDays: env.ANALYTICS_RETENTION_DAYS,
-            smsDays: env.SMS_RETENTION_DAYS,
             serviceTrashDays: env.SERVICE_TRASH_RETENTION_DAYS,
             recurrentHorizonDays: env.RECURRENT_HORIZON_DAYS,
         };
         this.jobs = {
             enabled: env.JOBS_ENABLED,
             timezone: env.JOBS_TIMEZONE,
-            lockTtlSeconds: env.JOB_LOCK_TTL_SECONDS,
-            cron: {
-                recurrentSlots: env.JOB_RECURRENT_SLOTS_CRON,
-                newsExpiry: env.JOB_NEWS_EXPIRY_CRON,
-                slotExpiry: env.JOB_SLOT_EXPIRY_CRON,
-                staleBookings: env.JOB_STALE_BOOKINGS_CRON,
-                cascadeReconcile: env.JOB_CASCADE_RECONCILE_CRON,
-                storageGc: env.JOB_STORAGE_GC_CRON,
-                debtorReport: env.JOB_DEBTOR_REPORT_CRON,
-                unreferencedImages: env.JOB_UNREFERENCED_IMAGES_CRON,
-                outboxDispatch: env.JOB_OUTBOX_DISPATCH_CRON,
-                bookingReminders: env.JOB_BOOKING_REMINDERS_CRON,
-                trashPurge: env.JOB_TRASH_PURGE_CRON,
-            },
-            cascadeReconcileLimit: env.JOB_CASCADE_RECONCILE_LIMIT,
-            storageGcMinAgeSeconds: env.STORAGE_GC_MIN_AGE,
+            lockTtlSeconds: JOB_LOCK_TTL_SECONDS,
+            cron: { ...JOB_CRON },
+            cascadeReconcileLimit: JOB_CASCADE_RECONCILE_LIMIT,
+            storageGcMinAgeSeconds: STORAGE_GC_MIN_AGE_SECONDS,
             reportRecipients: env.REPORT_RECIPIENTS,
         };
     }

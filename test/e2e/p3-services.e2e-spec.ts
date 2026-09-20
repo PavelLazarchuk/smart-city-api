@@ -160,7 +160,7 @@ describe('services catalogue (e2e)', () => {
                 duration_minutes: 30,
                 buffer_minutes: 10,
                 price: 12.5,
-                currency: 'BYN',
+                currency: 'USD',
                 address: '1 Main Street',
                 location: { type: 'Point', coordinates: [27.56, 53.9] },
                 holidays: ['01-01', '03-08'],

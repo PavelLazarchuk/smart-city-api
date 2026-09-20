@@ -1,4 +1,5 @@
-const SMS_RETENTION_DAYS = Number(process.env.SMS_RETENTION_DAYS || 365);
+// Pinned here, not in the environment: an existing TTL index only changes through a later collMod migration.
+const SMS_RETENTION_DAYS = 365;
 
 const BOOKING_INDEXES = [
     { key: { id: 1 }, name: 'id_1', unique: true },

@@ -1,5 +1,6 @@
-const ARCHIVE_RETENTION_DAYS = Number(process.env.ARCHIVE_RETENTION_DAYS || 30);
-const ANALYTICS_RETENTION_DAYS = Number(process.env.ANALYTICS_RETENTION_DAYS || 365);
+// Pinned here, not in the environment: an existing TTL index only changes through a later collMod migration.
+const ARCHIVE_RETENTION_DAYS = 30;
+const ANALYTICS_RETENTION_DAYS = 365;
 
 const INDEXES = {
     organizations: [

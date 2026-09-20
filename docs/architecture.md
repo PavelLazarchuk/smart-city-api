@@ -72,7 +72,7 @@ plus the platform-wide ones a super-admin created. `booking.reminder` and `waitl
 two handlers, `mail` and `sms`, which read the recipient captured in the event's `internal`: the mail one sends
 when the account has an `email`, the SMS one only when it has none, so exactly one channel is used per event
 and a mail failure is retried as mail rather than turning into an SMS. Every target is retried on its own with
-exponential backoff up to `OUTBOX_MAX_ATTEMPTS`; an event is `failed` only once the budget is spent, and
+exponential backoff up to `OUTBOX.maxAttempts`; an event is `failed` only once the budget is spent, and
 `POST /outbox/events/:id/replay` puts it back. The `outbox_dispatch` job is the safety net for retries and for
 a replica that died between commit and poke.
 

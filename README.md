@@ -76,21 +76,21 @@ Notable switches:
 - `THROTTLE_STORAGE` (`mongo` | `memory`) — the Mongo storage is shared by every replica.
 - `THROTTLE_LIMIT` / `THROTTLE_GLOBAL_LIMIT` / `THROTTLE_UPLOAD_LIMIT` — strict limit for `/auth/*` and per
   phone, soft per-IP ceiling for everything else, and the limit for image uploads.
-- `PAGINATION_MAX_PAGE` — depth ceiling for offset pagination (`422 PAGE_OUT_OF_RANGE` beyond it).
 - `SWAGGER_ENABLED` — defaults to on, except under `NODE_ENV=production` where it must be set explicitly.
-- `ARCHIVE_RETENTION_DAYS` / `ANALYTICS_RETENTION_DAYS` — TTL of archived snapshots and analytics events;
-  the value is applied by the migration, not by the schema (see [docs/deployment.md](docs/deployment.md)).
 - `JOBS_ENABLED` — whether _this_ process schedules jobs; mutual exclusion is the `job_locks` lease, not the flag.
 - `METRICS_TOKEN` — bearer for `/metrics`. With none configured the route answers a super-admin token only;
   it never falls back to anonymous.
 - `AUTH_FAILED_ATTEMPT_WINDOW_SECONDS` — how long a failed login keeps counting towards the per-account
   lock. The window is what stops the lock from being usable as a denial of service against one account.
-- `STORAGE_GC_MIN_AGE` — how long a stored file is left alone before `storage_gc` may call it an orphan.
 - `PHONE_COUNTRY_CODE` — phone numbers are E.164 digits without `+` and must start with this code.
 - `WEBHOOK_ALLOW_PRIVATE_HOSTS` — off by default: webhook targets on loopback or private networks are refused
-  and production demands `https`. `OUTBOX_MAX_ATTEMPTS` / `WEBHOOK_TIMEOUT_MS` bound the retries.
-- `BOOKING_HISTORY_RETENTION_DAYS` / `SERVICE_TRASH_RETENTION_DAYS` — how long finished bookings and
-  soft-deleted services are kept; both applied by the migration / the `trash_purge` job.
+  and production demands `https`.
+- `SERVICE_TRASH_RETENTION_DAYS` — how long soft-deleted services are kept before `trash_purge` removes them.
+
+Values that are part of the API contract or of how the service is built rather than of a deployment —
+pagination limits, job schedules, outbox and upload ceilings, argon2 parameters, the Mongo write concern —
+live in [src/common/config/constants.ts](src/common/config/constants.ts). TTL retention windows live in the
+migration that creates the index, because changing one needs a `collMod` migration anyway.
 
 > The old repository's `.env.example` and git history contain live credentials (Mongo Atlas, SMPP, SMTP,
 > Mapbox). Rotate them before this service reaches production — see [docs/deployment.md](docs/deployment.md).
@@ -103,7 +103,7 @@ Notable switches:
   schema refused, so "end of page" and "row withheld" stay distinguishable.
 - Status codes: 200 read/update, 201 create (with `Location`), 204 delete, 400 validation, 401 unauthenticated,
   403 unauthorised, 404 missing, 409 conflict, 422 business rule, 429 rate limit.
-- Pagination: `page` (default 1, capped by `PAGINATION_MAX_PAGE`), `limit` (default 30, max 100), `sort`, `order`;
+- Pagination: `page` (default 1, capped at 1000), `limit` (default 30, max 100), `sort`, `order`;
   `sms` and `analytics/events` also accept `cursor` and an explicit `mode=cursor|page` (they default to `cursor`).
   A cursor page leaves `total` and `total_pages` `null` unless `with_total=true` asks for the count.
 - Reads return the complete entity; creates write only the entity; updates touch only the entity's own fields;
@@ -121,7 +121,7 @@ Notable switches:
 - Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
   `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
   `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.
-- `GET /organizations/:id` returns the tree with every child list capped at `INCLUDE_MAX_ITEMS`. Services
+- `GET /organizations/:id` returns the tree with every child list capped at 50 items. Services
   appear as cards — the fields a tile needs plus `options_count`, without `options`, so without slots or
   bookings; the full document comes from `GET /services/:id` or `GET /organizations/:id/services/:slug`,
   free capacity from `GET /services/:id/availability`, and the booking lists from `GET /services/:id` and

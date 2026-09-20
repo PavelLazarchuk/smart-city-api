@@ -8,8 +8,6 @@ const config = new AppConfig(
         MONGO_URI: 'mongodb://localhost/x',
         JWT_ACCESS_SECRET: 'a'.repeat(32),
         JWT_REFRESH_SECRET: 'b'.repeat(32),
-        PAGINATION_DEFAULT_LIMIT: '30',
-        PAGINATION_MAX_LIMIT: '100',
     }),
 );
 

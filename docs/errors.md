@@ -70,7 +70,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `CONFLICT`               | 409                                                                                                                |
 | `PAYLOAD_TOO_LARGE`      | 413                                                                                                                |
 | `UNSUPPORTED_MEDIA_TYPE` | 415                                                                                                                |
-| `PAGE_OUT_OF_RANGE`      | 422 — `page` beyond `PAGINATION_MAX_PAGE`; narrow the query instead of paging deeper                               |
+| `PAGE_OUT_OF_RANGE`      | 422 — `page` beyond the 1000-page cap; narrow the query instead of paging deeper                                   |
 | `RATE_LIMITED`           | 429                                                                                                                |
 | `INTERNAL_ERROR`         | 500                                                                                                                |
 | `SERIALIZATION_ERROR`    | 500 — the response did not match its zod schema and was withheld                                                   |

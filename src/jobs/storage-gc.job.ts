@@ -14,7 +14,7 @@ const BATCH = 200;
 const MANAGED_KEY = /^[0-9a-f]{24}\/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.[a-z0-9]{2,5}$/;
 
 /**
- * A delete whose file removal failed leaves a file nothing will ever retry. `STORAGE_GC_MIN_AGE` covers the
+ * A delete whose file removal failed leaves a file nothing will ever retry. `STORAGE_GC_MIN_AGE_SECONDS` covers the
  * window between `put` and the row, and the row lookup happens per batch, right before the delete.
  */
 @Injectable()

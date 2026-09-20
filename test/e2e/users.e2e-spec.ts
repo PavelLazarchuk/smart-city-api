@@ -90,7 +90,7 @@ describe('users (e2e)', () => {
             const smsAdmin = await t.http
                 .post(`${t.prefix}/users`)
                 .set('Authorization', bearer)
-                .send({ phone: '375291234567', role: 'common-admin' });
+                .send({ phone: '4915291234567', role: 'common-admin' });
             expectError(smsAdmin, 422, 'ADMIN_PASSWORD_REQUIRED');
 
             const loginWithoutPassword = await t.http
