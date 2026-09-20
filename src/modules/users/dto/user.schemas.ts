@@ -28,7 +28,6 @@ export const userResponseSchema = z.object({
 export type UserResponse = z.infer<typeof userResponseSchema>;
 export class UserResponseDto extends createZodDto(userResponseSchema) {}
 
-/** One row of `GET /users/:id/bookings`, read from the `bookings` collection. */
 export const userBookingResponseSchema = z.object({
     id: z.string(),
     service_id: idOutputSchema,

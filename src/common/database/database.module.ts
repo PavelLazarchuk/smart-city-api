@@ -4,11 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AppConfig } from '../config/app-config';
 import { TransactionRunner } from './transaction-runner';
 
-/**
- * Mongoose connection. Indexes are created by migrations; `autoIndex` is off in production. Pool
- * size, retries, write concern and read preference are pinned here rather than left to driver
- * defaults, so a URI without options cannot quietly change the durability of every write.
- */
+/** Indexes come from migrations; pool, retries and write concern are pinned so a bare URI cannot change durability. */
 @Global()
 @Module({
     imports: [

@@ -4,7 +4,6 @@ import { type ClientSession } from 'mongoose';
 import { type SessionEntity, SessionsRepository } from './sessions.repository';
 import { VerificationCodesRepository } from './verification-codes.repository';
 
-/** Read/maintenance surface of the auth store, so other modules never touch its repositories. */
 @Injectable()
 export class AuthStoreService {
     constructor(

@@ -132,7 +132,6 @@ module.exports = {
         console.log(`bookings migrated: ${migrated}`);
     },
 
-    /** Rebuilds the embedded arrays from the collection, then drops it and the added indexes. */
     async down(db) {
         const bookings = await db.collection('bookings').find({}).toArray();
 

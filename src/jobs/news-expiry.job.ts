@@ -7,7 +7,6 @@ import { JobRunner } from './job-runner';
 
 export const NEWS_EXPIRY_JOB = 'news_expiry';
 
-/** Archives and deletes expired news, each item in its own transaction. */
 @Injectable()
 export class NewsExpiryJob {
     constructor(

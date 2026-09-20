@@ -196,8 +196,8 @@ describe('persistence (e2e)', () => {
 
         it('unique partial indexes allow several accounts without login or phone', async () => {
             await Promise.all(Object.values(t.connection.models).map((model) => model.syncIndexes()));
-            await fx.citizen();
-            await fx.citizen();
+            await fx.client();
+            await fx.client();
             await fx.admin([]);
             await fx.admin([]);
             const users = fx.collection<{ phone?: string }>('User');

@@ -94,10 +94,7 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         super(model);
     }
 
-    /**
-     * One aggregation + a parallel count: match/sort/skip/limit on indexed fields first,
-     * then per-child `$lookup` sub-pipelines with `$count` for the page's rows only.
-     */
+    /** One aggregation + a parallel count: indexed match/sort/skip/limit first, `$lookup` counts for the page only. */
     async list(
         filter: FilterQuery<Organization>,
         pagination: ResolvedPagination,
@@ -175,12 +172,7 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         return { items, total: totals[0]?.total ?? 0, page: pagination.page, limit: pagination.limit };
     }
 
-    /**
-     * The tree in one aggregation; services are split by category in the service layer.
-     *
-     * The result is a single document under the 16 MB BSON limit, so every child list is capped at
-     * `limit` and services are cut down to `serviceCardSchema`.
-     */
+    /** One aggregation under the 16 MB BSON limit, so child lists are capped and services cut to `serviceCardSchema`. */
     async findTree(id: string, limit: number, viewer?: AuthUser): Promise<OrganizationTreeRow | null> {
         if (!Types.ObjectId.isValid(id)) return null;
 
@@ -256,7 +248,6 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         return this.count({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } });
     }
 
-    /** Which of these ids still name an organization; the complement is what `cascade_reconcile` cleans. */
     async existingIds(ids: string[]): Promise<Set<string>> {
         const rows = await this.model
             .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } }, { _id: 1 })
@@ -274,7 +265,6 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         return this.model.distinct('main_image').exec();
     }
 
-    /** Every organization's display name, for reports that have to name one per row. */
     async labels(): Promise<Map<string, string>> {
         const rows = await this.model
             .find({}, { main_label: 1 })

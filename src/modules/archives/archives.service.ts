@@ -99,7 +99,6 @@ export class ArchivesService implements OnModuleInit {
         await this.archives.deleteById(id);
     }
 
-    /** Used by the expiry jobs inside their transactions. */
     createSnapshot(
         input: {
             organization_id: Types.ObjectId;

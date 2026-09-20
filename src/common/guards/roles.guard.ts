@@ -5,7 +5,6 @@ import { type RequestWithUser } from '../decorators/current-user.decorator';
 import { type Role, ROLES_KEY } from '../decorators/roles.decorator';
 import { ApiError } from '../http/api-error';
 
-/** Answers 403, not 401, when the principal lacks the required role. */
 @Injectable()
 export class RolesGuard implements CanActivate {
     constructor(private readonly reflector: Reflector) {}

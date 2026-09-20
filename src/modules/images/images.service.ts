@@ -26,9 +26,8 @@ export interface UploadedFile {
 }
 
 /**
- * The declared MIME type is a client header, so every type is verified against the file's magic bytes
- * and the stored extension comes from that verified type, never from the file name. Unverifiable types
- * are refused — that is what keeps `UPLOAD_ALLOWED_MIME=image/svg+xml` from becoming stored XSS.
+ * Types are verified against magic bytes, never the header or the file name — that is what keeps an allowed
+ * `image/svg+xml` from becoming stored XSS.
  */
 type ImageFormat = 'jpeg' | 'png' | 'webp' | 'gif';
 

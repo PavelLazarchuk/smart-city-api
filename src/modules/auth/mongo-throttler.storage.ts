@@ -17,10 +17,7 @@ interface ThrottlerStorageRecord {
 export class MongoThrottlerStorage implements ThrottlerStorage {
     constructor(@InjectModel(RateLimit.name) private readonly model: Model<RateLimit>) {}
 
-    /**
-     * One atomic pipeline update decides whether the window is alive, counts the hit and sets the block.
-     * In two steps, simultaneous requests each started a fresh window — the limit collapsed under bursts.
-     */
+    /** One atomic pipeline update; in two steps simultaneous requests each started a fresh window. */
     async increment(
         key: string,
         ttl: number,

@@ -9,12 +9,7 @@ import { JobRunner } from './job-runner';
 
 export const RECURRENT_SLOTS_JOB = 'recurrent_slots';
 
-/**
- * Generates `date_time` slots for recurrent options over the configured horizon. The plan is applied
- * as targeted `$push`/`$pull` in one `bulkWrite`, so a booking made while the job runs is not lost.
- * A weekday without explicit times is cut from the service's working hours by its appointment
- * length; the service's and the organization's holidays and the blackout dates are skipped.
- */
+/** The plan is applied as targeted `$push`/`$pull`, so a booking made while the job runs is not lost. */
 @Injectable()
 export class RecurrentSlotsJob {
     constructor(

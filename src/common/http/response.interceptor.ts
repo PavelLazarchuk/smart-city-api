@@ -20,10 +20,6 @@ interface ParsedItems {
     dropped: number;
 }
 
-/**
- * Applies the handler's `@Serialize()` schema and wraps the result in the response envelope:
- * `{ data }` for single entities and lists, `{ data, meta }` for paginated results.
- */
 @Injectable()
 export class ResponseInterceptor implements NestInterceptor {
     constructor(
@@ -122,10 +118,7 @@ export class ResponseInterceptor implements NestInterceptor {
         return schemaFor && request ? schemaFor(request) : schema;
     }
 
-    /**
-     * A legacy row the current schema rejects is dropped and logged rather than failing the whole page.
-     * Single-entity responses still fail loudly, because there the row *is* the response.
-     */
+    /** A page drops and logs a row the schema rejects; a single entity still fails, since there the row is the response. */
     private parseItems(schema: ZodType, items: unknown[], request?: Request): ParsedItems {
         const parsed: unknown[] = [];
         let dropped = 0;

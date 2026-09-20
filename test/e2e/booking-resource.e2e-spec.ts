@@ -7,7 +7,7 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
     let fx: Fixtures;
     let organization: { id: string };
     let admin: FixtureUser;
-    let citizen: FixtureUser;
+    let client: FixtureUser;
     let bearer: string;
     let adminBearer: string;
     let option: ReturnType<Fixtures['bookableOption']>;
@@ -34,8 +34,8 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
         await t.clearDatabase();
         organization = await fx.organization();
         admin = await fx.admin([organization.id]);
-        citizen = await fx.citizen({ name: 'Anna', phone: '375291234567' });
-        bearer = await fx.bearer(citizen);
+        client = await fx.client({ name: 'Anna', phone: '375291234567' });
+        bearer = await fx.bearer(client);
         adminBearer = await fx.bearer(admin);
         option = fx.bookableOption(3);
         serviceId = (await fx.service(organization.id, { options: [option] })).id;
@@ -72,7 +72,7 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
             expect(bySuper.body.data).toHaveLength(1);
         });
 
-        it('is closed to citizens and scopes an admin to their own organizations', async () => {
+        it('is closed to clients and scopes an admin to their own organizations', async () => {
             await book();
             const foreignOrganization = await fx.organization();
             const foreign = await fx.bearer(await fx.admin([foreignOrganization.id]));
@@ -123,7 +123,7 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
                 .set('Authorization', bearer);
             expect(outOfRange.body.data).toHaveLength(0);
 
-            const stranger = await fx.bearer(await fx.citizen());
+            const stranger = await fx.bearer(await fx.client());
             expectError(
                 await t.http.delete(`${t.prefix}/bookings/${bookingId}`).set('Authorization', stranger),
                 403,

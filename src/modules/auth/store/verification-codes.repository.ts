@@ -13,10 +13,7 @@ export class VerificationCodesRepository extends BaseRepository<VerificationCode
         super(model);
     }
 
-    /**
-     * A new code supersedes earlier unconsumed ones for the same phone. Their attempt counters are
-     * carried over, so requesting a fresh code does not reset the guessing budget of that number.
-     */
+    /** Attempt counters carry over, so asking for a fresh code does not reset the guessing budget of a number. */
     async issue(phone: string, codeHash: string, expiresAt: Date): Promise<void> {
         const superseded = await this.model
             .find({ phone, consumed_at: { $exists: false } }, { attempts: 1 })

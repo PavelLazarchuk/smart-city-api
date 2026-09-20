@@ -21,10 +21,8 @@ export interface ServiceView {
 }
 
 /**
- * Role-aware masking: the owning organization's admins and super-admins see bookings and `subscribe`;
- * everyone else sees `{ status: 'reserved' }` slots and no `subscribe`. Bookings live in their own
- * collection now, so an unmasked document simply has none — the markers are rebuilt from the
- * counters, and a forgotten `mask()` can no longer leak a name or a phone number.
+ * Admins of the owning organization and super-admins see bookings and `subscribe`; everyone else gets
+ * `{ status: 'reserved' }` markers rebuilt from the counters, so a forgotten `mask()` leaks nothing.
  */
 @Injectable()
 export class ServicesMasker {
@@ -40,10 +38,7 @@ export class ServicesMasker {
         return viewer.role === ROLES.COMMON_ADMIN && viewer.organization_ids.includes(organizationId);
     }
 
-    /**
-     * Markers are rebuilt from `booked_count`: occupancy without personal data, at a size independent
-     * of the number of bookings.
-     */
+    /** Rebuilt from `booked_count`: occupancy without personal data, at a size independent of the bookings. */
     maskCounts<T extends ServiceView>(service: T): T {
         const marker = { status: texts.bookings.reservedStatus };
         const markers = (count?: number): unknown[] =>

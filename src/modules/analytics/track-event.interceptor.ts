@@ -6,7 +6,6 @@ import { type RequestWithUser } from '../../common/decorators/current-user.decor
 import { TRACK_EVENT_KEY, type TrackEventOptions } from '../../common/decorators/track-event.decorator';
 import { AnalyticsService, type EventFields } from './analytics.service';
 
-/** Records the declared `@TrackEvent()` once the handler succeeds, outside the business logic. */
 @Injectable()
 export class TrackEventInterceptor implements NestInterceptor {
     constructor(

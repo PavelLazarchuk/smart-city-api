@@ -57,7 +57,6 @@ export const organizationCountsSchema = z.object({
     images: z.number().int(),
 });
 
-/** List row: the complete organization document plus computed counts and opt-in includes. */
 export const organizationListItemSchema = organizationBaseResponseSchema.extend({
     counts: organizationCountsSchema,
     news: z.array(newsResponseSchema).optional(),
@@ -76,10 +75,7 @@ export class MaskedOrganizationListItemDto extends createZodDto(maskedOrganizati
 export const organizationListSchemaForViewer = (request: Request): ZodType =>
     viewerSeesBookings(request) ? organizationListItemSchema : maskedOrganizationListItemSchema;
 
-/**
- * Detail: the tree with two independent top-level arrays. Child lists are capped at
- * `INCLUDE_MAX_ITEMS` and services appear as cards.
- */
+/** Child lists are capped at `INCLUDE_MAX_ITEMS` and services appear as cards. */
 export const organizationDetailSchema = organizationBaseResponseSchema.extend({
     news: z.array(newsResponseSchema),
     infosections: z.array(infoSectionResponseSchema),

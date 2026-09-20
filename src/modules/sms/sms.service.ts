@@ -27,10 +27,7 @@ export class SmsService {
         this.logger.setContext(SmsService.name);
     }
 
-    /**
-     * Every attempt is logged; a provider failure surfaces as 422, never as a 5xx. The global budget
-     * is charged before the provider is called, so an exhausted budget costs nothing but a row.
-     */
+    /** The budget is charged before the provider is called, so an exhausted budget costs nothing but a row. */
     async send(phone: string, text: string, purpose: SmsPurpose): Promise<SmsStatus> {
         const decision = await this.budget.consume();
 

@@ -22,10 +22,7 @@ export const accessClaimsSchema = z.object({
 
 export type AccessClaims = z.infer<typeof accessClaimsSchema>;
 
-/**
- * Verifies the bearer access token and attaches the principal. Public routes pass without a token
- * but still get the principal when a valid token is present (role-aware masking).
- */
+/** Public routes pass without a token, but a valid one still yields the principal (role-aware masking). */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
     constructor(

@@ -205,21 +205,21 @@ describe('account protection (e2e)', () => {
         it('anonymises the analytics of a deleted account instead of leaving its name and phone behind', async () => {
             const organization = await fx.organization();
             const superAdmin = await fx.superAdmin();
-            const citizen = await fx.citizen({ name: 'Anna', phone: '375291112266' });
+            const client = await fx.client({ name: 'Anna', phone: '375291112266' });
             await t.http
                 .get(`${t.prefix}/organizations/${organization.id}`)
-                .set('Authorization', await fx.bearer(citizen));
+                .set('Authorization', await fx.bearer(client));
             await waitFor(
                 async () =>
                     (await fx
                         .collection('AnalyticsEvent')
-                        .countDocuments({ user_id: new Types.ObjectId(citizen.id) })) > 0,
+                        .countDocuments({ user_id: new Types.ObjectId(client.id) })) > 0,
             );
 
             expect(
                 (
                     await t.http
-                        .delete(`${t.prefix}/users/${citizen.id}`)
+                        .delete(`${t.prefix}/users/${client.id}`)
                         .set('Authorization', await fx.bearer(superAdmin))
                 ).status,
             ).toBe(204);
@@ -227,7 +227,7 @@ describe('account protection (e2e)', () => {
             expect(
                 await fx
                     .collection('AnalyticsEvent')
-                    .countDocuments({ user_id: new Types.ObjectId(citizen.id) }),
+                    .countDocuments({ user_id: new Types.ObjectId(client.id) }),
             ).toBe(0);
             const events = await fx
                 .collection<{ user_name?: string; user_phone?: string }>('AnalyticsEvent')

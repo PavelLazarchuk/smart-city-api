@@ -49,10 +49,7 @@ const infoSectionCommon = z.object({
 
 export const infoSectionResponseSchema = z.intersection(infoSectionCommon, infoSectionBodySchema);
 
-/**
- * A class cannot extend a union-typed constructor, so DTOs over discriminated unions are built on a
- * loosely typed view of the same schema; handlers narrow to the inferred input type.
- */
+/** A class cannot extend a union-typed constructor, so union DTOs are built on a loosely typed view. */
 const loose = (schema: z.ZodType): z.ZodType<Record<string, unknown>> =>
     schema as z.ZodType<Record<string, unknown>>;
 

@@ -36,10 +36,7 @@ export const WEEKDAYS = [
 ] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
 
-/**
- * One bookable time inside a `date_time` slot. The bookings themselves live in the `bookings`
- * collection; only the counter stays here, because the capacity guard is a conditional `$inc`.
- */
+/** Bookings live in the `bookings` collection; only the counter stays here, for the conditional `$inc` guard. */
 @Schema(subSchemaOptions)
 export class TimeEntry {
     @Prop({ type: String, required: true }) time!: string;
@@ -176,10 +173,7 @@ export class Service {
     @Prop({ type: String })
     slug?: string;
 
-    /**
-     * `enabled` is kept in step with `status === 'published'` on every write: older clients and the
-     * `{ organization_id, enabled, position }` index keep working, and `status` is the source of truth.
-     */
+    /** Kept in step with `status === 'published'` so older clients and the `enabled` index keep working. */
     @Prop({ type: Boolean, required: true, default: false })
     enabled!: boolean;
 

@@ -83,7 +83,7 @@ export class Fixtures {
         return this.user({ role: ROLES.COMMON_ADMIN, organization_ids: organizationIds });
     }
 
-    citizen(
+    client(
         overrides: Partial<{ phone: string; name: string; password: string; email: string }> = {},
     ): Promise<FixtureUser> {
         return this.user({ role: ROLES.COMMON_USER, ...overrides });
@@ -181,9 +181,7 @@ export class Fixtures {
         };
     }
 
-    /**
-     * Seeds a booking the way the API does: a row in `bookings` plus the slot's occupancy counter.
-     */
+    /** Seeds a booking the way the API does: a row in `bookings` plus the slot's occupancy counter. */
     async booking(params: {
         service_id: string;
         organization_id: string;

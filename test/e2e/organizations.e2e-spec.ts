@@ -213,7 +213,7 @@ describe('organizations (e2e)', () => {
                 organization_id: organization.id,
                 option_id: option.id,
                 slot_id: option.slot_id,
-                user_id: (await fx.citizen()).id,
+                user_id: (await fx.client()).id,
                 time: '10:00',
                 person: 'Secret Person',
                 phone: '375291112233',

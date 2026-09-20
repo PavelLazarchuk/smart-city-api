@@ -25,27 +25,13 @@ export interface ReconcileResult {
 /** The two shapes a reference to an organization takes: one id, or the membership array on a user. */
 const PARENT_FIELDS = ['organization_id', 'organization_ids'] as const;
 
-/**
- * Analytics events outlive their organization on purpose: they are a historical record with their own
- * TTL, and nothing registers a cascade hook that deletes them. Counting them as a reference would make
- * every long-gone organization look dangling for as long as its events survive.
- */
+/** Analytics events outlive their organization by design (own TTL, no hook), so they are not a reference. */
 const HISTORICAL_MODELS: readonly string[] = [AnalyticsEvent.name];
 
 /**
- * Safety net for organization deletion.
- *
- * Deleting an organization runs the hooks in [`CascadeRegistry`](../common/cascade/cascade.registry.ts)
- * inside the same transaction, so the normal path leaves nothing behind. What it does not cover is the
- * abnormal one: a row removed by a migration, by hand in a shell, or by a restore that brought the
- * children back without the parent. `stale_bookings` catches only bookings pointing at a missing slot;
- * a whole organization gone from under its children is invisible to it.
- *
- * Detection reads every collection with an `organization_id` — a model registered after this job was
- * written is covered without touching it — but the deletion itself goes through the registered hooks,
- * so a reconciliation removes exactly what a real delete would have, in the same order, in one
- * transaction per organization. Anything still referring to a dangling id afterwards is reported as
- * `left_behind` rather than deleted: no hook claims it, and this job does not improvise.
+ * Safety net for organization deletion: children left by a migration, a shell session or a partial restore.
+ * Detection reads every collection with an `organization_id`, but deletion goes through the registered hooks;
+ * anything no hook claims is reported as `left_behind` rather than deleted.
  */
 @Injectable()
 export class CascadeReconcileJob {
@@ -73,11 +59,9 @@ export class CascadeReconcileJob {
 
         const before = await this.countRows(dangling);
 
-        /*
-         * The one way this job could do real damage is by believing an empty or half-restored
-         * `organizations` collection: every child in the database would then look like an orphan, and the
-         * hooks would faithfully delete all of them. Past the configured count it deletes nothing and says
-         * so — a genuine backlog of that size is a deliberate operation, not a nightly repair.
+        /**
+         * An empty or half-restored `organizations` collection would make every child look like an orphan, so past
+         * the configured count the job deletes nothing.
          */
         if (dangling.length > this.config.jobs.cascadeReconcileLimit) {
             this.logger.error(
@@ -117,7 +101,6 @@ export class CascadeReconcileJob {
         return { dangling_organizations: dangling.length, reconciled, left_behind: after, refused: false };
     }
 
-    /** Every organization id some child still points at, minus the ones that exist. */
     private async danglingOrganizations(): Promise<string[]> {
         const referenced = new Set<string>();
 

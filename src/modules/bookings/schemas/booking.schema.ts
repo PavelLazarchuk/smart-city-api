@@ -9,16 +9,11 @@ export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 export const ACTIVE_BOOKING_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed'];
 
 /**
- * A booking is its own document. It used to live inside `services.options[].slots[]` and be mirrored
- * in `users.bookings`, which put every booking of a service in one 16 MB document, funnelled all
- * concurrency for that service through it, and made "the bookings of one user" a collection scan.
- *
- * Occupancy stays denormalised as `booked_count` on the slot, because that is what the capacity
- * guard compares against in a single conditional update.
+ * Own document: inside `services.options[].slots[]` every booking of a service shared one 16 MB document.
+ * Occupancy stays denormalised as `booked_count`, because that is what the capacity guard compares.
  */
 @Schema(baseSchemaOptions('bookings'))
 export class Booking {
-    /** Public identifier, stable across the move out of the service document. */
     @Prop({ type: String, required: true })
     id!: string;
 
@@ -89,10 +84,7 @@ export type BookingDocument = HydratedDocument<Booking>;
 export const BookingSchema = SchemaFactory.createForClass(Booking);
 
 BookingSchema.index({ id: 1 }, { unique: true });
-/**
- * Replaces the read-then-check for duplicates: a second identical *active* booking cannot be inserted.
- * Partial on `active`, so a cancelled row does not block booking the same slot again.
- */
+/** Refuses a second active booking; partial on `active`, so a cancelled row does not block rebooking. */
 BookingSchema.index(
     { service_id: 1, option_id: 1, slot_id: 1, slot_time: 1, user_id: 1 },
     { unique: true, name: 'unique_booking_per_slot', partialFilterExpression: { active: true } },

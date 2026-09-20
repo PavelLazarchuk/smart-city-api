@@ -1,7 +1,6 @@
 import { applyDecorators, type Type } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, ApiQuery, ApiResponse, getSchemaPath } from '@nestjs/swagger';
 
-/** Swagger helper: documents the `{ data: T[], meta }` list envelope plus pagination query params. */
 export function ApiPaginated(model: Type<unknown>, cursor = false): MethodDecorator {
     const decorators: MethodDecorator[] = [
         ApiExtraModels(model),
@@ -40,7 +39,6 @@ export function ApiPaginated(model: Type<unknown>, cursor = false): MethodDecora
     return applyDecorators(...decorators);
 }
 
-/** Swagger helper: documents the `{ data: T }` single-entity envelope. */
 export function ApiData(model: Type<unknown>, status = 200): MethodDecorator {
     return applyDecorators(
         ApiExtraModels(model),

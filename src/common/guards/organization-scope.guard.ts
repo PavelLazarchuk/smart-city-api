@@ -22,11 +22,7 @@ const NOT_FOUND_BY_KIND = {
     archive: 'ARCHIVE_NOT_FOUND',
 } as const;
 
-/**
- * A `common-admin` may only act on organizations listed in their `organization_ids`; super-admins
- * bypass the check and citizens never pass. An entity scope loads the entity only to find its
- * organization — the handler re-reads what it needs, inside its own transaction where it matters.
- */
+/** A `common-admin` is limited to their `organization_ids`; super-admins bypass, everyone else is refused. */
 @Injectable()
 export class OrganizationScopeGuard implements CanActivate {
     constructor(

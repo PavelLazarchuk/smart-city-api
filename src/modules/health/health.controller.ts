@@ -61,13 +61,8 @@ export class HealthController {
     }
 
     /**
-     * The full dependency sweep, kept apart from `ready`: an SMTP outage degrades notifications but
-     * must not take the whole instance out of the load balancer.
-     *
-     * The route stays public so an uptime probe needs no credentials, but what a failure *says* does
-     * not: a driver's message names the SMTP host and port or the bucket it could not reach, and that
-     * is infrastructure detail. Anonymous callers learn which dependency is down and nothing else;
-     * the cause goes to the log, and to a super-admin who asks for the same route with a token.
+     * Kept apart from `ready`: an SMTP outage degrades notifications but must not drop the instance from the
+     * load balancer. The cause names hosts and buckets, so it goes to the log and to super-admins only.
      */
     @Get('deps')
     @Public()
@@ -85,10 +80,7 @@ export class HealthController {
         }
     }
 
-    /**
-     * How every scheduled job last ended, straight from the `job_locks` leases. Super-admin only:
-     * it carries the recorded failure message, which has the same problem as `deps`.
-     */
+    /** Super-admin only: it carries the recorded failure message, which names hosts like `deps` does. */
     @Get('jobs')
     @ApiBearerAuth()
     @Roles(ROLES.SUPER_ADMIN)
@@ -111,10 +103,7 @@ export class HealthController {
         };
     }
 
-    /**
-     * Terminus signals failure with an exception whose body the global filter would replace, so the
-     * failing dependencies are re-raised as details of the standard error envelope.
-     */
+    /** Terminus throws a body the global filter would replace, so failures are re-raised as error details. */
     private unavailable(error: unknown): ApiError {
         const body = error instanceof HttpException ? error.getResponse() : undefined;
         const down =

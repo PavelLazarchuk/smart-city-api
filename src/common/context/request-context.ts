@@ -5,7 +5,6 @@ export interface RequestContextData {
     user_id?: string;
 }
 
-/** Request-scoped data available to any code running inside a request, without passing `req` around. */
 export class RequestContext {
     private static readonly storage = new AsyncLocalStorage<RequestContextData>();
 

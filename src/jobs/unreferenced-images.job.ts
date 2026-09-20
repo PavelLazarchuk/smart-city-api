@@ -21,15 +21,8 @@ export interface UnreferencedImageRow {
 }
 
 /**
- * The mirror image of `storage_gc`: there the file outlived its row, here the row outlives its use.
- * An admin uploads a picture, never puts it into the news item, and it stays in the bucket at full
- * size forever, because nothing in the product ever looks at an image it is not rendering.
- *
- * It only reports. An image is "used" when some document repeats its `src`, and that judgement is
- * only as complete as the list of places below — a field added later and forgotten here would make
- * this job call a perfectly live image unused. Deleting on that basis would destroy a published page;
- * mailing a list to the people who uploaded them costs nothing if it is wrong. Whoever adds a new
- * field that stores an image URL adds it to {@link referencedUrls} too.
+ * "Used" is only as complete as {@link referencedUrls}, so a forgotten field would call a live image unused
+ * — hence a mailed report, never a delete.
  */
 @Injectable()
 export class UnreferencedImagesJob {

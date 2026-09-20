@@ -5,10 +5,6 @@ import { type IncomingMessage, type ServerResponse } from 'node:http';
 import { AppConfig } from '../config/app-config';
 import { resolveRequestId } from '../context/request-id';
 
-/**
- * pino via nestjs-pino: JSON in production, pretty in development, request id on every
- * line, access log with duration and user id, redaction of secrets and phone numbers.
- */
 @Module({
     imports: [
         LoggerModule.forRootAsync({

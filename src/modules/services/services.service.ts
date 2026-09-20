@@ -366,10 +366,8 @@ export class ServicesService implements OnModuleInit {
     }
 
     /**
-     * Updates the service's own fields; replacing `options` keeps existing occupancy by id. That is a
-     * read-modify-write of the whole array, so it runs in a transaction — a booking committed in between
-     * makes the write conflict and retry instead of being silently dropped. The sub-resource routes
-     * below change one option or slot without touching the rest of the array.
+     * Replacing `options` is a read-modify-write, so it runs in a transaction: a booking committed in between
+     * conflicts and retries instead of being dropped.
      */
     async update(id: string, input: UpdateServiceInput, viewer?: AuthUser): Promise<ServiceEntity> {
         const updated =
@@ -673,12 +671,7 @@ export class ServicesService implements OnModuleInit {
         );
     }
 
-    // ----- options and slots as sub-resources -----
-
-    /**
-     * Every sub-resource write validates against the stored document inside a transaction and then
-     * writes with `arrayFilters`, so a concurrent booking of a neighbouring slot is never overwritten.
-     */
+    /** Validated against the stored document in a transaction, then written with `arrayFilters`. */
     async addOption(id: string, input: ServiceOptionInput, viewer?: AuthUser): Promise<ServiceEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
@@ -780,10 +773,7 @@ export class ServicesService implements OnModuleInit {
         return this.presented(service, viewer);
     }
 
-    /**
-     * Label, date and capacity of one slot. A time entry that already holds bookings can be neither
-     * removed nor renamed — that is what a whole-array replacement could not promise.
-     */
+    /** A time entry that already holds bookings can be neither removed nor renamed. */
     async updateSlot(
         id: string,
         optionId: string,
@@ -902,10 +892,7 @@ export class ServicesService implements OnModuleInit {
         return slot;
     }
 
-    /**
-     * Bookings are read only for viewers allowed to see them, and only for the services on the page;
-     * everyone else gets occupancy markers rebuilt from `booked_count`, at no query cost.
-     */
+    /** Bookings are read only for viewers allowed to see them; everyone else gets markers from `booked_count`. */
     private async presented(service: ServiceEntity, viewer?: AuthUser): Promise<ServiceEntity> {
         const [presented] = await this.present([service], viewer);
 
@@ -938,8 +925,6 @@ export class ServicesService implements OnModuleInit {
             };
         });
     }
-
-    // ----- used by jobs -----
 
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
         return this.services.findWithRecurrentOptions();

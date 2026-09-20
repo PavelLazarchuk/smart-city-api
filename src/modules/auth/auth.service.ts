@@ -50,10 +50,8 @@ export class AuthService {
     }
 
     /**
-     * Password login for admins (`login`) and citizens (`phone`), gated by the audience switch. Unknown
-     * accounts cost the same argon2 verification and answer the same `INVALID_CREDENTIALS`, so the
-     * endpoint does not enumerate accounts; the distinguishing detail stays in the log. Failures are
-     * counted on the account, so guessing one login from many addresses still runs out of budget.
+     * An unknown account costs the same argon2 verification and the same `INVALID_CREDENTIALS`, so nothing
+     * enumerates accounts. Failures are counted on the account, not on the address they come from.
      */
     async login(input: LoginInput, client: ClientInfo): Promise<TokenPairResponse> {
         const user = input.login
@@ -97,32 +95,31 @@ export class AuthService {
         return this.startSession(user, client);
     }
 
-    /** Citizen self-registration; exists only while `AUTH_CITIZEN_LOGIN_METHOD=password`. */
+    /** Client self-registration; exists only while `AUTH_CLIENT_LOGIN_METHOD=password`. */
     async register(input: RegisterInput, client: ClientInfo): Promise<TokenPairResponse> {
-        if (this.config.auth.citizenLoginMethod !== 'password')
+        if (this.config.auth.clientLoginMethod !== 'password')
             throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
-        const user = await this.users.createCitizen(input);
+        const user = await this.users.createClient(input);
 
         return this.startSession(user, client);
     }
 
     /**
-     * Writes a hashed code and sends the SMS; creates nothing. The ignored branch still spends one
-     * argon2 hash and a delivery failure is only logged, so timing and status never reveal which phones
-     * exist — under `citizen=password`, which of them belong to admins.
+     * The ignored branch still spends one argon2 hash and a delivery failure only logs, so neither timing nor
+     * status reveals which phones exist.
      */
     async requestOtp(phone: string): Promise<{ phone: string; expires_in: number }> {
-        const { adminLoginMethod, citizenLoginMethod } = this.config.auth;
+        const { adminLoginMethod, clientLoginMethod } = this.config.auth;
 
-        if (adminLoginMethod !== 'sms' && citizenLoginMethod !== 'sms')
+        if (adminLoginMethod !== 'sms' && clientLoginMethod !== 'sms')
             throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
         this.phonePolicy.assertSupported(phone);
 
         const response = { phone, expires_in: this.otp.ttlSeconds };
         const existing = await this.users.findByPhone(phone);
-        const audienceMethod = existing ? this.methodFor(existing.role) : citizenLoginMethod;
+        const audienceMethod = existing ? this.methodFor(existing.role) : clientLoginMethod;
 
         if (audienceMethod !== 'sms') {
             await this.otp.burnEquivalentWork();
@@ -145,7 +142,7 @@ export class AuthService {
         return response;
     }
 
-    /** Verifies the code; the citizen account is created here on first success. */
+    /** Verifies the code; the client account is created here on first success. */
     async verifyOtp(input: OtpVerifyInput, client: ClientInfo): Promise<TokenPairResponse> {
         this.phonePolicy.assertSupported(input.phone);
         await this.otp.verify(input.phone, input.code);
@@ -164,10 +161,10 @@ export class AuthService {
                 user = await this.users.updateSelf(user._id.toHexString(), patch);
             }
         } else {
-            if (this.config.auth.citizenLoginMethod !== 'sms')
+            if (this.config.auth.clientLoginMethod !== 'sms')
                 throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
-            user = await this.users.createCitizen({
+            user = await this.users.createClient({
                 phone: input.phone,
                 name: input.name ?? '',
                 email: input.email,
@@ -269,7 +266,6 @@ export class AuthService {
         return this.users.getById(user.id);
     }
 
-    /** Every other session of the account is revoked; the caller keeps the one they are using. */
     changePassword(user: AuthUser, currentPassword: string | undefined, newPassword: string): Promise<void> {
         return this.users.changePassword(user.id, currentPassword, newPassword, user.sid);
     }
@@ -317,7 +313,7 @@ export class AuthService {
 
     private methodFor(role: Role): LoginMethod {
         return role === ROLES.COMMON_USER
-            ? this.config.auth.citizenLoginMethod
+            ? this.config.auth.clientLoginMethod
             : this.config.auth.adminLoginMethod;
     }
 

@@ -104,9 +104,8 @@ export class UsersRepository extends BaseRepository<User> {
     }
 
     /**
-     * Counts one failure and returns the new total, or `null` when the account is gone. A failure
-     * whose predecessor is older than `windowStart` starts the count at one again — the decision is
-     * part of the update itself, so two concurrent attempts cannot both read the stale counter.
+     * A failure older than `windowStart` restarts the count inside the update itself, so two concurrent attempts
+     * cannot both read a stale counter.
      */
     async incrementFailedLogins(
         id: string,

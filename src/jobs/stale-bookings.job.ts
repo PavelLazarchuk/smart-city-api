@@ -9,13 +9,7 @@ export const STALE_BOOKINGS_JOB = 'stale_bookings';
 
 const BATCH = 200;
 
-/**
- * Drops bookings whose slot no longer exists. With bookings in their own collection there is no
- * second copy to reconcile any more; what remains is the slot an admin removed by hand or a service
- * that went away outside a cascade. Slots are read as coordinates only and stale rows are deleted
- * by id, so the job never loads a whole service or booking document. Finished rows (completed,
- * no-show, cancelled) are statistics, not reservations: they are left alone until their TTL.
- */
+/** Drops bookings whose slot is gone. Finished rows are statistics, not reservations, and wait for their TTL. */
 @Injectable()
 export class StaleBookingsJob {
     constructor(

@@ -267,13 +267,7 @@ export class ServicesController {
         return this.services.restore(id, user);
     }
 
-    // ----- options and slots as sub-resources -----
-
-    /**
-     * Editing one option or slot no longer means sending the whole `options` array back: these routes
-     * write with `arrayFilters`, so two admins editing neighbouring slots do not overwrite each other
-     * and a booking committed in between is never lost.
-     */
+    /** These routes write with `arrayFilters`, so neighbouring edits and a booking in between survive. */
     @Post(':id/options')
     @ApiBearerAuth()
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)

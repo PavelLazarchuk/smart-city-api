@@ -12,7 +12,7 @@ import { UsersService } from '../src/modules/users/users.service';
 const SEED = {
     superAdmin: { login: 'superadmin', password: 'Superadmin-Pass1', name: 'Super Admin' },
     admin: { login: 'cityadmin', password: 'Cityadmin-Pass1', name: 'City Admin' },
-    citizen: { phone: '375290000001', name: 'Citizen One' },
+    client: { phone: '375290000001', name: 'Client One' },
     organization: {
         main_label: 'City Clinic No. 1',
         main_category: 'healthcare',
@@ -65,9 +65,9 @@ async function main(): Promise<void> {
 
         console.log(`admin: ${admin._id.toHexString()} (login ${SEED.admin.login})`);
 
-        const citizen =
-            (await users.findByPhone(SEED.citizen.phone)) ?? (await users.createCitizen(SEED.citizen));
-        console.log(`citizen: ${citizen._id.toHexString()} (phone ${SEED.citizen.phone})`);
+        const client =
+            (await users.findByPhone(SEED.client.phone)) ?? (await users.createClient(SEED.client));
+        console.log(`client: ${client._id.toHexString()} (phone ${SEED.client.phone})`);
 
         if (!existingOrganization) {
             const category = await categories.create({

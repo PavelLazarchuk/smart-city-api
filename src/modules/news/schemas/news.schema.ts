@@ -39,7 +39,6 @@ export class News {
     @Prop({ type: Date, default: null })
     publish_at!: Date | null;
 
-    /** Publication date; promoted out of the bag so it can be sorted and indexed. */
     @Prop({ type: Date, required: true })
     date!: Date;
 

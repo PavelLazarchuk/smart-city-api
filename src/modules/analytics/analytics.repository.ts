@@ -13,10 +13,7 @@ export class AnalyticsRepository extends BaseRepository<AnalyticsEvent> {
         super(model);
     }
 
-    /**
-     * Strips the identity from a deleted account's events instead of deleting them: the counts stay
-     * comparable across periods, and nothing left behind points at a person.
-     */
+    /** A deleted account's events are stripped of identity, not deleted: counts stay comparable across periods. */
     async anonymizeUser(userId: string, session?: ClientSession): Promise<number> {
         const result = await this.model
             .updateMany(

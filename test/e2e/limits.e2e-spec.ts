@@ -69,7 +69,7 @@ describe('public read limits (e2e)', () => {
                         organization_id: organization.id,
                         option_id: optionId,
                         slot_id: slotId,
-                        user_id: (await fx.citizen()).id,
+                        user_id: (await fx.client()).id,
                         time: '10:00',
                         person: 'Secret Person',
                         phone: '375291112233',

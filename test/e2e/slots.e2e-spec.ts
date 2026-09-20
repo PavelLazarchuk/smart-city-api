@@ -4,7 +4,6 @@ import { expectError } from '../support/assertions';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
-/** Options and slots as sub-resources: one option or slot changes without resending the array. */
 describe('service options and slots (e2e)', () => {
     let t: TestApp;
     let fx: Fixtures;
@@ -73,10 +72,10 @@ describe('service options and slots (e2e)', () => {
     it('adds a slot, edits its times, and refuses to drop a time that still holds a booking', async () => {
         const option = fx.bookableOption(2, '10:00');
         const service = await fx.service(organization.id, { options: [option] });
-        const citizen = await fx.citizen();
+        const client = await fx.client();
         await t.http
             .post(`${t.prefix}/services/${service.id}/bookings`)
-            .set('Authorization', await fx.bearer(citizen))
+            .set('Authorization', await fx.bearer(client))
             .send({ option_id: option.id, slot_id: option.slot_id, time: '10:00' });
 
         const added = await t.http
@@ -127,10 +126,10 @@ describe('service options and slots (e2e)', () => {
     it('refuses to remove a slot or an option that still holds bookings, and rejects wrong field types', async () => {
         const option = fx.bookableOption(2, '10:00');
         const service = await fx.service(organization.id, { options: [option] });
-        const citizen = await fx.citizen();
+        const client = await fx.client();
         const booked = await t.http
             .post(`${t.prefix}/services/${service.id}/bookings`)
-            .set('Authorization', await fx.bearer(citizen))
+            .set('Authorization', await fx.bearer(client))
             .send({ option_id: option.id, slot_id: option.slot_id, time: '10:00' });
         expect(booked.status).toBe(201);
 
@@ -173,14 +172,14 @@ describe('service options and slots (e2e)', () => {
         expect(cleared.body.data.options[0].recurrent_dates).toBeUndefined();
     });
 
-    it('is closed to citizens and to admins of another organization', async () => {
+    it('is closed to clients and to admins of another organization', async () => {
         const option = fx.bookableOption(2);
         const service = await fx.service(organization.id, { options: [option] });
-        const citizen = await fx.bearer(await fx.citizen());
+        const client = await fx.bearer(await fx.client());
         const foreign = await fx.bearer(await fx.admin([(await fx.organization()).id]));
 
         for (const [token, status] of [
-            [citizen, 403],
+            [client, 403],
             [foreign, 404],
         ] as const) {
             const res = await t.http

@@ -16,10 +16,7 @@ import { STORAGE_GC_JOB, StorageGcJob } from './storage-gc.job';
 import { TRASH_PURGE_JOB, TrashPurgeJob } from './trash-purge.job';
 import { UNREFERENCED_IMAGES_JOB, UnreferencedImagesJob } from './unreferenced-images.job';
 
-/**
- * Registers the cron schedules from config when `JOBS_ENABLED=true`. The flag only decides whether
- * this process schedules; mutual exclusion is the `job_locks` lease.
- */
+/** `JOBS_ENABLED` only decides whether this process schedules; mutual exclusion is the `job_locks` lease. */
 @Injectable()
 export class JobsScheduler implements OnModuleInit, OnModuleDestroy {
     private readonly registered: string[] = [];
@@ -70,7 +67,7 @@ export class JobsScheduler implements OnModuleInit, OnModuleDestroy {
             try {
                 this.registry.deleteCronJob(name);
             } catch {
-                // empty
+                // A schedule that was never registered needs no removal.
             }
         }
     }

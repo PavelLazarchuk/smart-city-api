@@ -9,10 +9,7 @@ export interface ScopedEntity {
 
 export type ScopeResolver = (id: string) => Promise<ScopedEntity | null>;
 
-/**
- * Modules register how to load their entity by id so the `OrganizationScopeGuard` can resolve the
- * target organization "from the stored entity" without importing module internals.
- */
+/** Modules register how to load their entity so the guard resolves the organization without importing them. */
 @Injectable()
 export class ScopeResolverRegistry {
     private readonly resolvers = new Map<ScopedEntityKind, ScopeResolver>();

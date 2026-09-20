@@ -11,12 +11,8 @@ import { ApiError } from '../http/api-error';
 import { MetricsService } from './metrics.service';
 
 /**
- * Scrape endpoint. It is `@Public()` because Prometheus carries no session: the bearer is
- * `METRICS_TOKEN`, and a super-admin access token is accepted as well for a quick manual look.
- *
- * With no `METRICS_TOKEN` configured the endpoint is closed to everything but a super-admin token
- * rather than open to everyone: the registry names every route, job and organization-level counter,
- * and an environment that simply forgot the variable — staging, QA — must not publish all of it.
+ * `@Public()` because Prometheus carries no session; the bearer is `METRICS_TOKEN` or a super-admin token.
+ * Without `METRICS_TOKEN` it stays super-admin-only: a forgotten variable must not publish every counter.
  */
 @ApiExcludeController()
 @Controller('metrics')

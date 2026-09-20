@@ -17,9 +17,9 @@ describe('users (e2e)', () => {
         it('is super-admin only and paginated with the default limit', async () => {
             const superAdmin = await fx.superAdmin();
             const admin = await fx.admin([]);
-            const citizen = await fx.citizen();
+            const client = await fx.client();
 
-            for (let i = 0; i < 35; i += 1) await fx.citizen();
+            for (let i = 0; i < 35; i += 1) await fx.client();
 
             expectError(await t.http.get(`${t.prefix}/users`), 401, 'UNAUTHENTICATED');
             expectError(
@@ -28,7 +28,7 @@ describe('users (e2e)', () => {
                 'FORBIDDEN',
             );
             expectError(
-                await t.http.get(`${t.prefix}/users`).set('Authorization', await fx.bearer(citizen)),
+                await t.http.get(`${t.prefix}/users`).set('Authorization', await fx.bearer(client)),
                 403,
                 'FORBIDDEN',
             );
@@ -99,11 +99,11 @@ describe('users (e2e)', () => {
                 .send({ login: 'nopassword', role: 'common-admin' });
             expectError(loginWithoutPassword, 422, 'ADMIN_PASSWORD_REQUIRED');
 
-            const citizenNoPhone = await t.http
+            const clientNoPhone = await t.http
                 .post(`${t.prefix}/users`)
                 .set('Authorization', bearer)
                 .send({ role: 'common-user', name: 'C' });
-            expectError(citizenNoPhone, 422, 'CITIZEN_PHONE_REQUIRED');
+            expectError(clientNoPhone, 422, 'CLIENT_PHONE_REQUIRED');
 
             const unknownOrganization = await t.http
                 .post(`${t.prefix}/users`)
@@ -117,7 +117,7 @@ describe('users (e2e)', () => {
             expectError(unknownOrganization, 404, 'ORGANIZATION_NOT_FOUND');
         });
 
-        it('is forbidden for admins and citizens', async () => {
+        it('is forbidden for admins and clients', async () => {
             const admin = await fx.admin([]);
             const res = await t.http
                 .post(`${t.prefix}/users`)
@@ -130,8 +130,8 @@ describe('users (e2e)', () => {
     describe('GET / PATCH / DELETE /users/:id', () => {
         it('allows self or super-admin, never another user', async () => {
             const superAdmin = await fx.superAdmin();
-            const a = await fx.citizen();
-            const b = await fx.citizen();
+            const a = await fx.client();
+            const b = await fx.client();
             const bearerA = await fx.bearer(a);
 
             const self = await t.http.get(`${t.prefix}/users/${a.id}`).set('Authorization', bearerA);
@@ -166,25 +166,25 @@ describe('users (e2e)', () => {
 
         it('uses the self schema for the account itself and the admin schema for super-admins', async () => {
             const superAdmin = await fx.superAdmin();
-            const citizen = await fx.citizen();
-            const bearer = await fx.bearer(citizen);
+            const client = await fx.client();
+            const bearer = await fx.bearer(client);
 
             const renamed = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
+                .patch(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', bearer)
                 .send({ name: 'Renamed' });
             expect(renamed.status).toBe(200);
             expect(renamed.body.data.name).toBe('Renamed');
 
             const escalate = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
+                .patch(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', bearer)
                 .send({ name: 'X', role: 'super-admin' });
             expect(escalate.status).toBe(200);
             expect(escalate.body.data.role).toBe('common-user');
 
             const byAdmin = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
+                .patch(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', await fx.bearer(superAdmin))
                 .send({ role: 'common-admin', login: 'promoted', password: 'Strong-Passw0rd', phone: null });
             expect(byAdmin.status).toBe(200);
@@ -194,12 +194,12 @@ describe('users (e2e)', () => {
         });
 
         it('lets the account set, normalise, share and clear its contact e-mail', async () => {
-            const citizen = await fx.citizen();
-            const other = await fx.citizen();
-            const bearer = await fx.bearer(citizen);
+            const client = await fx.client();
+            const other = await fx.client();
+            const bearer = await fx.bearer(client);
 
             const set = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
+                .patch(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', bearer)
                 .send({ email: '  Anna@Example.COM ' });
             expect(set.status).toBe(200);
@@ -214,7 +214,7 @@ describe('users (e2e)', () => {
 
             expectError(
                 await t.http
-                    .patch(`${t.prefix}/users/${citizen.id}`)
+                    .patch(`${t.prefix}/users/${client.id}`)
                     .set('Authorization', bearer)
                     .send({ email: 'not-an-address' }),
                 400,
@@ -222,7 +222,7 @@ describe('users (e2e)', () => {
             );
 
             const cleared = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
+                .patch(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', bearer)
                 .send({ email: null });
             expect(cleared.status).toBe(200);
@@ -231,24 +231,24 @@ describe('users (e2e)', () => {
 
         it('rejects an invalid PATCH body with 400, never 500', async () => {
             const superAdmin = await fx.superAdmin();
-            const citizen = await fx.citizen();
+            const client = await fx.client();
 
             const bad = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
+                .patch(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', await fx.bearer(superAdmin))
                 .send({ role: 'emperor' });
             expectError(bad, 400, 'VALIDATION_ERROR');
             expect(bad.body.error.details[0].path).toBe('role');
 
             const empty = await t.http
-                .patch(`${t.prefix}/users/${citizen.id}`)
-                .set('Authorization', await fx.bearer(citizen))
+                .patch(`${t.prefix}/users/${client.id}`)
+                .set('Authorization', await fx.bearer(client))
                 .send({});
             expect(empty.status).toBe(200);
             expectError(
                 await t.http
-                    .patch(`${t.prefix}/users/${citizen.id}`)
-                    .set('Authorization', await fx.bearer(citizen))
+                    .patch(`${t.prefix}/users/${client.id}`)
+                    .set('Authorization', await fx.bearer(client))
                     .send({ name: '' }),
                 400,
                 'VALIDATION_ERROR',
@@ -287,7 +287,7 @@ describe('users (e2e)', () => {
 
         it('a role or password change by a super-admin revokes the account’s sessions', async () => {
             const superAdmin = await fx.superAdmin();
-            const target = await fx.citizen();
+            const target = await fx.client();
             const targetToken = await fx.token(target);
             expect(
                 (await t.http.get(`${t.prefix}/auth/me`).set('Authorization', `Bearer ${targetToken.access}`))
@@ -336,27 +336,27 @@ describe('users (e2e)', () => {
 
         it('DELETE removes the user with sessions and codes, in one transaction', async () => {
             const superAdmin = await fx.superAdmin();
-            const citizen = await fx.citizen();
-            const bearer = await fx.bearer(citizen);
+            const client = await fx.client();
+            const bearer = await fx.bearer(client);
             const res = await t.http
-                .delete(`${t.prefix}/users/${citizen.id}`)
+                .delete(`${t.prefix}/users/${client.id}`)
                 .set('Authorization', await fx.bearer(superAdmin));
             expect(res.status).toBe(204);
-            expect(await fx.collection('User').countDocuments({ _id: citizen.id })).toBe(0);
+            expect(await fx.collection('User').countDocuments({ _id: client.id })).toBe(0);
             expectError(await t.http.get(`${t.prefix}/auth/me`).set('Authorization', bearer), 401);
         });
 
         it('GET /users/:id/bookings is self or super-admin', async () => {
-            const citizen = await fx.citizen();
-            const other = await fx.citizen();
+            const client = await fx.client();
+            const other = await fx.client();
             const res = await t.http
-                .get(`${t.prefix}/users/${citizen.id}/bookings`)
-                .set('Authorization', await fx.bearer(citizen));
+                .get(`${t.prefix}/users/${client.id}/bookings`)
+                .set('Authorization', await fx.bearer(client));
             expect(res.status).toBe(200);
             expect(res.body.data).toEqual([]);
             expectError(
                 await t.http
-                    .get(`${t.prefix}/users/${citizen.id}/bookings`)
+                    .get(`${t.prefix}/users/${client.id}/bookings`)
                     .set('Authorization', await fx.bearer(other)),
                 403,
             );

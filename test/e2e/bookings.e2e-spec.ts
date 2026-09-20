@@ -54,8 +54,8 @@ describe('bookings (e2e)', () => {
             options: [option],
             value: { heading_value: 'Therapist', subscribe: 'clinic@example.com' },
         });
-        const citizen = await fx.citizen({ name: 'Anna' });
-        const bearer = await fx.bearer(citizen);
+        const client = await fx.client({ name: 'Anna' });
+        const bearer = await fx.bearer(client);
 
         const res = await t.http
             .post(`${t.prefix}/services/${service.id}/bookings`)
@@ -83,9 +83,7 @@ describe('bookings (e2e)', () => {
             .lean();
         expect(JSON.stringify(embedded!.options)).not.toContain('Anna');
 
-        const refs = await t.http
-            .get(`${t.prefix}/users/${citizen.id}/bookings`)
-            .set('Authorization', bearer);
+        const refs = await t.http.get(`${t.prefix}/users/${client.id}/bookings`).set('Authorization', bearer);
         expect(refs.body.data).toHaveLength(1);
         expect(refs.body.data[0]).toMatchObject({
             id: res.body.data.booking_id,
@@ -122,8 +120,8 @@ describe('bookings (e2e)', () => {
             options: [option],
             value: { subscribe: 'clinic@example.com' },
         });
-        const citizens = await Promise.all(Array.from({ length: n }, () => fx.citizen()));
-        const bearers = await Promise.all(citizens.map((citizen) => fx.bearer(citizen)));
+        const clients = await Promise.all(Array.from({ length: n }, () => fx.client()));
+        const bearers = await Promise.all(clients.map((client) => fx.bearer(client)));
 
         const results = await Promise.all(
             bearers.map((bearer) =>
@@ -200,8 +198,8 @@ describe('bookings (e2e)', () => {
                 },
             ],
         });
-        const citizen = await fx.citizen();
-        const bearer = await fx.bearer(citizen);
+        const client = await fx.client();
+        const bearer = await fx.bearer(client);
         const post = (body: Record<string, unknown>) =>
             t.http
                 .post(`${t.prefix}/services/${service.id}/bookings`)
@@ -222,7 +220,7 @@ describe('bookings (e2e)', () => {
             404,
             'SLOT_NOT_FOUND',
         );
-        const other = await fx.bearer(await fx.citizen());
+        const other = await fx.bearer(await fx.client());
         expectError(
             await t.http
                 .post(`${t.prefix}/services/${service.id}/bookings`)
@@ -241,7 +239,7 @@ describe('bookings (e2e)', () => {
     it('cancellation: owner or organization admin, never a stranger; updates both sides', async () => {
         const option = fx.bookableOption(2);
         const service = await fx.service(organization.id, { options: [option] });
-        const owner = await fx.citizen();
+        const owner = await fx.client();
         const ownerBearer = await fx.bearer(owner);
         const created = await t.http
             .post(`${t.prefix}/services/${service.id}/bookings`)
@@ -249,7 +247,7 @@ describe('bookings (e2e)', () => {
             .send({ option_id: option.id, slot_id: option.slot_id, time: '10:00' });
         const bookingId = created.body.data.booking_id as string;
 
-        const stranger = await fx.bearer(await fx.citizen());
+        const stranger = await fx.bearer(await fx.client());
         const foreignAdmin = await fx.bearer(await fx.admin([(await fx.organization()).id]));
         expectError(
             await t.http
@@ -292,7 +290,7 @@ describe('bookings (e2e)', () => {
     it('cancelling twice does not decrement the counter twice', async () => {
         const option = fx.bookableOption(2);
         const service = await fx.service(organization.id, { options: [option] });
-        const owner = await fx.citizen();
+        const owner = await fx.client();
         const bearer = await fx.bearer(owner);
         const book = () =>
             t.http
@@ -332,7 +330,7 @@ describe('bookings (e2e)', () => {
     it('renaming a booked time in PATCH /services/:id keeps the booking', async () => {
         const option = fx.bookableOption(2, '10:00');
         const service = await fx.service(organization.id, { options: [option] });
-        const owner = await fx.citizen();
+        const owner = await fx.client();
         const created = await t.http
             .post(`${t.prefix}/services/${service.id}/bookings`)
             .set('Authorization', await fx.bearer(owner))
@@ -378,13 +376,13 @@ describe('bookings (e2e)', () => {
     it('deleting the service or the user removes the bookings on the other side', async () => {
         const option = fx.bookableOption(5);
         const service = await fx.service(organization.id, { options: [option] });
-        const a = await fx.citizen();
-        const b = await fx.citizen();
+        const a = await fx.client();
+        const b = await fx.client();
 
-        for (const citizen of [a, b]) {
+        for (const client of [a, b]) {
             await t.http
                 .post(`${t.prefix}/services/${service.id}/bookings`)
-                .set('Authorization', await fx.bearer(citizen))
+                .set('Authorization', await fx.bearer(client))
                 .send({ option_id: option.id, slot_id: option.slot_id, time: '10:00' });
         }
 

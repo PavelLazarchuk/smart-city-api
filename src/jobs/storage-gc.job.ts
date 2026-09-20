@@ -10,24 +10,12 @@ export const STORAGE_GC_JOB = 'storage_gc';
 
 const BATCH = 200;
 
-/**
- * Storage keys are written as `<organization id>/<uuid><extension>` by the upload path, and only a
- * key of exactly that shape is ever a candidate for deletion. A bucket shared with anything else —
- * a backup, a static asset, a hand-copied file — is then untouchable by this job by construction.
- */
+/** Only a key of exactly the upload path's shape is a candidate, so anything else in the bucket is untouchable. */
 const MANAGED_KEY = /^[0-9a-f]{24}\/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.[a-z0-9]{2,5}$/;
 
 /**
- * Deletes stored files that no `images` row points at.
- *
- * An image is removed row first, file after the commit ([`ImagesService`](../modules/images/images.service.ts)),
- * which is the right order — a rolled-back delete must never lose a file — but it leaves the file behind for
- * good if the store happens to be unreachable at that moment. Nothing refers to it any more, so nothing will
- * ever retry: without this sweep the bucket only grows.
- *
- * Two guards keep a live upload safe. A file is considered only once it is older than
- * `STORAGE_GC_MIN_AGE`, which covers the window between `put` and the row being written; and the row
- * lookup happens per batch, immediately before the delete, not from a snapshot taken at the start.
+ * A delete whose file removal failed leaves a file nothing will ever retry. `STORAGE_GC_MIN_AGE` covers the
+ * window between `put` and the row, and the row lookup happens per batch, right before the delete.
  */
 @Injectable()
 export class StorageGcJob {

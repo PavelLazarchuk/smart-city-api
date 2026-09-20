@@ -15,11 +15,7 @@ export interface StorageProvider {
     put(key: string, content: Buffer, mimeType: string): Promise<StoredFile>;
     delete(key: string): Promise<void>;
     urlFor(key: string): string;
-    /** Readiness probe: resolves when the backing store accepts requests, rejects otherwise. */
     check(): Promise<void>;
-    /**
-     * Every object the store holds, streamed. A bucket is larger than memory in principle, so the
-     * `storage_gc` job consumes this page by page instead of collecting it into an array.
-     */
+    /** Streamed: a bucket is larger than memory in principle, so `storage_gc` consumes it page by page. */
     list(): AsyncIterable<StoredObject>;
 }

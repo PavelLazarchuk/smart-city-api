@@ -23,7 +23,7 @@ export class SmppSmsProvider implements SmsProvider {
                 try {
                     session.close();
                 } catch {
-                    // empty
+                    // The session is being abandoned either way; a failed close changes nothing.
                 }
 
                 if (error) reject(error);

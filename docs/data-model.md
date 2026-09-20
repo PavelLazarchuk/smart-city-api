@@ -25,7 +25,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `images`             | Uploaded files                                   | `organization_id`, storage key, mime, size                                                                                                                                                                                                                                                                                                                                                |
 | `archives`           | Snapshots of finished bookings                   | `organization_id`, `service_id`, `type`, `payload` (Mixed)                                                                                                                                                                                                                                                                                                                                |
 | `bookings`           | One booking of one slot                          | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `finished_at`, `reminder_sent_at`                                                                                                                                                 |
-| `waitlist`           | Citizens waiting for a full slot                 | `id`, slot coordinates, `user_id`, `person`, `phone`, `status` (`waiting` \| `notified`), `notified_at`                                                                                                                                                                                                                                                                                   |
+| `waitlist`           | Clients waiting for a full slot                  | `id`, slot coordinates, `user_id`, `person`, `phone`, `status` (`waiting` \| `notified`), `notified_at`                                                                                                                                                                                                                                                                                   |
 | `outbox_events`      | Transactional outbox                             | `id`, `type`, `organization_id`, `payload`, `internal`, `status`, `attempts`, `next_attempt_at`, `claimed_until`, `deliveries[]`                                                                                                                                                                                                                                                          |
 | `webhooks`           | Subscriber URLs                                  | `organization_id` (`null` = platform-wide), `url`, `secret` (select: false), `events[]`, `enabled`, last outcome                                                                                                                                                                                                                                                                          |
 | `users`              | Accounts                                         | `login`, `password_hash`, `phone`, `email`, `name`, `role`, `organization_ids[]`, `failed_login_attempts`, `last_failed_login_at`, `locked_until`                                                                                                                                                                                                                                         |
@@ -102,10 +102,10 @@ copies. Four things to know about the shape that replaced it:
   list is cut from the service's `working_hours` into `duration_minutes + buffer_minutes` steps, and dates in
   the service's `blackout_dates`, its `holidays` (`MM-DD`, yearly) or the organization's `holidays` are skipped.
 - **`booking_policy`** — `max_active_per_user`, `lead_time_minutes`, `max_advance_days`,
-  `cancel_deadline_minutes`, `requires_confirmation` — is enforced by the booking service for citizens; the
-  organization's admins are exempt from the citizen-facing rules.
+  `cancel_deadline_minutes`, `requires_confirmation` — is enforced by the booking service for clients; the
+  organization's admins are exempt from the client-facing rules.
 - **`form_fields` and `required_documents`** describe what a booking must carry: answers arrive as `fields`
-  (validated per type, unknown keys refused) and `documents` (keys the citizen confirms); both are stored on
+  (validated per type, unknown keys refused) and `documents` (keys the client confirms); both are stored on
   the booking row.
 
 ## Booking lifecycle (P3)
@@ -118,7 +118,7 @@ pending ──confirmed──▶ confirmed ──▶ completed ⇄ no_show
 
 `active` is `true` for `pending` and `confirmed` and is what the partial unique index
 `{ service_id, option_id, slot_id, slot_time, user_id }` keys on: a cancelled or finished row keeps its place in
-the statistics without blocking the citizen from booking the slot again. Only active rows count against
+the statistics without blocking the client from booking the slot again. Only active rows count against
 capacity, appear in the default listings (`?status=all` lifts the filter) and are grafted into a service for
 its admins. `finished_at` is set on every terminal status and carries the history TTL
 (`BOOKING_HISTORY_RETENTION_DAYS`). Deleting an account deletes its active bookings (capacity released) and
@@ -159,7 +159,7 @@ Shape of the set:
 - **TTL** — `sessions.expires_at`, `verification_codes.expires_at`, `rate_limits.expires_at` (all
   `expireAfterSeconds: 0`), plus `sms_counters.expires_at` and `idempotency_keys.expires_at`; `archives.created_at` at
   `ARCHIVE_RETENTION_DAYS`; `analytics_events.created_at` at `ANALYTICS_RETENTION_DAYS` and
-  `sms.created_at` at `SMS_RETENTION_DAYS`, because those rows carry citizen phone numbers and names;
+  `sms.created_at` at `SMS_RETENTION_DAYS`, because those rows carry client phone numbers and names;
   `bookings.finished_at` at `BOOKING_HISTORY_RETENTION_DAYS` (a live booking has no `finished_at`, so it never
   expires) and `outbox_events.created_at` at `OUTBOX_RETENTION_DAYS`.
   Deleting an account also strips `user_id`, `user_name` and `user_phone` from its analytics events, so the

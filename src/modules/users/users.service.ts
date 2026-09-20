@@ -128,7 +128,7 @@ export class UsersService implements OnModuleInit {
         });
     }
 
-    async createCitizen(input: {
+    async createClient(input: {
         phone: string;
         name: string;
         password?: string;
@@ -169,10 +169,7 @@ export class UsersService implements OnModuleInit {
         return updated;
     }
 
-    /**
-     * Super-admin edit of any account. The stored hash is loaded explicitly (it is `select: false`), so
-     * "this admin can sign in" is a real check against the configured login method, not an assumption.
-     */
+    /** The hash is loaded explicitly (`select: false`), so "this admin can sign in" is a real check. */
     async updateByAdmin(id: string, input: UpdateUserAdminInput, actor?: AuthUser): Promise<UserEntity> {
         const existing = await this.users.findByIdWithPassword(id);
 
@@ -268,7 +265,6 @@ export class UsersService implements OnModuleInit {
         });
     }
 
-    /** Reads the account's bookings from their own collection, newest first. */
     async getBookings(id: string): Promise<UserBookingView[]> {
         await this.getById(id);
         const bookings = await this.bookings.findByUser(id);
@@ -348,13 +344,10 @@ export class UsersService implements OnModuleInit {
         return this.users.findEmailsByIds(ids);
     }
 
-    /**
-     * An account must end up with the identifiers its own login method needs: under `admin=password`, an
-     * admin without a login and a password could sign in neither by password nor by one-time code.
-     */
+    /** Under `admin=password` an admin without a login and a password could sign in by neither method. */
     private assertIdentifiers(role: Role, login?: string, password?: string, phone?: string): void {
         if (role === ROLES.COMMON_USER) {
-            if (!phone) throw ApiError.unprocessable('CITIZEN_PHONE_REQUIRED');
+            if (!phone) throw ApiError.unprocessable('CLIENT_PHONE_REQUIRED');
 
             return;
         }

@@ -28,7 +28,7 @@ const defaults: Record<string, string> = {
     JWT_ACCESS_TTL: '15m',
     JWT_REFRESH_TTL: '30d',
     AUTH_ADMIN_LOGIN_METHOD: 'password',
-    AUTH_CITIZEN_LOGIN_METHOD: 'sms',
+    AUTH_CLIENT_LOGIN_METHOD: 'sms',
     ARGON2_MEMORY_COST: '4096',
     ARGON2_TIME_COST: '1',
     ARGON2_PARALLELISM: '1',

@@ -2,10 +2,6 @@ import { type ClientSession, type FilterQuery, type Model, Types } from 'mongoos
 
 import { ApiError } from '../http/api-error';
 
-/**
- * Explicit ordering: assigns `position = index` to every id of a sibling set in one
- * `bulkWrite`. The ids must be exactly the current siblings, otherwise `422 REORDER_MISMATCH`.
- */
 export async function reorderSiblings<TDoc>(
     model: Model<TDoc>,
     siblingsFilter: FilterQuery<TDoc>,

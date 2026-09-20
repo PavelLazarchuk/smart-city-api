@@ -34,10 +34,7 @@ export class PasswordService {
         }
     }
 
-    /**
-     * Spends one verification against a throwaway hash. Login calls it when there is no stored hash so
-     * that an unknown account costs the same as a known one.
-     */
+    /** Burns one verification so an unknown account costs the same as a known one. */
     async verifyDummy(plain: string): Promise<void> {
         this.dummyHash ??= this.hash('constant-time-placeholder');
         await this.verify(await this.dummyHash, plain);

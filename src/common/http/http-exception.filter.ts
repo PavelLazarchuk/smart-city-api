@@ -33,11 +33,7 @@ function issuesOf(error: unknown): ApiErrorDetail[] {
     }));
 }
 
-/**
- * Multer reports its own limits through generic HTTP exceptions, so the upload routes would answer
- * `PAYLOAD_TOO_LARGE` where the rest of the API answers `FILE_TOO_LARGE`. The messages are multer's
- * own constants.
- */
+/** Multer reports its limits as generic HTTP exceptions; these are its own message constants. */
 const MULTER_CODES: Record<string, ErrorCode> = {
     'File too large': 'FILE_TOO_LARGE',
     'Too many files': 'FILE_TOO_LARGE',
@@ -55,10 +51,6 @@ const STATUS_CODES: Partial<Record<number, ErrorCode>> = {
     [HttpStatus.TOO_MANY_REQUESTS]: 'RATE_LIMITED',
 };
 
-/**
- * Renders every error as `{ error: { code, message, details?, request_id } }`. Internal errors
- * never leak their message; 4xx are logged at warn, 5xx at error with the stack.
- */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
     constructor(private readonly logger: PinoLogger) {

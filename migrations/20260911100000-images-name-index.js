@@ -5,10 +5,7 @@ const INDEXES = {
 module.exports = {
     INDEXES,
 
-    /**
-     * `storage_gc` asks "which of these two hundred storage keys still have a row" once per batch of
-     * a bucket listing; without this index every batch is a collection scan of `images`.
-     */
+    /** Without it every `storage_gc` batch is a collection scan of `images`. */
     async up(db) {
         for (const [collection, indexes] of Object.entries(INDEXES)) {
             const existing = await db.listCollections({ name: collection }).toArray();

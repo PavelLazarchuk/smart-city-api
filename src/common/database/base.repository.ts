@@ -13,7 +13,6 @@ import { type ResolvedPagination } from '../pagination/pagination.service';
 
 export type Lean<T> = T & { _id: Types.ObjectId; created_at: Date; updated_at: Date };
 
-/** Shared Mongoose access patterns: every method takes an optional `ClientSession` and returns lean docs. */
 export abstract class BaseRepository<TDoc> {
     protected constructor(protected readonly model: Model<TDoc>) {}
 
@@ -130,10 +129,7 @@ export abstract class BaseRepository<TDoc> {
         return { items, total, page: pagination.page, limit: pagination.limit };
     }
 
-    /**
-     * Cursor pagination on `_id` descending for high-volume collections. `countDocuments` over the
-     * whole match is the most expensive query of the page, so it runs only when `withTotal` asks.
-     */
+    /** `countDocuments` over the whole match is the page's most expensive query, so `withTotal` gates it. */
     async paginateByCursor(
         filter: FilterQuery<TDoc>,
         cursor: string | undefined,

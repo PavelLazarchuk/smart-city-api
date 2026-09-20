@@ -6,7 +6,7 @@ import { type Role, ROLE_VALUES, ROLES } from '../../../common/decorators/roles.
 
 @Schema(baseSchemaOptions('users'))
 export class User {
-    /** Admin identifier. Citizens have no login at all. */
+    /** Admin identifier. Clients have no login at all. */
     @Prop({ type: String })
     login?: string;
 
@@ -17,7 +17,7 @@ export class User {
     @Prop({ type: String })
     name?: string;
 
-    /** Citizen identifier in E.164 digits. Admins may have one for SMS login. */
+    /** Client identifier in E.164 digits. Admins may have one for SMS login. */
     @Prop({ type: String })
     phone?: string;
 

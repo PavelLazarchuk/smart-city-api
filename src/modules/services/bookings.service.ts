@@ -168,10 +168,8 @@ function slotStart(date: string | null | undefined, time: string | null | undefi
 }
 
 /**
- * Booking creation, cancellation, lifecycle and the waitlist. The booking row and the slot's occupancy
- * counter change in one transaction: the counter is what enforces capacity (a conditional `$inc`), the
- * partial unique index on active rows is what refuses duplicates, and every notification is an outbox
- * event written in the same transaction and delivered after the commit.
+ * Row and `booked_count` change in one transaction: the counter enforces capacity, the partial unique index
+ * refuses duplicates, and notifications are outbox events delivered after the commit.
  */
 @Injectable()
 export class BookingsService implements OnModuleInit {
@@ -456,10 +454,7 @@ export class BookingsService implements OnModuleInit {
         return this.remove(bookingId, actor);
     }
 
-    /**
-     * The booking's owner or an admin of the service's organization may cancel. The booking row
-     * carries its organization, so neither check needs the service document any more.
-     */
+    /** The booking row carries its organization, so neither the owner nor the admin check needs the service. */
     async cancel(serviceId: string, bookingId: string, actor: AuthUser): Promise<Cancelled> {
         return this.remove(bookingId, actor, serviceId);
     }

@@ -8,7 +8,6 @@ import { ServicesModule } from '../services/services.module';
 import { OrganizationsController } from './organizations.controller';
 import { OrganizationsModule } from './organizations.module';
 
-/** The organizations HTTP surface needs every child service for sub-resource lists and reorders. */
 @Module({
     imports: [
         OrganizationsModule,

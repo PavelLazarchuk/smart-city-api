@@ -10,11 +10,7 @@ export interface JobOutcome {
     result?: unknown;
 }
 
-/**
- * Runs a job under the distributed lock, renewing the lease while it executes, with structured logs.
- * Every finished run also leaves its outcome on the lease document, which is what `GET /health/jobs`
- * reads: without it a job that throws every night is visible only to whoever reads the logs.
- */
+/** The outcome is written to the lease, so a job that throws every night is visible in `GET /health/jobs`. */
 @Injectable()
 export class JobRunner {
     constructor(

@@ -80,10 +80,7 @@ export class OrganizationsService {
         return result;
     }
 
-    /**
-     * Included services carry bookings only for the organization's own admins, and those are read
-     * from the `bookings` collection for exactly those rows — a public list issues no such query.
-     */
+    /** Bookings are read only for the organization's own admins — a public list issues no such query. */
     private async presentServices(
         rows: OrganizationListRow[],
         viewer?: AuthUser,
@@ -134,7 +131,6 @@ export class OrganizationsService {
         return organization;
     }
 
-    /** Tree; services are split into `categories[].services` and the organization's own `services`. */
     async getTree(id: string, viewer?: AuthUser): Promise<OrganizationTree> {
         const row = await this.organizations.findTree(id, this.config.pagination.includeMaxItems, viewer);
 
@@ -235,7 +231,6 @@ export class OrganizationsService {
         return updated;
     }
 
-    /** Cascading delete inside one transaction. */
     async delete(id: string): Promise<void> {
         await this.getById(id);
         await this.tx.run(async (ctx) => {

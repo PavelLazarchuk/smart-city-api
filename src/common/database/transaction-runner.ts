@@ -12,10 +12,6 @@ export interface TransactionContext {
     afterCommit(callback: AfterCommitCallback): void;
 }
 
-/**
- * Runs a unit of work inside a MongoDB transaction with the driver's retry semantics for transient
- * errors, and defers irreversible side effects (mail, SMS, storage) until after the commit.
- */
 @Injectable()
 export class TransactionRunner {
     constructor(

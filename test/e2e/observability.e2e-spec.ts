@@ -86,7 +86,7 @@ describe('observability (e2e)', () => {
             expectError(
                 await t.http
                     .get(`${t.prefix}/health/jobs`)
-                    .set('Authorization', await fx.bearer(await fx.citizen())),
+                    .set('Authorization', await fx.bearer(await fx.client())),
                 403,
                 'FORBIDDEN',
             );

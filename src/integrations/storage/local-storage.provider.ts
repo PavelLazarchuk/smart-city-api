@@ -34,7 +34,6 @@ export class LocalStorageProvider implements StorageProvider {
         await access(this.root, constants.W_OK);
     }
 
-    /** Depth-first walk of the upload directory; keys are `/`-joined paths relative to its root. */
     async *list(): AsyncIterable<StoredObject> {
         yield* this.walk(this.root);
     }

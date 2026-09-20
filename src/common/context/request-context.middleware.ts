@@ -6,7 +6,6 @@ import { REQUEST_ID_HEADER, resolveRequestId } from './request-id';
 
 export { REQUEST_ID_HEADER };
 
-/** Exposes the request id on the response and in the async context for non-HTTP code (analytics, logs). */
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
     use(req: Request & { id?: string }, res: Response, next: NextFunction): void {

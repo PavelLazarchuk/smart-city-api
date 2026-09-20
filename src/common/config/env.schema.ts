@@ -11,7 +11,6 @@ const csv = z
     );
 
 const positiveInt = (fallback: number) => z.coerce.number().int().positive().default(fallback);
-/** Durations such as `15m`, `30d`, `900s`, `2h`, or a bare number of seconds; parsed to seconds. */
 export const durationSchema = z
     .string()
     .regex(/^\d+(s|m|h|d)?$/, 'Must be a duration like 15m, 12h, 30d or a number of seconds')
@@ -101,7 +100,7 @@ export const envSchema = z
         JWT_ACCESS_TTL: durationSchema.default(5 * 60),
         JWT_REFRESH_TTL: durationSchema.default(7 * 24 * 3600),
         AUTH_ADMIN_LOGIN_METHOD: z.enum(LOGIN_METHODS).default('password'),
-        AUTH_CITIZEN_LOGIN_METHOD: z.enum(LOGIN_METHODS).default('sms'),
+        AUTH_CLIENT_LOGIN_METHOD: z.enum(LOGIN_METHODS).default('sms'),
         ARGON2_MEMORY_COST: positiveInt(19456),
         ARGON2_TIME_COST: positiveInt(2),
         ARGON2_PARALLELISM: positiveInt(1),

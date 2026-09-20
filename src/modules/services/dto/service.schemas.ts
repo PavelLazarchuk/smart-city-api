@@ -31,8 +31,6 @@ import {
 const text = z.string().trim().max(5000);
 const limitSchema = z.number().int().min(0).nullable();
 
-// ----- bookings (output) -----
-
 const outputText = z.string();
 
 /** Full booking, visible to the organization's admins and super-admins. */
@@ -51,8 +49,6 @@ export const maskedBookingSchema = z.object({ status: z.literal('reserved') });
 
 const bookingsOutput = z.array(z.union([bookingResponseSchema, maskedBookingSchema])).default([]);
 const maskedBookingsOutput = z.array(maskedBookingSchema).default([]);
-
-// ----- slots -----
 
 const timeEntryInput = z.object({ time: timeOfDaySchema, limit: limitSchema.optional() });
 const timeEntryOutput = (bookings: z.ZodType) =>
@@ -154,8 +150,6 @@ const slotResponseSchemaFor = (bookings: z.ZodType) =>
     ]);
 
 export const slotResponseSchema = slotResponseSchemaFor(bookingsOutput);
-
-// ----- options -----
 
 export const recurrentDateSchema = z.object({
     day: z.enum(WEEKDAYS),
@@ -273,8 +267,6 @@ const requiredDocumentOutputSchema = z.object({
 
 const uniqueKeys = <T extends { key: string }>(items: T[]): boolean =>
     new Set(items.map((item) => item.key)).size === items.length;
-
-// ----- service -----
 
 export const serviceContentInputSchema = z.object({
     heading_label: text.optional(),
@@ -574,8 +566,6 @@ export const serviceRevisionResponseSchema = z.object({
 });
 export class ServiceRevisionResponseDto extends createZodDto(serviceRevisionResponseSchema) {}
 
-// ----- options and slots as sub-resources -----
-
 export const updateOptionSchema = z
     .object({
         label: labelSchema,
@@ -650,8 +640,6 @@ export const availabilityResponseSchema = z.object({
 });
 export type AvailabilityResponse = z.infer<typeof availabilityResponseSchema>;
 export class AvailabilityResponseDto extends createZodDto(availabilityResponseSchema) {}
-
-// ----- bookings (input) -----
 
 export const bookingFieldsSchema = z.record(fieldKeySchema, z.unknown());
 

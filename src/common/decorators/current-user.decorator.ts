@@ -2,7 +2,6 @@ import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 
 import { type Role } from './roles.decorator';
 
-/** The authenticated principal attached to the request by `JwtAuthGuard`. */
 export interface AuthUser {
     id: string;
     role: Role;

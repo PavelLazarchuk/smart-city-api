@@ -16,10 +16,7 @@ export const SPARSE_FIELDS_METADATA = 'smart_city:sparse_fields';
 
 export const SparseFields = (): MethodDecorator => SetMetadata(SPARSE_FIELDS_METADATA, true);
 
-/**
- * Declares the zod output schema for a handler. `ResponseInterceptor` parses the return value through
- * it and strips unknown keys, so a field absent from the schema can never reach a client.
- */
+/** Unknown keys are stripped, so a field absent from the schema can never reach a client. */
 export const Serialize = (schema: ZodType, kind: SerializeKind = 'single'): MethodDecorator =>
     SetMetadata<string, SerializeOptions>(SERIALIZE_METADATA, { schema, kind });
 

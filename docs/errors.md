@@ -106,7 +106,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `SELF_ROLE_CHANGE`            | 422    | Nobody changes their own role                                           |
 | `ADMIN_PASSWORD_REQUIRED`     | 422    | Admins sign in by password, so the account needs a login and a password |
 | `ADMIN_PHONE_REQUIRED`        | 422    | Admins sign in by code, so the account needs a phone                    |
-| `CITIZEN_PHONE_REQUIRED`      | 422    | A citizen account needs a phone                                         |
+| `CLIENT_PHONE_REQUIRED`       | 422    | A client account needs a phone                                          |
 
 ### Content
 
@@ -122,7 +122,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | Code                                   | Status | Meaning                                                                                       |
 | -------------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
 | `SLOT_NOT_FOUND` / `BOOKING_NOT_FOUND` | 404    |                                                                                               |
-| `BOOKING_ALREADY_EXISTS`               | 409    | This citizen already booked this slot                                                         |
+| `BOOKING_ALREADY_EXISTS`               | 409    | This client already booked this slot                                                          |
 | `SLOT_NOT_BOOKABLE`                    | 422    | The slot type does not accept bookings                                                        |
 | `OPTION_NOT_FOUND`                     | 404    | No option with this id on the service                                                         |
 | `OPTION_HAS_BOOKINGS`                  | 409    | The option still holds bookings and cannot be removed                                         |
@@ -145,26 +145,26 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `SERVICE_SLUG_TAKEN`    | 409    | Another service of the organization already uses this slug         |
 | `NEWS_SLUG_TAKEN`       | 409    | Another news item of the organization already uses this slug       |
 | `SERVICE_NOT_DELETED`   | 422    | `POST /services/:id/restore` on a service that is not in the trash |
-| `SERVICE_NOT_PUBLISHED` | 422    | A citizen tried to book a draft or archived service                |
+| `SERVICE_NOT_PUBLISHED` | 422    | A client tried to book a draft or archived service                 |
 | `ORGANIZATION_CLOSED`   | 422    | The organization is `temporarily_closed`; no new bookings          |
 | `FIELDS_NOT_ALLOWED`    | 400    | `?fields=` named a key the response schema does not have           |
 | `WEBHOOK_NOT_FOUND`     | 404    |                                                                    |
 
 ### Booking lifecycle (P3)
 
-| Code                             | Status | Meaning                                                                       |
-| -------------------------------- | ------ | ----------------------------------------------------------------------------- |
-| `BOOKING_LIMIT_REACHED`          | 422    | `booking_policy.max_active_per_user` active bookings already held             |
-| `BOOKING_LEAD_TIME`              | 422    | The slot starts sooner than `booking_policy.lead_time_minutes`                |
-| `BOOKING_TOO_FAR_AHEAD`          | 422    | The slot is beyond `booking_policy.max_advance_days`                          |
-| `BOOKING_CANCEL_DEADLINE_PASSED` | 422    | A citizen cancels or reschedules inside `cancel_deadline_minutes`; admins may |
-| `BOOKING_FIELDS_INVALID`         | 422    | `fields` do not match the service's `form_fields`; `details[]` per field      |
-| `BOOKING_DOCUMENTS_REQUIRED`     | 422    | A required document was not confirmed; `details[]` names it                   |
-| `BOOKING_STATUS_TRANSITION`      | 422    | Not a legal move (`pending → confirmed → completed \| no_show`, `cancelled`)  |
-| `BOOKING_NOT_ACTIVE`             | 422    | Cancel or reschedule of a finished booking                                    |
-| `WAITLIST_NOT_FOUND`             | 404    |                                                                               |
-| `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                  |
-| `SLOT_NOT_FULL`                  | 422    | The waitlist is only for a full slot — book it instead                        |
+| Code                             | Status | Meaning                                                                      |
+| -------------------------------- | ------ | ---------------------------------------------------------------------------- |
+| `BOOKING_LIMIT_REACHED`          | 422    | `booking_policy.max_active_per_user` active bookings already held            |
+| `BOOKING_LEAD_TIME`              | 422    | The slot starts sooner than `booking_policy.lead_time_minutes`               |
+| `BOOKING_TOO_FAR_AHEAD`          | 422    | The slot is beyond `booking_policy.max_advance_days`                         |
+| `BOOKING_CANCEL_DEADLINE_PASSED` | 422    | A client cancels or reschedules inside `cancel_deadline_minutes`; admins may |
+| `BOOKING_FIELDS_INVALID`         | 422    | `fields` do not match the service's `form_fields`; `details[]` per field     |
+| `BOOKING_DOCUMENTS_REQUIRED`     | 422    | A required document was not confirmed; `details[]` names it                  |
+| `BOOKING_STATUS_TRANSITION`      | 422    | Not a legal move (`pending → confirmed → completed \| no_show`, `cancelled`) |
+| `BOOKING_NOT_ACTIVE`             | 422    | Cancel or reschedule of a finished booking                                   |
+| `WAITLIST_NOT_FOUND`             | 404    |                                                                              |
+| `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                 |
+| `SLOT_NOT_FULL`                  | 422    | The waitlist is only for a full slot — book it instead                       |
 
 ### Files and delivery
 

@@ -91,7 +91,7 @@ requests are parsed by `nestjs-zod`'s pipe, responses by the schema named in `@S
 that does not match its schema is a `500 SERIALIZATION_ERROR` rather than a leak — this is what keeps
 `password_hash`, `code_hash`, `value.subscribe` and booking details out of responses, and it is covered by
 the sensitive-data e2e suite. Routes that serve two audiences declare both schemas with `@SerializeBy(...)`
-and the narrow one is used for the public audience: a service page for a citizen is serialized by a schema
+and the narrow one is used for the public audience: a service page for a client is serialized by a schema
 that accepts occupancy markers only, so a forgotten mask cannot leak a name or a phone number. In a list a
 row the schema refuses is dropped rather than failing the page, and the count is reported — `meta.dropped`
 in the response, `response_items_dropped_total` in the metrics. A handler marked `@SparseFields()` accepts

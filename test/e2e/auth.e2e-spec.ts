@@ -34,7 +34,7 @@ describe('auth (e2e)', () => {
         sentCodes = [];
         const config = t.app.get(AppConfig);
         config.auth.adminLoginMethod = 'password';
-        config.auth.citizenLoginMethod = 'sms';
+        config.auth.clientLoginMethod = 'sms';
     });
 
     describe('health', () => {
@@ -89,19 +89,19 @@ describe('auth (e2e)', () => {
             expect(Array.isArray(res.body.error.details)).toBe(true);
         });
 
-        it('refuses password login for citizens while the citizen method is sms', async () => {
-            const citizen = await fx.citizen({ password: 'Citizen-Pass1' });
+        it('refuses password login for clients while the client method is sms', async () => {
+            const client = await fx.client({ password: 'Client-Pass1' });
             const res = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ phone: citizen.phone, password: 'Citizen-Pass1' });
+                .send({ phone: client.phone, password: 'Client-Pass1' });
             expectError(res, 401, 'INVALID_CREDENTIALS');
         });
 
         it('does not reveal whether an account exists when its method is disabled', async () => {
-            const citizen = await fx.citizen({ password: 'Citizen-Pass1' });
+            const client = await fx.client({ password: 'Client-Pass1' });
             const known = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ phone: citizen.phone, password: 'wrong-password' });
+                .send({ phone: client.phone, password: 'wrong-password' });
             const unknown = await t.http
                 .post(`${t.prefix}/auth/login`)
                 .send({ phone: '375299999999', password: 'wrong-password' });
@@ -109,40 +109,40 @@ describe('auth (e2e)', () => {
             expect(known.body.error.code).toBe(unknown.body.error.code);
         });
 
-        it('allows password login for citizens when the citizen method is password', async () => {
-            t.app.get(AppConfig).auth.citizenLoginMethod = 'password';
-            const citizen = await fx.citizen({ password: 'Citizen-Pass1' });
+        it('allows password login for clients when the client method is password', async () => {
+            t.app.get(AppConfig).auth.clientLoginMethod = 'password';
+            const client = await fx.client({ password: 'Client-Pass1' });
             const res = await t.http
                 .post(`${t.prefix}/auth/login`)
-                .send({ phone: citizen.phone, password: 'Citizen-Pass1' });
+                .send({ phone: client.phone, password: 'Client-Pass1' });
             expect(res.status).toBe(200);
             expect(res.body.data.user.role).toBe('common-user');
         });
     });
 
     describe('POST /auth/register', () => {
-        it('is disabled while the citizen method is sms', async () => {
+        it('is disabled while the client method is sms', async () => {
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'Citizen-Pass1', name: 'New' });
+                .send({ phone: '375291112233', password: 'Client-Pass1', name: 'New' });
             expectError(res, 403, 'LOGIN_METHOD_DISABLED');
         });
 
-        it('creates the citizen and returns 201 + pair under the password method', async () => {
-            t.app.get(AppConfig).auth.citizenLoginMethod = 'password';
+        it('creates the client and returns 201 + pair under the password method', async () => {
+            t.app.get(AppConfig).auth.clientLoginMethod = 'password';
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'Citizen-Pass1', name: 'New' });
+                .send({ phone: '375291112233', password: 'Client-Pass1', name: 'New' });
             expect(res.status).toBe(201);
             expect(res.body.data.user.phone).toBe('375291112233');
             const dup = await t.http
                 .post(`${t.prefix}/auth/register`)
-                .send({ phone: '375291112233', password: 'Citizen-Pass1', name: 'New' });
+                .send({ phone: '375291112233', password: 'Client-Pass1', name: 'New' });
             expectError(dup, 409, 'PHONE_TAKEN');
         });
 
         it('enforces the password policy from config', async () => {
-            t.app.get(AppConfig).auth.citizenLoginMethod = 'password';
+            t.app.get(AppConfig).auth.clientLoginMethod = 'password';
             const res = await t.http
                 .post(`${t.prefix}/auth/register`)
                 .send({ phone: '375291112233', password: 'short', name: 'New' });
@@ -164,7 +164,7 @@ describe('auth (e2e)', () => {
             expect(users).toBe(0);
         });
 
-        it('verify creates the citizen on first success and returns a pair', async () => {
+        it('verify creates the client on first success and returns a pair', async () => {
             await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291000002' });
             const res = await t.http
                 .post(`${t.prefix}/auth/otp/verify`)
@@ -226,7 +226,7 @@ describe('auth (e2e)', () => {
         });
 
         it('is disabled entirely when neither audience uses sms', async () => {
-            t.app.get(AppConfig).auth.citizenLoginMethod = 'password';
+            t.app.get(AppConfig).auth.clientLoginMethod = 'password';
             const res = await t.http.post(`${t.prefix}/auth/otp/request`).send({ phone: '375291000004' });
             expectError(res, 403, 'LOGIN_METHOD_DISABLED');
         });
@@ -234,8 +234,8 @@ describe('auth (e2e)', () => {
 
     describe('refresh / logout', () => {
         it('rotates the pair, re-reads the role, and detects reuse', async () => {
-            const citizen = await fx.citizen();
-            const first = await fx.token(citizen);
+            const client = await fx.client();
+            const first = await fx.token(client);
 
             const rotated = await t.http
                 .post(`${t.prefix}/auth/refresh`)
@@ -254,15 +254,15 @@ describe('auth (e2e)', () => {
             expectError(afterReuse, 401);
             const sessions = t.app.get<Model<Session>>('SessionModel');
             const revoked = await sessions.countDocuments({
-                user_id: new Types.ObjectId(citizen.id),
+                user_id: new Types.ObjectId(client.id),
                 revoked_at: { $exists: true },
             });
             expect(revoked).toBe(2);
         });
 
         it('rejects a garbage or access token on refresh', async () => {
-            const citizen = await fx.citizen();
-            const { access } = await fx.token(citizen);
+            const client = await fx.client();
+            const { access } = await fx.token(client);
             expectError(
                 await t.http.post(`${t.prefix}/auth/refresh`).send({ refresh_token: 'garbage' }),
                 401,
@@ -276,8 +276,8 @@ describe('auth (e2e)', () => {
         });
 
         it('logout revokes the session so the access token stops working', async () => {
-            const citizen = await fx.citizen();
-            const bearer = await fx.bearer(citizen);
+            const client = await fx.client();
+            const bearer = await fx.bearer(client);
             expect((await t.http.get(`${t.prefix}/auth/me`).set('Authorization', bearer)).status).toBe(200);
             expect((await t.http.post(`${t.prefix}/auth/logout`).set('Authorization', bearer)).status).toBe(
                 204,
@@ -290,9 +290,9 @@ describe('auth (e2e)', () => {
         });
 
         it('logout-all revokes every session of the user', async () => {
-            const citizen = await fx.citizen();
-            const a = await fx.bearer(citizen);
-            const b = await fx.bearer(citizen);
+            const client = await fx.client();
+            const a = await fx.bearer(client);
+            const b = await fx.bearer(client);
             expect((await t.http.post(`${t.prefix}/auth/logout-all`).set('Authorization', a)).status).toBe(
                 204,
             );

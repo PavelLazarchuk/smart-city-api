@@ -45,7 +45,6 @@ export class S3StorageProvider implements StorageProvider {
         await this.s3().send(new HeadBucketCommand({ Bucket: this.config.storage.s3.bucket }));
     }
 
-    /** `ListObjectsV2` followed through its continuation tokens, a page of a thousand keys at a time. */
     async *list(): AsyncIterable<StoredObject> {
         let token: string | undefined;
 

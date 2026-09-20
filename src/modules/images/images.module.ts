@@ -15,10 +15,8 @@ import { Image, ImageSchema } from './schemas/image.schema';
     imports: [
         MongooseModule.forFeature([{ name: Image.name, schema: ImageSchema }]),
         /**
-         * `BODY_LIMIT` never reaches multipart, so the size cap has to be multer's own — and it is
-         * enforced while the stream is read, before the whole file sits in memory. The type is
-         * checked here too, so an unsupported upload is refused without buffering it at all; the
-         * magic-byte check in the service still has the final word on what the bytes really are.
+         * `BODY_LIMIT` never reaches multipart, so the cap is multer's own and applies while the stream is read.
+         * The magic-byte check in the service still has the final word on the type.
          */
         MulterModule.registerAsync({
             inject: [AppConfig],

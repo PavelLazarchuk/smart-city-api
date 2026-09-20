@@ -17,11 +17,8 @@ export interface BudgetDecision {
 }
 
 /**
- * Global spend cap on outgoing SMS. Per-IP and per-phone throttling cannot see a thousand numbers
- * sent from a thousand addresses; this counter can, because it counts messages, not requests.
- *
- * Counters are shared documents, so the cap holds across replicas. The hourly window is charged
- * first and both are rolled back when the daily one refuses, so a refusal costs no budget.
+ * Counts messages, not requests, so it sees a thousand numbers sent from a thousand addresses. The hourly
+ * window is rolled back when the daily one refuses, so a refusal costs no budget.
  */
 @Injectable()
 export class SmsBudgetService {

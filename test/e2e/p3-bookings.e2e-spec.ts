@@ -60,7 +60,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
     let organization: { id: string };
     let admin: FixtureUser;
     let adminBearer: string;
-    let citizen: FixtureUser;
+    let client: FixtureUser;
     let bearer: string;
 
     beforeAll(async () => {
@@ -73,8 +73,8 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
         organization = await fx.organization();
         admin = await fx.admin([organization.id]);
         adminBearer = await fx.bearer(admin);
-        citizen = await fx.citizen({ name: 'Anna', phone: '375291234567' });
-        bearer = await fx.bearer(citizen);
+        client = await fx.client({ name: 'Anna', phone: '375291234567' });
+        bearer = await fx.bearer(client);
     });
 
     const book = (serviceId: string, body: Record<string, unknown>, token = bearer) =>
@@ -143,7 +143,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             expectError(
                 await t.http
                     .get(`${t.prefix}/bookings/${id}`)
-                    .set('Authorization', await fx.bearer(await fx.citizen())),
+                    .set('Authorization', await fx.bearer(await fx.client())),
                 404,
             );
 
@@ -154,7 +154,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             expect(
                 (await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' })).status,
             ).toBe(201);
-            const other = await fx.bearer(await fx.citizen());
+            const other = await fx.bearer(await fx.client());
             const cancelled = await book(service.id, { option_id: uuid(1), slot_id: uuid(3) }, other);
             await t.http
                 .delete(`${t.prefix}/bookings/${cancelled.body.data.booking_id}`)
@@ -189,7 +189,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
 
             const superBearer = await fx.bearer(await fx.superAdmin());
             expect(
-                (await t.http.delete(`${t.prefix}/users/${citizen.id}`).set('Authorization', superBearer))
+                (await t.http.delete(`${t.prefix}/users/${client.id}`).set('Authorization', superBearer))
                     .status,
             ).toBe(204);
             const rows = await fx
@@ -329,7 +329,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             });
         });
 
-        it('refuses a draft service and a temporarily closed organization to citizens', async () => {
+        it('refuses a draft service and a temporarily closed organization to clients', async () => {
             const draft = await serviceWith({ status: 'draft', enabled: false });
             expectError(
                 await book(draft.id, { option_id: uuid(1), slot_id: uuid(3) }),
@@ -383,7 +383,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                     await book(
                         service.id,
                         { option_id: uuid(1), slot_id: uuid(2), time: '10:00' },
-                        await fx.bearer(await fx.citizen()),
+                        await fx.bearer(await fx.client()),
                     )
                 ).status,
             ).toBe(201);
@@ -425,7 +425,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 'SLOT_NOT_FULL',
             );
 
-            const holder = await fx.bearer(await fx.citizen());
+            const holder = await fx.bearer(await fx.client());
             const held = await book(service.id, target, holder);
             expect(held.status).toBe(201);
 
@@ -443,7 +443,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 409,
                 'WAITLIST_ALREADY_JOINED',
             );
-            const second = await fx.bearer(await fx.citizen({ phone: '375297777777' }));
+            const second = await fx.bearer(await fx.client({ phone: '375297777777' }));
             expect(
                 (
                     await t.http
@@ -484,7 +484,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             expect(
                 await fx
                     .collection('WaitlistEntry')
-                    .countDocuments({ user_id: new Types.ObjectId(citizen.id) }),
+                    .countDocuments({ user_id: new Types.ObjectId(client.id) }),
             ).toBe(0);
 
             const remaining = await t.http.get(`${t.prefix}/me/waitlist`).set('Authorization', second);
@@ -512,13 +512,13 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             try {
                 const service = await serviceWith({}, 2, '10:00', 1);
                 const target = { option_id: uuid(1), slot_id: uuid(2), time: '10:00' };
-                const holder = await fx.bearer(await fx.citizen());
+                const holder = await fx.bearer(await fx.client());
                 const held = await book(service.id, target, holder);
                 expect(held.status).toBe(201);
                 expect(
                     (
                         await t.http
-                            .patch(`${t.prefix}/users/${citizen.id}`)
+                            .patch(`${t.prefix}/users/${client.id}`)
                             .set('Authorization', bearer)
                             .send({ email: 'anna@example.com' })
                     ).status,
@@ -581,7 +581,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
 
             try {
                 const withEmail = await t.http
-                    .patch(`${t.prefix}/users/${citizen.id}`)
+                    .patch(`${t.prefix}/users/${client.id}`)
                     .set('Authorization', bearer)
                     .send({ email: 'anna@example.com' });
                 expect(withEmail.status).toBe(200);

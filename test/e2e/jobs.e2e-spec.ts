@@ -107,7 +107,7 @@ describe('jobs (e2e)', () => {
 
         it('updates slots in place: existing bookings and their times survive', async () => {
             const organization = await fx.organization();
-            const citizen = await fx.citizen();
+            const client = await fx.client();
             const optionId = '11111111-1111-4111-8111-111111111111';
             const slotId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
             const service = await fx.service(organization.id, {
@@ -141,7 +141,7 @@ describe('jobs (e2e)', () => {
                 organization_id: organization.id,
                 option_id: optionId,
                 slot_id: slotId,
-                user_id: citizen.id,
+                user_id: client.id,
                 time: '18:00',
                 person: 'Anna',
                 phone: '375291112233',
@@ -191,7 +191,7 @@ describe('jobs (e2e)', () => {
 
         it('archives expired dated slots with their bookings and deletes both', async () => {
             const organization = await fx.organization();
-            const citizen = await fx.citizen();
+            const client = await fx.client();
             const service = await fx.service(organization.id, {
                 options: [
                     {
@@ -227,7 +227,7 @@ describe('jobs (e2e)', () => {
                 organization_id: organization.id,
                 option_id: '11111111-1111-4111-8111-111111111111',
                 slot_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-                user_id: citizen.id,
+                user_id: client.id,
                 child_type: 'date',
             });
             expect(await t.app.get(SlotExpiryJob).execute(new Date())).toEqual({
@@ -252,7 +252,7 @@ describe('jobs (e2e)', () => {
 
         it('stale booking cleanup drops bookings whose slot no longer exists, and keeps live ones', async () => {
             const organization = await fx.organization();
-            const citizen = await fx.citizen();
+            const client = await fx.client();
             const option = fx.bookableOption(2);
             const service = await fx.service(organization.id, { options: [option] });
             const live = await fx.booking({
@@ -260,7 +260,7 @@ describe('jobs (e2e)', () => {
                 organization_id: organization.id,
                 option_id: option.id,
                 slot_id: option.slot_id,
-                user_id: citizen.id,
+                user_id: client.id,
                 time: '10:00',
             });
             await fx.booking({
@@ -268,7 +268,7 @@ describe('jobs (e2e)', () => {
                 organization_id: organization.id,
                 option_id: option.id,
                 slot_id: 'removed-by-hand',
-                user_id: citizen.id,
+                user_id: client.id,
                 child_type: 'apply',
             });
 
@@ -327,7 +327,7 @@ describe('jobs (e2e)', () => {
             const organization = await fx.organization();
             const survivor = await fx.organization();
             const admin = await fx.admin([organization.id, survivor.id]);
-            const citizen = await fx.citizen();
+            const client = await fx.client();
             const option = fx.bookableOption(2);
             const service = await fx.service(organization.id, { options: [option] });
             await fx.booking({
@@ -335,7 +335,7 @@ describe('jobs (e2e)', () => {
                 organization_id: organization.id,
                 option_id: option.id,
                 slot_id: option.slot_id,
-                user_id: citizen.id,
+                user_id: client.id,
                 time: '10:00',
             });
             await fx.news(organization.id);

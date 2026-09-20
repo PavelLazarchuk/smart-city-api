@@ -122,15 +122,15 @@ describe('cross-cutting guards (e2e)', () => {
 
     describe('sensitive data', () => {
         let organization: { id: string };
-        let citizen: FixtureUser;
+        let client: FixtureUser;
         let stranger: FixtureUser;
         let admin: FixtureUser;
         let serviceId: string;
 
         beforeEach(async () => {
             organization = await fx.organization();
-            citizen = await fx.citizen({ phone: '375291234567', name: 'Private Citizen' });
-            stranger = await fx.citizen({ phone: '375297654321' });
+            client = await fx.client({ phone: '375291234567', name: 'Private Client' });
+            stranger = await fx.client({ phone: '375297654321' });
             admin = await fx.admin([organization.id]);
             const option = fx.bookableOption(3);
             serviceId = (
@@ -144,9 +144,9 @@ describe('cross-cutting guards (e2e)', () => {
                 organization_id: organization.id,
                 option_id: option.id,
                 slot_id: option.slot_id,
-                user_id: citizen.id,
+                user_id: client.id,
                 time: '10:00',
-                person: 'Private Citizen',
+                person: 'Private Client',
                 phone: '375291234567',
                 info: 'allergy',
             });
@@ -173,7 +173,7 @@ describe('cross-cutting guards (e2e)', () => {
                 expectNoSensitiveKeys(anonymous.body);
                 const text = JSON.stringify(anonymous.body);
                 expect(text).not.toContain('375291234567');
-                expect(text).not.toContain('Private Citizen');
+                expect(text).not.toContain('Private Client');
                 expect(text).not.toContain('internal@example.com');
                 expect(collectKeys(anonymous.body).has('subscribe')).toBe(false);
 
@@ -191,7 +191,7 @@ describe('cross-cutting guards (e2e)', () => {
 
             await t.http.get(`${t.prefix}/services`);
             await t.http.get(`${t.prefix}/services/${serviceId}`);
-            await t.http.get(`${t.prefix}/services`).set('Authorization', await fx.bearer(citizen));
+            await t.http.get(`${t.prefix}/services`).set('Authorization', await fx.bearer(client));
 
             expect(listed.mock.calls.map((call) => call[2])).toEqual([
                 { 'value.subscribe': 0 },
@@ -212,7 +212,7 @@ describe('cross-cutting guards (e2e)', () => {
 
             const withBooking = (await t.http.get(`${t.prefix}/services/${serviceId}`)).body.data;
             withBooking.options[0].slots[0].value.time[0].bookings = [
-                { id: 'x', user_id: citizen.id, person: 'Private Citizen', phone: '375291234567', info: '' },
+                { id: 'x', user_id: client.id, person: 'Private Client', phone: '375291234567', info: '' },
             ];
             expect(maskedServiceResponseSchema.safeParse(withBooking).success).toBe(false);
         });
@@ -251,7 +251,7 @@ describe('cross-cutting guards (e2e)', () => {
             const superAdmin = await fx.bearer(await fx.superAdmin());
             const admin = await fx.bearer(await fx.admin([organization.id]));
             const foreignAdmin = await fx.bearer(await fx.admin([foreignOrganization.id]));
-            const citizen = await fx.bearer(await fx.citizen());
+            const client = await fx.bearer(await fx.client());
             const category = await fx.category(organization.id);
 
             const matrix: {
@@ -263,66 +263,66 @@ describe('cross-cutting guards (e2e)', () => {
                 {
                     method: 'get',
                     path: '/users',
-                    expected: { anonymous: 401, citizen: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
                 },
                 {
                     method: 'post',
                     path: '/organizations',
                     body: { main_label: 'x', main_image: 'https://e.com/i.jpg' },
-                    expected: { anonymous: 401, citizen: 403, admin: 403, foreign: 403, super: 201 },
+                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 201 },
                 },
                 {
                     method: 'patch',
                     path: `/organizations/${organization.id}`,
                     body: { main_label: 'y' },
-                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 404, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 200, foreign: 404, super: 200 },
                 },
                 {
                     method: 'post',
                     path: '/categories',
                     body: { organization_id: organization.id, label: 'c' },
-                    expected: { anonymous: 401, citizen: 403, admin: 201, foreign: 403, super: 201 },
+                    expected: { anonymous: 401, client: 403, admin: 201, foreign: 403, super: 201 },
                 },
                 {
                     method: 'patch',
                     path: `/categories/${category.id}`,
                     body: { label: 'z' },
-                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 404, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 200, foreign: 404, super: 200 },
                 },
                 {
                     method: 'get',
                     path: '/archives',
-                    expected: { anonymous: 401, citizen: 403, admin: 200, foreign: 200, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 200, foreign: 200, super: 200 },
                 },
                 {
                     method: 'get',
                     path: '/images',
-                    expected: { anonymous: 401, citizen: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
                 },
                 {
                     method: 'get',
                     path: '/sms',
-                    expected: { anonymous: 401, citizen: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
                 },
                 {
                     method: 'get',
                     path: '/analytics/events',
-                    expected: { anonymous: 401, citizen: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
                 },
                 {
                     method: 'get',
                     path: `/organizations/${organization.id}`,
-                    expected: { anonymous: 200, citizen: 200, admin: 200, foreign: 200, super: 200 },
+                    expected: { anonymous: 200, client: 200, admin: 200, foreign: 200, super: 200 },
                 },
                 {
                     method: 'delete',
                     path: `/organizations/${organization.id}`,
-                    expected: { anonymous: 401, citizen: 403, admin: 403, foreign: 403, super: 204 },
+                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 204 },
                 },
             ];
             const bearers: Record<string, string | undefined> = {
                 anonymous: undefined,
-                citizen,
+                client,
                 admin,
                 foreign: foreignAdmin,
                 super: superAdmin,

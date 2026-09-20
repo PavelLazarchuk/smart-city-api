@@ -71,7 +71,7 @@ Every setting is an environment variable validated by a zod schema at boot
 on a missing or malformed value. [.env.example](.env.example) lists every variable with placeholders.
 Notable switches:
 
-- `AUTH_ADMIN_LOGIN_METHOD` / `AUTH_CITIZEN_LOGIN_METHOD` — `password` or `sms`, independently per audience.
+- `AUTH_ADMIN_LOGIN_METHOD` / `AUTH_CLIENT_LOGIN_METHOD` — `password` or `sms`, independently per audience.
 - `SMS_PROVIDER` (`console` | `smpp`), `MAIL_PROVIDER` (`console` | `smtp`), `STORAGE_PROVIDER` (`local` | `s3`).
 - `THROTTLE_STORAGE` (`mongo` | `memory`) — the Mongo storage is shared by every replica.
 - `THROTTLE_LIMIT` / `THROTTLE_GLOBAL_LIMIT` / `THROTTLE_UPLOAD_LIMIT` — strict limit for `/auth/*` and per
@@ -139,7 +139,7 @@ Notable switches:
   stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
   (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told when a
   place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
-- A citizen may keep an `email` on the account (at registration or later via `PATCH /users/:id`, `null` clears
+- A client may keep an `email` on the account (at registration or later via `PATCH /users/:id`, `null` clears
   it). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
   the booking was made with, since one mailbox may serve several accounts.
 - Notifications leave through a transactional outbox: the `subscribe` e-mail, reminders, freed-place notices and

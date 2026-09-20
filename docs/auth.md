@@ -4,7 +4,7 @@
 
 | Role           | Who                | Scope                                                         |
 | -------------- | ------------------ | ------------------------------------------------------------- |
-| `common-user`  | Citizen            | Own profile and own bookings                                  |
+| `common-user`  | Client             | Own profile and own bookings                                  |
 | `common-admin` | Organization admin | Only organizations listed in the account's `organization_ids` |
 | `super-admin`  | Platform operator  | Everything; bypasses the organization scope check             |
 
@@ -16,10 +16,10 @@ or demoted (`409 LAST_SUPER_ADMIN`), and nobody may change their own role (`422 
 Each audience has its own deployment-time method, `password` or `sms`:
 
 - `AUTH_ADMIN_LOGIN_METHOD` — default `password`
-- `AUTH_CITIZEN_LOGIN_METHOD` — default `sms`
+- `AUTH_CLIENT_LOGIN_METHOD` — default `sms`
 
 An account created for an audience must carry what that method needs (`ADMIN_PASSWORD_REQUIRED`,
-`ADMIN_PHONE_REQUIRED`, `CITIZEN_PHONE_REQUIRED`), and using the wrong door answers
+`ADMIN_PHONE_REQUIRED`, `CLIENT_PHONE_REQUIRED`), and using the wrong door answers
 `LOGIN_METHOD_DISABLED`. Flipping a method on a live system is not a supported migration — see
 [deployment.md](deployment.md).
 
@@ -85,7 +85,7 @@ freed-place notices go to it instead of by SMS.
 | Endpoint                                           | Purpose                                       |
 | -------------------------------------------------- | --------------------------------------------- |
 | `POST /auth/login`                                 | Password login (login or phone as identifier) |
-| `POST /auth/register`                              | Citizen self-registration                     |
+| `POST /auth/register`                              | Client self-registration                      |
 | `POST /auth/otp/request` / `POST /auth/otp/verify` | One-time code login                           |
 | `POST /auth/refresh`                               | Rotate the token pair                         |
 | `POST /auth/logout` / `POST /auth/logout-all`      | Revoke this session / every other session     |
@@ -105,8 +105,8 @@ freed-place notices go to it instead of by SMS.
 `RolesGuard` answers `403 FORBIDDEN` (not 401) when a valid principal lacks the role.
 `OrganizationScopeGuard` resolves the organization behind the request — from a path/body parameter or by
 loading the entity through the `ScopeResolverRegistry` — and lets a `common-admin` through only when it is in
-their `organization_ids`; a super-admin always passes, a citizen never does. The role is decided **before**
-anything is loaded, so a super-admin pays no extra read and a citizen is refused without one; an admin of
+their `organization_ids`; a super-admin always passes, a client never does. The role is decided **before**
+anything is loaded, so a super-admin pays no extra read and a client is refused without one; an admin of
 another organization gets the same `404` as for an id that does not exist (`403` only where the
 organization comes from the request body, because then there is no resource to hide). Routes that are readable by
 anyone still run the JWT guard in optional mode, because the response is masked by role: booking details are

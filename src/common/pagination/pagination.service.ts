@@ -21,10 +21,7 @@ export interface PaginationDefaults {
 export class PaginationService {
     constructor(private readonly config: AppConfig) {}
 
-    /**
-     * Offset pagination has a configured depth ceiling: without it `?page=100000000` turns any public
-     * list into an unbounded `$skip`.
-     */
+    /** Without a depth ceiling `?page=100000000` turns any public list into an unbounded `$skip`. */
     resolve(query: PaginationQuery, defaults: PaginationDefaults): ResolvedPagination {
         const page = query.page ?? 1;
 

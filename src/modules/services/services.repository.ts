@@ -179,8 +179,6 @@ export class ServicesRepository extends BaseRepository<Service> {
         return this.deleteMany({ category_id: new Types.ObjectId(categoryId) }, session);
     }
 
-    // ----- options and slots as sub-resources -----
-
     async pushOption(id: string, option: ServiceOption, session?: ClientSession): Promise<boolean> {
         return this.matched(
             { _id: new Types.ObjectId(id) },
@@ -323,12 +321,9 @@ export class ServicesRepository extends BaseRepository<Service> {
         );
     }
 
-    // ----- capacity guards -----
-
     /**
-     * Capacity-guarded increment for a `date_time` time entry: `arrayFilters` match the slot **and**
-     * `booked_count < limit`, so `modifiedCount === 0` means full. Automatic timestamps are off —
-     * otherwise `updated_at` alone would count as a modification.
+     * `arrayFilters` match the slot **and** `booked_count < limit`, so `modifiedCount === 0` means full.
+     * Timestamps are off — `updated_at` alone would count as a modification.
      */
     async incrementTimeCount(
         serviceId: string,
@@ -380,10 +375,7 @@ export class ServicesRepository extends BaseRepository<Service> {
         return result.modifiedCount === 1;
     }
 
-    /**
-     * The mirror image, guarded by `booked_count > 0` so a counter can never go negative. Deleting the
-     * booking row is what makes a cancel idempotent, so no second clamping write is needed.
-     */
+    /** Guarded by `booked_count > 0` so it cannot go negative; deleting the row is what makes cancel idempotent. */
     async decrementTimeCount(
         serviceId: string,
         optionId: string,
@@ -434,8 +426,6 @@ export class ServicesRepository extends BaseRepository<Service> {
         return result.modifiedCount === 1;
     }
 
-    // ----- job queries -----
-
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
         return this.findMany(
             { 'options.recurrent_dates.0': { $exists: true }, deleted_at: null, status: { $ne: 'archived' } },
@@ -480,10 +470,7 @@ export class ServicesRepository extends BaseRepository<Service> {
         return this.model.find({}, projection).lean<ServiceEntity[]>().exec();
     }
 
-    /**
-     * Applies the recurrent plan of one option as `$push`/`$pull`, never an array rewrite, so a booking
-     * made while the job runs survives; the `$pull` also refuses to drop a time entry that gained one.
-     */
+    /** `$push`/`$pull`, never an array rewrite, and the `$pull` refuses a time entry that gained a booking. */
     async applyRecurrentPlans(
         plans: { id: string; option_id: string; plan: RecurrentSlotPlan }[],
         session?: ClientSession,

@@ -86,10 +86,8 @@ export function optionFromInput(input: ServiceOptionInput): ServiceOption {
 }
 
 /**
- * When an admin replaces `options`, existing bookings must survive: occupancy counters are copied
- * from the stored option/slot/time by id. Time entries match on their `time` string, so a renamed
- * "10:00" finds no match and is kept alongside the new one while it still holds bookings — the same
- * rule as `planRecurrentDays`, so an edit can never strand a booking.
+ * Occupancy is copied by id. A renamed time finds no match and is kept while it still holds bookings, so an
+ * edit can never strand one.
  */
 export function mergeBookings(existing: ServiceOption[], incoming: ServiceOption[]): ServiceOption[] {
     const existingOptions = new Map(existing.map((option) => [option.id, option]));
@@ -134,7 +132,6 @@ export function mergeBookings(existing: ServiceOption[], incoming: ServiceOption
     });
 }
 
-/** Shape the response schemas expect where a slot used to carry its bookings inline. */
 export interface BookingView {
     id: string;
     user_id: Types.ObjectId;
@@ -151,11 +148,7 @@ export type SlotWithBookings = Omit<Slot, 'value'> & {
     value: Omit<SlotValue, 'time'> & { time?: TimeEntryWithBookings[]; bookings?: BookingView[] };
 };
 
-/**
- * Grafts bookings read from the `bookings` collection back into the option tree, for viewers allowed
- * to see them. Nothing is loaded for anyone else, so the response of a public route cannot leak
- * personal data even if a `mask()` call is ever forgotten.
- */
+/** Nothing is loaded for anyone else, so a public route cannot leak personal data even if `mask()` is forgotten. */
 export function attachBookings<T extends { id: string; slots: Slot[] }>(
     options: T[],
     bookings: BookingEntity[],
@@ -305,11 +298,7 @@ export function isEmptyPlan(plan: RecurrentSlotPlan): boolean {
     return plan.add_slots.length === 0 && plan.add_times.length === 0 && plan.remove_times.length === 0;
 }
 
-/**
- * Diffs the generated days against the option's slots and returns additions and removals rather than a
- * rewritten `slots` array, so the job's `$push`/`$pull` never overwrites a booking made in between.
- * Times that still hold bookings are never removed — that would strand the booking.
- */
+/** Returns additions and removals, not a rewritten `slots` array; times that hold bookings are never removed. */
 export function planRecurrentDays(slots: Slot[], days: GeneratedDay[]): RecurrentSlotPlan {
     const plan: RecurrentSlotPlan = { add_slots: [], add_times: [], remove_times: [] };
 

@@ -1,9 +1,5 @@
 import { Types } from 'mongoose';
 
-/**
- * Converts a lean Mongoose document into plain JSON values — `_id` → `id`, `ObjectId` → string,
- * `Date` → ISO string, `__v` dropped — so response schemas describe only the wire format.
- */
 export function normalize(value: unknown): unknown {
     if (value === null || value === undefined) return value;
 

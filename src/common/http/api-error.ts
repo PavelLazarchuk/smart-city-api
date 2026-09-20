@@ -8,10 +8,6 @@ export interface ApiErrorDetail {
     [key: string]: unknown;
 }
 
-/**
- * The single exception type raised by application code. It carries a stable machine-readable
- * `code` and an English message from the catalogue; the exception filter renders the envelope.
- */
 export class ApiError extends HttpException {
     readonly code: ErrorCode;
     readonly details: ApiErrorDetail[] | undefined;

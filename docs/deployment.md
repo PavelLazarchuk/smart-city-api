@@ -59,7 +59,7 @@ alone (the Mongoose schemas do not declare it, so dev and production cannot drif
 `ARCHIVE_RETENTION_DAYS`, `ANALYTICS_RETENTION_DAYS`, `SMS_RETENTION_DAYS`, `BOOKING_HISTORY_RETENTION_DAYS`
 or `OUTBOX_RETENTION_DAYS` requires a new migration that runs `collMod` on the respective TTL index
 (`expireAfterSeconds`). `analytics_events` and `sms` expire on
-`created_at` because those rows carry citizen phone numbers and names.
+`created_at` because those rows carry client phone numbers and names.
 
 The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE`, `MONGO_MIN_POOL_SIZE`,
 `MONGO_SERVER_SELECTION_TIMEOUT_MS`, `MONGO_SOCKET_TIMEOUT_MS`, `MONGO_RETRY_WRITES`,
@@ -95,8 +95,8 @@ but does not require them, then one that requires them, `JWT_REFRESH_TTL` later.
 
 ## Login-method switches
 
-`AUTH_ADMIN_LOGIN_METHOD` and `AUTH_CITIZEN_LOGIN_METHOD` are deployment-time choices. Flipping the citizen
-method on a live system leaves `sms` citizens without a password or `password` citizens with an unverified
+`AUTH_ADMIN_LOGIN_METHOD` and `AUTH_CLIENT_LOGIN_METHOD` are deployment-time choices. Flipping the client
+method on a live system leaves `sms` clients without a password or `password` clients with an unverified
 phone; that migration flow (set password by OTP / verify phone) is out of scope.
 
 ## Observability

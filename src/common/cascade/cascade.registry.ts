@@ -6,10 +6,7 @@ export type CascadeParent = 'organization' | 'category' | 'service' | 'user';
 
 export type CascadeHook = (parentId: string, ctx: TransactionContext) => Promise<void>;
 
-/**
- * Child modules register what must be deleted when a parent goes away, so no parent imports its
- * children — this keeps the module graph acyclic. Hooks run inside the parent's transaction.
- */
+/** Children register their own cleanup so no parent imports them; hooks run in the parent's transaction. */
 @Injectable()
 export class CascadeRegistry {
     private readonly hooks = new Map<CascadeParent, { name: string; hook: CascadeHook }[]>();

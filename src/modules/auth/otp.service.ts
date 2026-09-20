@@ -33,18 +33,12 @@ export class OtpService {
         return code;
     }
 
-    /**
-     * Same cost as `issue` without storing or sending anything: the branch that ignores a request must
-     * not be measurably faster than the one that answers it.
-     */
+    /** Same cost as `issue`: the branch that ignores a request must not be measurably faster. */
     async burnEquivalentWork(): Promise<void> {
         await this.passwords.hash(this.generateCode());
     }
 
-    /**
-     * The attempt is counted before the comparison, atomically, so parallel guesses cannot share one
-     * budget slot and stretch the limit to `max + N`.
-     */
+    /** The attempt is counted before the comparison, so parallel guesses cannot stretch the limit to `max + N`. */
     async verify(phone: string, code: string): Promise<void> {
         const record = await this.codes.findLatestActive(phone);
 

@@ -141,7 +141,7 @@ describe('images, archives, sms, analytics (e2e)', () => {
             expectError(
                 await t.http
                     .get(`${t.prefix}/archives`)
-                    .set('Authorization', await fx.bearer(await fx.citizen())),
+                    .set('Authorization', await fx.bearer(await fx.client())),
                 403,
             );
 

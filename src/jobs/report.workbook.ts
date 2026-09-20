@@ -8,7 +8,6 @@ export interface ReportColumn<TRow> {
 
 export const REPORT_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-/** The one `.xlsx` shape the report jobs send: a bold header row over plain rows. */
 export async function buildReportWorkbook<TRow>(
     sheetName: string,
     columns: ReportColumn<TRow>[],

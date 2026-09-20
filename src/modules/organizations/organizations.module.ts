@@ -7,7 +7,6 @@ import { OrganizationsRepository } from './organizations.repository';
 import { OrganizationsService } from './organizations.service';
 import { Organization, OrganizationSchema } from './schemas/organization.schema';
 
-/** Organization core: no dependency on child modules (they register cascade hooks instead). */
 @Module({
     imports: [
         MongooseModule.forFeature([{ name: Organization.name, schema: OrganizationSchema }]),

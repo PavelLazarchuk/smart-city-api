@@ -3,10 +3,7 @@ import { collectDefaultMetrics, Counter, Histogram, Registry } from 'prom-client
 
 import { AppConfig } from '../config/app-config';
 
-/**
- * Prometheus registry for the whole process. Metrics are always recorded; `METRICS_ENABLED` only
- * decides whether `/metrics` serves them, so switching the endpoint on needs no restart of the logic.
- */
+/** Always recorded; `METRICS_ENABLED` only decides whether `/metrics` serves them. */
 @Injectable()
 export class MetricsService {
     readonly registry = new Registry();

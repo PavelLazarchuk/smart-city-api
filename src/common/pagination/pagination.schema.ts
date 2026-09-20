@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** Query parameters accepted by every list endpoint. Defaults are applied from config. */
 export const paginationQuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
     limit: z.coerce.number().int().min(1).optional(),
@@ -13,26 +12,19 @@ export const paginationQuerySchema = z.object({
 
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 
-/**
- * High-volume collections offer both modes. `mode` says which one explicitly; without it, a `cursor`
- * still selects cursor mode and `page`/`sort` select offset mode, and the default is `cursor`.
- */
+/** Without an explicit `mode`, `cursor` selects cursor mode and `page`/`sort` offset mode; the default is `cursor`. */
 export const cursorQuerySchema = z.object({
     cursor: z
         .string()
         .regex(/^[a-f0-9]{24}$/)
         .optional(),
     mode: z.enum(['cursor', 'page']).optional(),
-    /**
-     * Counting the whole match is the most expensive query of a cursor page on `analytics_events` and
-     * `sms`, and a scrolling client never reads it — so `total` is only computed when asked for.
-     */
+    /** Counting the whole match is the most expensive query of a cursor page, and a scrolling client never reads it. */
     with_total: z.stringbool().optional(),
 });
 
 export type CursorQuery = z.infer<typeof cursorQuerySchema>;
 
-/** The one place that decides between the two modes, so `sms` and `analytics` cannot drift apart. */
 export function usesCursorMode(query: CursorQuery & { page?: number; sort?: string }): boolean {
     if (query.mode) return query.mode === 'cursor';
 

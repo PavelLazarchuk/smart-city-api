@@ -143,7 +143,6 @@ export class CategoriesService implements OnModuleInit {
         );
     }
 
-    /** Used by the services module to validate `category_id` against the service's organization. */
     async assertBelongsTo(categoryId: string, organizationId: string): Promise<void> {
         const category = await this.loadForAdmin(categoryId);
 

@@ -25,11 +25,7 @@ export type JobStatus = JobLock;
 
 const ERROR_MAX_LENGTH = 500;
 
-/**
- * Distributed lock in `job_locks`: one atomic `findOneAndUpdate` upsert acquires it, a
- * duplicate-key error means another holder has it, a crashed holder's lease simply expires.
- * The same document records how the last run ended — see {@link JobLock}.
- */
+/** One atomic upsert takes the lease; a duplicate key means another holder, a crashed holder's lease expires. */
 @Injectable()
 export class JobLockService {
     readonly holderId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
@@ -110,7 +106,6 @@ export class JobLockService {
         await this.model.updateOne({ _id: job }, update).exec();
     }
 
-    /** Every known job with its lease and last outcome, for `GET /health/jobs`. */
     statuses(): Promise<JobStatus[]> {
         return this.model.find().sort({ _id: 1 }).lean<JobStatus[]>().exec();
     }

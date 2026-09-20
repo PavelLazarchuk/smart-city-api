@@ -12,7 +12,7 @@ describe('content resources (e2e)', () => {
     let superAdmin: FixtureUser;
     let admin: FixtureUser;
     let foreignAdmin: FixtureUser;
-    let citizen: FixtureUser;
+    let client: FixtureUser;
     const bearers: Record<string, string> = {};
 
     beforeAll(async () => {
@@ -27,11 +27,11 @@ describe('content resources (e2e)', () => {
         superAdmin = await fx.superAdmin();
         admin = await fx.admin([organization.id]);
         foreignAdmin = await fx.admin([foreignOrganization.id]);
-        citizen = await fx.citizen();
+        client = await fx.client();
         bearers['super'] = await fx.bearer(superAdmin);
         bearers['admin'] = await fx.bearer(admin);
         bearers['foreign'] = await fx.bearer(foreignAdmin);
-        bearers['citizen'] = await fx.bearer(citizen);
+        bearers['client'] = await fx.bearer(client);
     });
 
     const resources = [
@@ -84,7 +84,7 @@ describe('content resources (e2e)', () => {
             const url = `${t.prefix}/${resource.name}`;
             expectError(await t.http.post(url).send(resource.body()), 401, 'UNAUTHENTICATED');
             expectError(
-                await t.http.post(url).set('Authorization', bearers['citizen']!).send(resource.body()),
+                await t.http.post(url).set('Authorization', bearers['client']!).send(resource.body()),
                 403,
                 'FORBIDDEN',
             );
@@ -123,7 +123,7 @@ describe('content resources (e2e)', () => {
             expectError(
                 await t.http
                     .patch(`${url}/${id}`)
-                    .set('Authorization', bearers['citizen']!)
+                    .set('Authorization', bearers['client']!)
                     .send(resource.patch),
                 403,
                 'FORBIDDEN',
@@ -323,7 +323,7 @@ describe('content resources (e2e)', () => {
                 organization_id: organization.id,
                 option_id: option.id,
                 slot_id: slot.id,
-                user_id: citizen.id,
+                user_id: client.id,
                 time: '10:00',
                 person: 'P',
             });

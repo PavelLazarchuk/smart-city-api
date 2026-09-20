@@ -11,7 +11,6 @@ import { AuthStoreService } from './auth-store.service';
 import { SessionsRepository } from './sessions.repository';
 import { VerificationCodesRepository } from './verification-codes.repository';
 
-/** Auth persistence and policies, with no dependency on the users module — keeps the module graph acyclic. */
 @Module({
     imports: [
         MongooseModule.forFeature([
