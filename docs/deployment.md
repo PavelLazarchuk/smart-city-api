@@ -49,7 +49,10 @@ Every response carries the IETF `RateLimit-Limit`, `RateLimit-Remaining`, `RateL
 Rate limiting applies to every route, not only `/auth/*`: `THROTTLE_GLOBAL_LIMIT` is the soft per-IP ceiling
 for the public read surface, `THROTTLE_LIMIT` the strict one for `/auth/*` and per phone number,
 `THROTTLE_UPLOAD_LIMIT` the one for image uploads. `THROTTLE_STORAGE=mongo` (the default) shares the counters
-across replicas; `memory` is per process.
+across replicas; `redis` does the same over `REDIS_URL` at one `INCR` per request instead of a database write,
+and `memory` is per process. Redis is used as a cache here — counters carry their own expiry and nothing is
+worth persisting, so run it with saving off and `maxmemory-policy allkeys-lru` (see `docker-compose.yml`).
+A Redis outage does not fail requests: they pass unthrottled and the outage is logged.
 
 Offset pagination depth is capped at 1000 pages — a request beyond it is answered with
 `422 PAGE_OUT_OF_RANGE` instead of an unbounded `$skip`.

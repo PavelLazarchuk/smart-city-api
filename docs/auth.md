@@ -121,6 +121,14 @@ The full endpoint-by-endpoint access matrix is enforced by the authorization-mat
 counters live in the `rate_limits` collection and are therefore shared by every replica. Set
 `TRUST_PROXY=true` behind a reverse proxy, or every request will be counted against the proxy's IP.
 
+`THROTTLE_STORAGE=redis` (with `REDIS_URL`) keeps the same limits but moves the counters to Redis, where one
+`INCR` replaces a Mongo write per request — the option to pick once traffic is heavy enough that throttling
+would otherwise compete with real queries for database throughput. Each key is a single `INCR` plus a
+`PEXPIRE` inside one Lua script, so simultaneous requests share a window instead of each opening a fresh one,
+and keys expire on their own. If Redis is unreachable the request is let through and the outage is logged
+once: a protective layer must not take the API down with it, so capacity limits belong in front of the
+application (a WAF or `limit_req`) rather than here.
+
 Every response says where the caller stands: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
 (seconds) and `RateLimit-Policy` (`<limit>;w=<window seconds>`) describe the window with the least headroom
 among those that applied — on `/auth/*` the strict one — and a `429` carries `Retry-After`. The legacy

@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { type ExecutionContext } from '@nestjs/common';
-import { ThrottlerModule, ThrottlerStorageService } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerStorageService, type ThrottlerStorage } from '@nestjs/throttler';
 
 import { AppConfig } from '../../common/config/app-config';
 import { MongoThrottlerStorage } from './mongo-throttler.storage';
+import { RedisThrottlerStorage } from './redis-throttler.storage';
 import { AuthStoreModule } from './store/auth-store.module';
 
 function pathOf(context: ExecutionContext): string {
@@ -20,13 +21,32 @@ function methodOf(context: ExecutionContext): string {
     return context.switchToHttp().getRequest<{ method?: string }>().method ?? '';
 }
 
+function storageFor(
+    config: AppConfig,
+    mongo: MongoThrottlerStorage,
+    redis: RedisThrottlerStorage,
+): ThrottlerStorage {
+    switch (config.throttle.storage) {
+        case 'mongo':
+            return mongo;
+        case 'redis':
+            return redis;
+        default:
+            return new ThrottlerStorageService();
+    }
+}
+
 @Module({
     imports: [
         ThrottlerModule.forRootAsync({
             imports: [AuthStoreModule],
-            inject: [AppConfig, MongoThrottlerStorage],
-            useFactory: (config: AppConfig, mongoStorage: MongoThrottlerStorage) => ({
-                storage: config.throttle.storage === 'mongo' ? mongoStorage : new ThrottlerStorageService(),
+            inject: [AppConfig, MongoThrottlerStorage, RedisThrottlerStorage],
+            useFactory: (
+                config: AppConfig,
+                mongoStorage: MongoThrottlerStorage,
+                redisStorage: RedisThrottlerStorage,
+            ) => ({
+                storage: storageFor(config, mongoStorage, redisStorage),
                 throttlers: [
                     {
                         name: 'global',

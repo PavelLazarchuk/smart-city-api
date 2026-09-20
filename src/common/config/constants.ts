@@ -7,6 +7,14 @@ export const MONGO_CONNECTION = {
     readPreference: 'primary',
 } as const;
 
+export const REDIS_CONNECTION = {
+    defaultUrl: 'redis://127.0.0.1:6379',
+    keyPrefix: 'throttle:',
+    connectTimeoutMs: 3000,
+    commandTimeoutMs: 1000,
+    maxRetriesPerRequest: 1,
+} as const;
+
 export const ARGON2_PARAMS = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
 export const ARGON2_TEST_PARAMS = { memoryCost: 4096, timeCost: 1, parallelism: 1 } as const;
 

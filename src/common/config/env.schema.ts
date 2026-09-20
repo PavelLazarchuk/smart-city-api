@@ -111,7 +111,9 @@ export const envSchema = z
         THROTTLE_LIMIT: positiveInt(10),
         THROTTLE_GLOBAL_LIMIT: positiveInt(200),
         THROTTLE_UPLOAD_LIMIT: positiveInt(20),
-        THROTTLE_STORAGE: z.enum(['mongo', 'memory']).default('mongo'),
+        THROTTLE_STORAGE: z.enum(['mongo', 'memory', 'redis']).default('mongo'),
+
+        REDIS_URL: optionalString,
 
         PUBLIC_SITE_URL: z.url().default('http://localhost:5173'),
         DEFAULT_CURRENCY: z
@@ -208,6 +210,22 @@ export const envSchema = z
                 code: 'custom',
                 path: ['SMTP_HOST'],
                 message: 'SMTP_HOST is required when MAIL_PROVIDER=smtp',
+            });
+        }
+
+        if (env.THROTTLE_STORAGE === 'redis' && !env.REDIS_URL) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['REDIS_URL'],
+                message: 'REDIS_URL is required when THROTTLE_STORAGE=redis',
+            });
+        }
+
+        if (env.REDIS_URL && !/^rediss?:\/\//.test(env.REDIS_URL)) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['REDIS_URL'],
+                message: 'REDIS_URL must start with redis:// or rediss://',
             });
         }
 

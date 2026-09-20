@@ -73,7 +73,8 @@ Notable switches:
 
 - `AUTH_ADMIN_LOGIN_METHOD` / `AUTH_CLIENT_LOGIN_METHOD` — `password` or `sms`, independently per audience.
 - `SMS_PROVIDER` (`console` | `smpp`), `MAIL_PROVIDER` (`console` | `smtp`), `STORAGE_PROVIDER` (`local` | `s3`).
-- `THROTTLE_STORAGE` (`mongo` | `memory`) — the Mongo storage is shared by every replica.
+- `THROTTLE_STORAGE` (`mongo` | `redis` | `memory`) — Mongo and Redis are shared by every replica, `memory`
+  is per process. `redis` needs `REDIS_URL` and keeps the counter writes off the database.
 - `THROTTLE_LIMIT` / `THROTTLE_GLOBAL_LIMIT` / `THROTTLE_UPLOAD_LIMIT` — strict limit for `/auth/*` and per
   phone, soft per-IP ceiling for everything else, and the limit for image uploads.
 - `SWAGGER_ENABLED` — defaults to on, except under `NODE_ENV=production` where it must be set explicitly.

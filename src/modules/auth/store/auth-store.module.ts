@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MongoThrottlerStorage } from '../mongo-throttler.storage';
 import { PasswordService } from '../password.service';
 import { PhonePolicy } from '../phone.policy';
+import { RedisThrottlerStorage } from '../redis-throttler.storage';
 import { RateLimit, RateLimitSchema } from '../schemas/rate-limit.schema';
 import { Session, SessionSchema } from '../schemas/session.schema';
 import { VerificationCode, VerificationCodeSchema } from '../schemas/verification-code.schema';
@@ -26,6 +27,7 @@ import { VerificationCodesRepository } from './verification-codes.repository';
         PasswordService,
         PhonePolicy,
         MongoThrottlerStorage,
+        RedisThrottlerStorage,
     ],
     exports: [
         MongooseModule,
@@ -35,6 +37,7 @@ import { VerificationCodesRepository } from './verification-codes.repository';
         PasswordService,
         PhonePolicy,
         MongoThrottlerStorage,
+        RedisThrottlerStorage,
     ],
 })
 export class AuthStoreModule {}

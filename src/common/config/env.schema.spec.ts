@@ -57,6 +57,18 @@ describe('env schema', () => {
         expect(validateEnv(base).SMS_PROVIDER).toBe('console');
     });
 
+    it('demands a redis url only when the throttler stores its counters there', () => {
+        expect(() => validateEnv({ ...base, THROTTLE_STORAGE: 'redis' })).toThrow(/REDIS_URL/);
+        expect(() => validateEnv({ ...base, REDIS_URL: 'http://localhost:6379' })).toThrow(/REDIS_URL/);
+        expect(
+            validateEnv({ ...base, THROTTLE_STORAGE: 'redis', REDIS_URL: 'rediss://cache:6380' }),
+        ).toMatchObject({
+            THROTTLE_STORAGE: 'redis',
+            REDIS_URL: 'rediss://cache:6380',
+        });
+        expect(new AppConfig(validateEnv(base)).redis.url).toBe('redis://127.0.0.1:6379');
+    });
+
     it('leaves Swagger to the environment: on by default, off in production unless asked for', () => {
         expect(new AppConfig(validateEnv(base)).http.swaggerEnabled).toBe(true);
         const production = {

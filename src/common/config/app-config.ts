@@ -9,6 +9,7 @@ import {
     MAIL_FROM_NAME,
     MONGO_CONNECTION,
     OUTBOX,
+    REDIS_CONNECTION,
     PAGINATION,
     STORAGE_GC_MIN_AGE_SECONDS,
     UPLOAD_LIMITS,
@@ -89,6 +90,8 @@ export class AppConfig {
         uploadLimit: number;
         storage: Env['THROTTLE_STORAGE'];
     };
+
+    readonly redis: { url: string; keyPrefix: string };
 
     readonly idempotency: { ttlSeconds: number };
 
@@ -218,6 +221,10 @@ export class AppConfig {
             globalLimit: env.THROTTLE_GLOBAL_LIMIT,
             uploadLimit: env.THROTTLE_UPLOAD_LIMIT,
             storage: env.THROTTLE_STORAGE,
+        };
+        this.redis = {
+            url: env.REDIS_URL ?? REDIS_CONNECTION.defaultUrl,
+            keyPrefix: REDIS_CONNECTION.keyPrefix,
         };
         this.idempotency = { ttlSeconds: IDEMPOTENCY_TTL_SECONDS };
         this.site = {
