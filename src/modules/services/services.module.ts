@@ -15,6 +15,7 @@ import { ServicesController } from './services.controller';
 import { ServicesMasker } from './services.masker';
 import { ServicesRepository } from './services.repository';
 import { ServicesService } from './services.service';
+import { SlotAdminService } from './slot-admin.service';
 
 @Module({
     imports: [
@@ -36,6 +37,7 @@ import { ServicesService } from './services.service';
         ServicesMasker,
         ServicesService,
         BookingsService,
+        SlotAdminService,
     ],
     exports: [ServicesService, BookingsService],
 })

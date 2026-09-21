@@ -57,6 +57,69 @@ export class WaitlistRepository extends BaseRepository<WaitlistEntry> {
             .exec();
     }
 
+    findBySlot(
+        serviceId: string,
+        optionId: string,
+        slotId: string,
+        time: string | undefined,
+        limit: number,
+        session?: ClientSession,
+    ): Promise<WaitlistEntryEntity[]> {
+        return this.model
+            .find(this.slotFilter(serviceId, optionId, [slotId], time))
+            .sort({ created_at: 1, _id: 1 })
+            .limit(limit)
+            .session(session ?? null)
+            .lean<WaitlistEntryEntity[]>()
+            .exec();
+    }
+
+    deleteBySlot(
+        serviceId: string,
+        optionId: string,
+        slotId: string,
+        time: string | undefined,
+        session?: ClientSession,
+    ): Promise<number> {
+        return this.deleteMany(this.slotFilter(serviceId, optionId, [slotId], time), session);
+    }
+
+    private slotFilter(
+        serviceId: string,
+        optionId: string,
+        slotIds: string[],
+        time?: string,
+    ): FilterQuery<WaitlistEntry> {
+        const filter: FilterQuery<WaitlistEntry> = {
+            service_id: new Types.ObjectId(serviceId),
+            option_id: optionId,
+            slot_id: slotIds.length === 1 ? slotIds[0] : { $in: slotIds },
+        };
+
+        if (time !== undefined) filter['slot_time'] = time;
+
+        return filter;
+    }
+
+    async moveMany(
+        moves: { id: string; slot_date: string; slot_time: string | null }[],
+        session?: ClientSession,
+    ): Promise<number> {
+        if (moves.length === 0) return 0;
+
+        const result = await this.model.bulkWrite(
+            moves.map(({ id, slot_date: slotDate, slot_time: slotTime }) => ({
+                updateOne: {
+                    filter: { id },
+                    update: { $set: { slot_date: slotDate, slot_time: slotTime } },
+                },
+            })),
+            { session, ordered: true },
+        );
+
+        return result.modifiedCount;
+    }
+
     async deleteByPublicId(id: string, session?: ClientSession): Promise<boolean> {
         return (await this.deleteMany({ id }, session)) > 0;
     }
@@ -101,9 +164,6 @@ export class WaitlistRepository extends BaseRepository<WaitlistEntry> {
     ): Promise<number> {
         if (slotIds.length === 0) return Promise.resolve(0);
 
-        return this.deleteMany(
-            { service_id: new Types.ObjectId(serviceId), option_id: optionId, slot_id: { $in: slotIds } },
-            session,
-        );
+        return this.deleteMany(this.slotFilter(serviceId, optionId, slotIds), session);
     }
 }

@@ -71,7 +71,9 @@ reminder and the freed-place notice) and every enabled webhook subscribed to it 
 plus the platform-wide ones a super-admin created. `booking.reminder` and `waitlist.slot_available` each have
 two handlers, `mail` and `sms`, which read the recipient captured in the event's `internal`: the mail one sends
 when the account has an `email`, the SMS one only when it has none, so exactly one channel is used per event
-and a mail failure is retried as mail rather than turning into an SMS. Every target is retried on its own with
+and a mail failure is retried as mail rather than turning into an SMS. `booking.cancelled` and
+`booking.rescheduled` have the same pair, and they act only on an event a bulk slot operation marked as
+announced in `internal`, so a client who cancels their own booking is not told about it. Every target is retried on its own with
 exponential backoff up to `OUTBOX.maxAttempts`; an event is `failed` only once the budget is spent, and
 `POST /outbox/events/:id/replay` puts it back. The `outbox_dispatch` job is the safety net for retries and for
 a replica that died between commit and poke.

@@ -20,6 +20,8 @@ export const ARGON2_TEST_PARAMS = { memoryCost: 4096, timeCost: 1, parallelism: 
 
 export const IDEMPOTENCY_TTL_SECONDS = 24 * 3600;
 
+export const SLOT_BULK_MAX_BOOKINGS = 500;
+
 export const PAGINATION = {
     defaultLimit: 30,
     maxLimit: 100,

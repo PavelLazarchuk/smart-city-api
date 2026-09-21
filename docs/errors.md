@@ -128,6 +128,9 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `OPTION_HAS_BOOKINGS`                  | 409    | The option still holds bookings and cannot be removed                                         |
 | `SLOT_HAS_BOOKINGS`                    | 409    | The slot still holds bookings and cannot be removed                                           |
 | `SLOT_TIME_BOOKED`                     | 409    | A time entry that already holds bookings cannot be renamed or removed                         |
+| `SLOT_DATE_TAKEN`                      | 409    | Another slot of the option already covers the date a day is moved to                          |
+| `SLOT_TIME_OUT_OF_RANGE`               | 422    | `shift_minutes` would push a time out of its day                                              |
+| `SLOT_BULK_TOO_LARGE`                  | 422    | The slot holds more bookings than one bulk operation may touch                                |
 | `SLOT_NOT_DATED`                       | 422    | This slot type has no date                                                                    |
 | `SLOT_NOT_LIMITED`                     | 422    | This slot type has no capacity limit                                                          |
 | `SLOT_NOT_TIMED`                       | 422    | This slot type has no time entries                                                            |

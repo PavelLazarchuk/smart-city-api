@@ -64,6 +64,74 @@ export class BookingsRepository extends BaseRepository<Booking> {
         );
     }
 
+    findActiveBySlot(
+        serviceId: string,
+        optionId: string,
+        slotId: string,
+        time: string | undefined,
+        limit: number,
+        session?: ClientSession,
+    ): Promise<BookingEntity[]> {
+        const filter: FilterQuery<Booking> = {
+            service_id: new Types.ObjectId(serviceId),
+            option_id: optionId,
+            slot_id: slotId,
+            active: true,
+        };
+
+        if (time !== undefined) filter['slot_time'] = time;
+
+        return this.model
+            .find(filter)
+            .sort({ created_at: 1, _id: 1 })
+            .limit(limit)
+            .session(session ?? null)
+            .lean<BookingEntity[]>()
+            .exec();
+    }
+
+    async cancelMany(ids: string[], by: Types.ObjectId, now: Date, session?: ClientSession): Promise<number> {
+        if (ids.length === 0) return 0;
+
+        const result = await this.model
+            .updateMany(
+                { id: { $in: ids }, active: true },
+                {
+                    $set: {
+                        status: 'cancelled',
+                        active: false,
+                        finished_at: now,
+                        status_changed_by: by,
+                    },
+                },
+            )
+            .session(session ?? null)
+            .exec();
+
+        return result.modifiedCount;
+    }
+
+    async moveMany(
+        moves: { id: string; slot_date: string; slot_time: string | null }[],
+        session?: ClientSession,
+    ): Promise<number> {
+        if (moves.length === 0) return 0;
+
+        const result = await this.model.bulkWrite(
+            moves.map(({ id, slot_date: slotDate, slot_time: slotTime }) => ({
+                updateOne: {
+                    filter: { id, active: true },
+                    update: {
+                        $set: { slot_date: slotDate, slot_time: slotTime, reminder_sent_at: null },
+                    },
+                },
+            })),
+            { session, ordered: true },
+        );
+
+        return result.modifiedCount;
+    }
+
     countActiveBySlot(
         serviceId: string,
         optionId: string,

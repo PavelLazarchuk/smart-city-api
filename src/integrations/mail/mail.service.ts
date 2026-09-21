@@ -58,4 +58,34 @@ export class MailService {
             text: texts.mail.waitlistBody(data),
         });
     }
+
+    sendBookingCancellation(
+        to: string,
+        data: { service: string; date?: string; time?: string; phone: string; reason?: string },
+    ): Promise<void> {
+        return this.send({
+            to: [to],
+            subject: texts.mail.cancelledSubject,
+            text: texts.mail.cancelledBody(data),
+        });
+    }
+
+    sendBookingMoved(
+        to: string,
+        data: {
+            service: string;
+            date?: string;
+            time?: string;
+            previous_date?: string;
+            previous_time?: string;
+            phone: string;
+            reason?: string;
+        },
+    ): Promise<void> {
+        return this.send({
+            to: [to],
+            subject: texts.mail.movedSubject,
+            text: texts.mail.movedBody(data),
+        });
+    }
 }

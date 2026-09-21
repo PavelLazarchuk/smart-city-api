@@ -49,6 +49,10 @@ import {
     type BookingCreated,
     BookingCreatedResponseDto,
     bookingCreatedResponseSchema,
+    CloseSlotDto,
+    type CloseSlotResult,
+    CloseSlotResponseDto,
+    closeSlotResponseSchema,
     CreateBookingDto,
     CreateOptionDto,
     CreateServiceDto,
@@ -58,6 +62,10 @@ import {
     ListServicesQueryDto,
     MaskedServiceResponseDto,
     maskedServiceResponseSchema,
+    MoveSlotDto,
+    type MoveSlotResult,
+    MoveSlotResponseDto,
+    moveSlotResponseSchema,
     NearbyQueryDto,
     RecurrenceDto,
     serviceSchemaForViewer,
@@ -73,6 +81,7 @@ import {
 import { type ServiceRevisionEntity } from './service-revisions.repository';
 import { type ServiceEntity } from './services.repository';
 import { type ServiceListItem, ServicesService } from './services.service';
+import { SlotAdminService } from './slot-admin.service';
 
 function parseIdempotencyKey(raw: string | undefined): string | undefined {
     const key = raw?.trim();
@@ -113,6 +122,7 @@ export class ServicesController {
     constructor(
         private readonly services: ServicesService,
         private readonly bookings: BookingsService,
+        private readonly slots: SlotAdminService,
     ) {}
 
     @Get()
@@ -389,6 +399,81 @@ export class ServicesController {
         @CurrentUser() user: AuthUser,
     ): Promise<void> {
         await this.services.removeSlot(id, optionId, slotId, user);
+    }
+
+    @Post(':id/options/:option_id/slots/:slot_id/cancel')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @HttpCode(HttpStatus.OK)
+    @ApiData(CloseSlotResponseDto)
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'OPTION_NOT_FOUND',
+        'SLOT_NOT_FOUND',
+        'SLOT_NOT_BOOKABLE',
+        'SLOT_NOT_TIMED',
+        'SLOT_BULK_TOO_LARGE',
+        'IDEMPOTENCY_IN_PROGRESS',
+        'IDEMPOTENCY_KEY_REUSED',
+    )
+    @Serialize(closeSlotResponseSchema)
+    closeSlot(
+        @Param('id') id: string,
+        @Param('option_id') optionId: string,
+        @Param('slot_id') slotId: string,
+        @Body() body: CloseSlotDto,
+        @CurrentUser() user: AuthUser,
+        @Res({ passthrough: true }) res: Response,
+        @Headers('idempotency-key') idempotencyKey?: string,
+    ): Promise<CloseSlotResult> {
+        return this.replayable(
+            this.slots.close(id, optionId, slotId, body, user, parseIdempotencyKey(idempotencyKey)),
+            res,
+        );
+    }
+
+    @Post(':id/options/:option_id/slots/:slot_id/move')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @HttpCode(HttpStatus.OK)
+    @ApiData(MoveSlotResponseDto)
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'OPTION_NOT_FOUND',
+        'SLOT_NOT_FOUND',
+        'SLOT_NOT_DATED',
+        'SLOT_NOT_TIMED',
+        'SLOT_EXPIRED',
+        'SLOT_DATE_TAKEN',
+        'SLOT_TIME_OUT_OF_RANGE',
+        'SLOT_BULK_TOO_LARGE',
+        'IDEMPOTENCY_IN_PROGRESS',
+        'IDEMPOTENCY_KEY_REUSED',
+    )
+    @Serialize(moveSlotResponseSchema)
+    moveSlot(
+        @Param('id') id: string,
+        @Param('option_id') optionId: string,
+        @Param('slot_id') slotId: string,
+        @Body() body: MoveSlotDto,
+        @CurrentUser() user: AuthUser,
+        @Res({ passthrough: true }) res: Response,
+        @Headers('idempotency-key') idempotencyKey?: string,
+    ): Promise<MoveSlotResult> {
+        return this.replayable(
+            this.slots.move(id, optionId, slotId, body, user, parseIdempotencyKey(idempotencyKey)),
+            res,
+        );
+    }
+
+    private async replayable<T>(work: Promise<{ result: T; replayed: boolean }>, res: Response): Promise<T> {
+        const { result, replayed } = await work;
+
+        if (replayed) res.setHeader('Idempotency-Replayed', 'true');
+
+        return result;
     }
 
     /** Authenticated, any role: a booking always belongs to the calling user. */

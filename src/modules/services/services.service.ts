@@ -48,8 +48,10 @@ import {
     formatDateOnly,
     mergeBookings,
     optionFromInput,
+    optionOf,
     type RecurrentSlotPlan,
     slotFromInput,
+    slotOf,
 } from './slot.logic';
 
 const SERVICE_SORTABLE = ['position', 'created_at', 'label', 'price', 'published_at'] as const;
@@ -671,6 +673,15 @@ export class ServicesService implements OnModuleInit {
         );
     }
 
+    recordSlotChange(
+        before: ServiceEntity,
+        after: ServiceEntity,
+        viewer: AuthUser,
+        session: ClientSession,
+    ): Promise<void> {
+        return this.record(after, 'slot.update', before, after, viewer, session);
+    }
+
     /** Validated against the stored document in a transaction, then written with `arrayFilters`. */
     async addOption(id: string, input: ServiceOptionInput, viewer?: AuthUser): Promise<ServiceEntity> {
         const service = await this.tx.run(async (ctx) => {
@@ -693,7 +704,7 @@ export class ServicesService implements OnModuleInit {
     ): Promise<ServiceEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            this.optionOf(before, optionId);
+            optionOf(before, optionId);
             const fields: Record<string, unknown> = {};
 
             if (input.label !== undefined) fields['label'] = input.label;
@@ -717,7 +728,7 @@ export class ServicesService implements OnModuleInit {
     removeOption(id: string, optionId: string, viewer?: AuthUser): Promise<void> {
         return this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            this.optionOf(before, optionId);
+            optionOf(before, optionId);
 
             if ((await this.bookings.countActiveByOption(id, optionId, ctx.session)) > 0)
                 throw ApiError.conflict('OPTION_HAS_BOOKINGS');
@@ -736,7 +747,7 @@ export class ServicesService implements OnModuleInit {
     ): Promise<ServiceEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            this.optionOf(before, optionId);
+            optionOf(before, optionId);
             const dates: RecurrentDate[] | null =
                 input.recurrent_dates === null
                     ? null
@@ -758,7 +769,7 @@ export class ServicesService implements OnModuleInit {
     async addSlot(id: string, optionId: string, input: SlotInput, viewer?: AuthUser): Promise<ServiceEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            const option = this.optionOf(before, optionId);
+            const option = optionOf(before, optionId);
             const slot = slotFromInput(input);
 
             if (option.slots.some((item) => item.id === slot.id)) throw ApiError.conflict('CONFLICT');
@@ -783,7 +794,7 @@ export class ServicesService implements OnModuleInit {
     ): Promise<ServiceEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            const slot = this.slotOf(this.optionOf(before, optionId), slotId);
+            const slot = slotOf(optionOf(before, optionId), slotId);
             const fields: Record<string, unknown> = {};
 
             if (input.label !== undefined) fields['label'] = input.label;
@@ -823,7 +834,7 @@ export class ServicesService implements OnModuleInit {
     removeSlot(id: string, optionId: string, slotId: string, viewer?: AuthUser): Promise<void> {
         return this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            this.slotOf(this.optionOf(before, optionId), slotId);
+            slotOf(optionOf(before, optionId), slotId);
 
             if ((await this.bookings.countActiveBySlot(id, optionId, slotId, ctx.session)) > 0)
                 throw ApiError.conflict('SLOT_HAS_BOOKINGS');
@@ -868,28 +879,12 @@ export class ServicesService implements OnModuleInit {
         }
     }
 
-    private async load(id: string, session: ClientSession): Promise<ServiceEntity> {
+    async load(id: string, session: ClientSession): Promise<ServiceEntity> {
         const service = await this.services.findById(id, session);
 
         if (!service || service.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
         return service;
-    }
-
-    private optionOf(service: ServiceEntity, optionId: string) {
-        const option = service.options.find((item) => item.id === optionId);
-
-        if (!option) throw ApiError.notFound('OPTION_NOT_FOUND');
-
-        return option;
-    }
-
-    private slotOf(option: { slots: Slot[] }, slotId: string): Slot {
-        const slot = option.slots.find((item) => item.id === slotId);
-
-        if (!slot) throw ApiError.notFound('SLOT_NOT_FOUND');
-
-        return slot;
     }
 
     /** Bookings are read only for viewers allowed to see them; everyone else gets markers from `booked_count`. */

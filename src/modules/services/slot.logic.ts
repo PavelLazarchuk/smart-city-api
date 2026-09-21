@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type Types } from 'mongoose';
 
+import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
 import { type BookingEntity } from '../bookings/bookings.repository';
 import { type ServiceOptionInput, type SlotInput } from './dto/service.schemas';
@@ -20,6 +21,25 @@ export function formatDateOnly(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
+}
+
+export function optionOf<T extends { options: ServiceOption[] }>(
+    service: T,
+    optionId: string,
+): ServiceOption {
+    const option = service.options.find((item) => item.id === optionId);
+
+    if (!option) throw ApiError.notFound('OPTION_NOT_FOUND');
+
+    return option;
+}
+
+export function slotOf(option: { slots: Slot[] }, slotId: string): Slot {
+    const slot = option.slots.find((item) => item.id === slotId);
+
+    if (!slot) throw ApiError.notFound('SLOT_NOT_FOUND');
+
+    return slot;
 }
 
 export function slotFromInput(input: SlotInput): Slot {
@@ -210,13 +230,13 @@ export interface RecurrenceContext {
     blackout_dates?: string[];
 }
 
-function minutesOf(time: string): number {
+export function minutesOf(time: string): number {
     const [hours = 0, minutes = 0] = time.split(':').map(Number);
 
     return hours * 60 + minutes;
 }
 
-function timeOf(minutes: number): string {
+export function timeOf(minutes: number): string {
     return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 

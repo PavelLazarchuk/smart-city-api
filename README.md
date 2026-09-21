@@ -21,11 +21,10 @@ The rest of the documentation is indexed in [docs/README.md](docs/README.md).
 ## Getting started
 
 ```bash
-cp .env.example .env      # fill in MONGO_URI and the two JWT secrets at minimum
+cp .env.example .env   # fill in MONGO_URI and the two JWT secrets at minimum
 npm ci
-npm run migrate:up        # creates the indexes
-npm run seed              # optional development data (super-admin: superadmin / Superadmin-Pass1)
-                          # idempotent: re-running it adds neither accounts nor content
+npm run migrate:up     # creates the indexes
+npm run seed           # optional development data (super-admin: superadmin / Superadmin-Pass1)
 npm run start:dev
 ```
 
@@ -122,6 +121,17 @@ migration that creates the index, because changing one needs a `collMod` migrati
 - Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
   `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
   `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.
+- A slot also has two bulk admin operations, both in one transaction:
+  `POST /services/:id/options/:option_id/slots/:slot_id/cancel` cancels every active booking of the slot, or of
+  the one `time` given. With `remove` the slot (or that time) is deleted as well — the cabinet is closed, so its
+  waiting list is dropped with it, since no place is freed. Without `remove` the capacity stays open and the
+  freed places are offered to the waiting list exactly as an ordinary cancellation would.
+  `POST /services/:id/options/:option_id/slots/:slot_id/move` moves the whole day to another `date`, optionally
+  shifting every time by `shift_minutes`, carrying the bookings and the waiting list with it and clearing the
+  reminder flag so the notice matches the new day. Both tell the affected clients by e-mail or SMS unless
+  `notify: false`, take a `reason` that travels into the notice and the webhook payload, refuse to touch more
+  than 500 rows at once, and accept an `Idempotency-Key` so a retried shift is replayed rather than applied
+  twice.
 - `GET /organizations/:id` returns the tree with every child list capped at 50 items. Services
   appear as cards — the fields a tile needs plus `options_count`, without `options`, so without slots or
   bookings; the full document comes from `GET /services/:id` or `GET /organizations/:id/services/:slug`,

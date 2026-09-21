@@ -592,6 +592,54 @@ export const updateSlotSchema = z
 export type UpdateSlotInput = z.infer<typeof updateSlotSchema>;
 export class UpdateSlotDto extends createZodDto(updateSlotSchema) {}
 
+export const closeSlotSchema = z.object({
+    time: timeOfDaySchema.optional(),
+    reason: z.string().trim().max(500).optional(),
+    remove: z.boolean().optional(),
+    notify: z.boolean().optional(),
+});
+export type CloseSlotInput = z.infer<typeof closeSlotSchema>;
+export class CloseSlotDto extends createZodDto(closeSlotSchema) {}
+
+export const closeSlotResponseSchema = z.object({
+    service_id: idOutputSchema,
+    option_id: z.string(),
+    slot_id: z.string(),
+    time: outputText.nullable(),
+    cancelled: z.number().int().min(0),
+    waitlist_dropped: z.number().int().min(0),
+    notifications_queued: z.number().int().min(0),
+    removed: z.boolean(),
+});
+export type CloseSlotResult = z.infer<typeof closeSlotResponseSchema>;
+export class CloseSlotResponseDto extends createZodDto(closeSlotResponseSchema) {}
+
+export const moveSlotSchema = z.object({
+    date: dateOnlySchema,
+    shift_minutes: z
+        .number()
+        .int()
+        .min(-(24 * 60 - 1))
+        .max(24 * 60 - 1)
+        .optional(),
+    reason: z.string().trim().max(500).optional(),
+    notify: z.boolean().optional(),
+});
+export type MoveSlotInput = z.infer<typeof moveSlotSchema>;
+export class MoveSlotDto extends createZodDto(moveSlotSchema) {}
+
+export const moveSlotResponseSchema = z.object({
+    service_id: idOutputSchema,
+    option_id: z.string(),
+    slot_id: z.string(),
+    date: outputText,
+    previous_date: outputText,
+    moved: z.number().int().min(0),
+    notifications_queued: z.number().int().min(0),
+});
+export type MoveSlotResult = z.infer<typeof moveSlotResponseSchema>;
+export class MoveSlotResponseDto extends createZodDto(moveSlotResponseSchema) {}
+
 export const recurrenceSchema = z.object({
     recurrent_dates: z.array(recurrentDateSchema).max(7).nullable(),
 });

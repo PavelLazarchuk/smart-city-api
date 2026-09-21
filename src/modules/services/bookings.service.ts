@@ -9,7 +9,6 @@ import { ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError, type ApiErrorDetail } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { type OutboxEventEntity } from '../../common/outbox/outbox.repository';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
@@ -37,6 +36,7 @@ import { type WaitlistEntryEntity, WaitlistRepository } from '../bookings/waitli
 import { OrganizationsService } from '../organizations/organizations.service';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
+import { eventPayload, notice, recipientEmail, text } from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
 import { BOOKABLE_SLOT_TYPES, type ServiceOption, type Slot } from './schemas/service.schema';
@@ -119,43 +119,6 @@ function toWaitlistResource(entry: WaitlistEntryEntity): WaitlistEntryResource {
         notified_at: entry.notified_at ? entry.notified_at.toISOString() : null,
         created_at: entry.created_at.toISOString(),
     };
-}
-
-function eventPayload(
-    booking: BookingEntity | Booking,
-    extra: Record<string, unknown> = {},
-): Record<string, unknown> {
-    return {
-        booking_id: booking.id,
-        service_id: booking.service_id.toHexString(),
-        organization_id: booking.organization_id.toHexString(),
-        option_id: booking.option_id,
-        slot_id: booking.slot_id,
-        child_type: booking.child_type,
-        date: booking.slot_date,
-        time: booking.slot_time,
-        user_id: booking.user_id.toHexString(),
-        status: booking.status,
-        service_label: booking.service_label,
-        ...extra,
-    };
-}
-
-function text(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-}
-
-function notice(event: OutboxEventEntity): { service: string; date?: string; time?: string; phone: string } {
-    return {
-        service: text(event.payload['service_label']),
-        date: (event.payload['date'] as string | null) ?? undefined,
-        time: (event.payload['time'] as string | null) ?? undefined,
-        phone: text(event.internal?.['phone']),
-    };
-}
-
-function recipientEmail(event: OutboxEventEntity): string {
-    return text(event.internal?.['email']);
 }
 
 function slotStart(date: string | null | undefined, time: string | null | undefined): Date | null {
@@ -707,7 +670,7 @@ export class BookingsService implements OnModuleInit {
         await this.waitlist.deleteByPublicId(id);
     }
 
-    private async notifyWaitlist(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
+    async notifyWaitlist(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
         const entry = await this.waitlist.claimNextWaiting(
             booking.service_id,
             booking.option_id,

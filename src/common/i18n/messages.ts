@@ -70,6 +70,9 @@ export const ERROR_CODES = {
     OPTION_DISABLED: 'OPTION_DISABLED',
     SERVICE_MODIFIED: 'SERVICE_MODIFIED',
     SLOT_TIME_BOOKED: 'SLOT_TIME_BOOKED',
+    SLOT_DATE_TAKEN: 'SLOT_DATE_TAKEN',
+    SLOT_TIME_OUT_OF_RANGE: 'SLOT_TIME_OUT_OF_RANGE',
+    SLOT_BULK_TOO_LARGE: 'SLOT_BULK_TOO_LARGE',
 
     SERVICE_SLUG_TAKEN: 'SERVICE_SLUG_TAKEN',
     SERVICE_NOT_DELETED: 'SERVICE_NOT_DELETED',
@@ -176,6 +179,9 @@ export const errorMessages: Record<ErrorCode, string> = {
     OPTION_DISABLED: 'This service option is disabled.',
     SERVICE_MODIFIED: 'The service changed while you were editing it. Reload and try again.',
     SLOT_TIME_BOOKED: 'A time that already has bookings cannot be renamed or removed.',
+    SLOT_DATE_TAKEN: 'Another slot of this option already covers that date.',
+    SLOT_TIME_OUT_OF_RANGE: 'The shift moves a time out of the day.',
+    SLOT_BULK_TOO_LARGE: 'The slot holds more bookings than one bulk operation may touch.',
 
     SERVICE_SLUG_TAKEN: 'This slug is already used by another service of the organization.',
     SERVICE_NOT_DELETED: 'The service is not in the trash.',
@@ -214,6 +220,10 @@ export const texts = {
             `Reminder: ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}.`,
         waitlist: (data: { service: string; date?: string; time?: string }): string =>
             `A place is free for ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}. Book it now.`,
+        cancelled: (data: { service: string; date?: string; time?: string; reason?: string }): string =>
+            `${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''} was cancelled.${data.reason ? ` ${data.reason}` : ''}`,
+        moved: (data: { service: string; date?: string; time?: string; reason?: string }): string =>
+            `${data.service} was moved to ${data.date ?? 'another date'}${data.time ? `, ${data.time}` : ''}.${data.reason ? ` ${data.reason}` : ''}`,
     },
     mail: {
         bookingSubject: 'Smart City: new booking',
@@ -243,6 +253,35 @@ export const texts = {
             [
                 `A place is free for ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}. Book it now.`,
                 `You are on the waiting list with phone ${data.phone || 'not specified'}.`,
+            ].join('\n'),
+        cancelledSubject: 'Smart City: booking cancelled',
+        cancelledBody: (data: {
+            service: string;
+            date?: string;
+            time?: string;
+            phone: string;
+            reason?: string;
+        }): string =>
+            [
+                `${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''} was cancelled by the organization.`,
+                ...(data.reason ? [`Reason: ${data.reason}`] : []),
+                `Booked with phone ${data.phone || 'not specified'}.`,
+            ].join('\n'),
+        movedSubject: 'Smart City: booking moved',
+        movedBody: (data: {
+            service: string;
+            date?: string;
+            time?: string;
+            previous_date?: string;
+            previous_time?: string;
+            phone: string;
+            reason?: string;
+        }): string =>
+            [
+                `${data.service} was moved to ${data.date ?? 'another date'}${data.time ? ` at ${data.time}` : ''}.`,
+                `It was booked for ${data.previous_date ?? 'the agreed date'}${data.previous_time ? ` at ${data.previous_time}` : ''}.`,
+                ...(data.reason ? [`Reason: ${data.reason}`] : []),
+                `Booked with phone ${data.phone || 'not specified'}.`,
             ].join('\n'),
         reportSubject: 'Smart City: services without upcoming slots',
         reportBody: (count: number): string =>

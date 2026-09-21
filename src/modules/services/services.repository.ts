@@ -321,6 +321,60 @@ export class ServicesRepository extends BaseRepository<Service> {
         );
     }
 
+    async renameTimes(
+        id: string,
+        optionId: string,
+        slotId: string,
+        moves: [string, string][],
+        session?: ClientSession,
+    ): Promise<number> {
+        if (moves.length === 0) return 0;
+
+        const result = await this.model.bulkWrite(
+            moves.map(([from, to]) => ({
+                updateOne: {
+                    filter: { _id: new Types.ObjectId(id) },
+                    update: { $set: { 'options.$[option].slots.$[slot].value.time.$[entry].time': to } },
+                    arrayFilters: [{ 'option.id': optionId }, { 'slot.id': slotId }, { 'entry.time': from }],
+                },
+            })),
+            { session, ordered: true },
+        );
+
+        return result.modifiedCount;
+    }
+
+    async clearSlotCount(
+        id: string,
+        optionId: string,
+        slotId: string,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        return this.matched(
+            { _id: new Types.ObjectId(id) },
+            { $set: { 'options.$[option].slots.$[slot].value.booked_count': 0 } },
+            [{ 'option.id': optionId }, { 'slot.id': slotId }],
+            session,
+        );
+    }
+
+    async clearTimeCounts(
+        id: string,
+        optionId: string,
+        slotId: string,
+        time: string | undefined,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        const path = time
+            ? 'options.$[option].slots.$[slot].value.time.$[entry].booked_count'
+            : 'options.$[option].slots.$[slot].value.time.$[].booked_count';
+        const filters: Record<string, unknown>[] = [{ 'option.id': optionId }, { 'slot.id': slotId }];
+
+        if (time) filters.push({ 'entry.time': time });
+
+        return this.matched({ _id: new Types.ObjectId(id) }, { $set: { [path]: 0 } }, filters, session);
+    }
+
     /**
      * `arrayFilters` match the slot **and** `booked_count < limit`, so `modifiedCount === 0` means full.
      * Timestamps are off — `updated_at` alone would count as a modification.

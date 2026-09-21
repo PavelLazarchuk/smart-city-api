@@ -6,7 +6,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { AppConfig } from '../config/app-config';
 import { MetricsService } from '../metrics/metrics.service';
 import { type OutboxEventEntity, OutboxRepository } from './outbox.repository';
-import { type OutboxDelivery, type OutboxEventType } from './schemas/outbox-event.schema';
+import { type OutboxEvent, type OutboxDelivery, type OutboxEventType } from './schemas/outbox-event.schema';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { WebhooksRepository } from './webhooks.repository';
 
@@ -17,6 +17,11 @@ export interface EnqueueOptions {
     internal?: Record<string, unknown>;
     onlyWebhookId?: Types.ObjectId;
     session?: ClientSession;
+}
+
+export interface EnqueueRequest extends EnqueueOptions {
+    type: OutboxEventType;
+    payload: Record<string, unknown>;
 }
 
 export interface DispatchSummary {
@@ -58,31 +63,44 @@ export class OutboxService {
         payload: Record<string, unknown>,
         options: EnqueueOptions = {},
     ): Promise<string> {
-        const id = randomUUID();
+        const row = this.row(type, payload, options);
+        await this.events.create(row, options.session);
+
+        return row.id;
+    }
+
+    async enqueueMany(events: EnqueueRequest[], session?: ClientSession): Promise<string[]> {
+        const rows = events.map((event) => this.row(event.type, event.payload, event));
+        await this.events.createMany(rows, session);
+
+        return rows.map((row) => row.id);
+    }
+
+    private row(
+        type: OutboxEventType,
+        payload: Record<string, unknown>,
+        options: EnqueueOptions,
+    ): Partial<OutboxEvent> & { id: string } {
         const organizationId =
             options.organizationId === undefined || options.organizationId === null
                 ? null
                 : typeof options.organizationId === 'string'
                   ? new Types.ObjectId(options.organizationId)
                   : options.organizationId;
-        await this.events.create(
-            {
-                id,
-                type,
-                organization_id: organizationId,
-                payload,
-                internal: options.internal ?? null,
-                only_webhook_id: options.onlyWebhookId ?? null,
-                status: 'pending',
-                attempts: 0,
-                next_attempt_at: new Date(),
-                claimed_until: null,
-                deliveries: [],
-            },
-            options.session,
-        );
 
-        return id;
+        return {
+            id: randomUUID(),
+            type,
+            organization_id: organizationId,
+            payload,
+            internal: options.internal ?? null,
+            only_webhook_id: options.onlyWebhookId ?? null,
+            status: 'pending',
+            attempts: 0,
+            next_attempt_at: new Date(),
+            claimed_until: null,
+            deliveries: [],
+        };
     }
 
     poke(): void {

@@ -15,6 +15,12 @@ export class OutboxRepository extends BaseRepository<OutboxEvent> {
         super(model);
     }
 
+    async createMany(events: Partial<OutboxEvent>[], session?: ClientSession): Promise<void> {
+        if (events.length === 0) return;
+
+        await this.model.insertMany(events, { session, ordered: false });
+    }
+
     claimNext(now: Date, leaseMs: number, session?: ClientSession): Promise<OutboxEventEntity | null> {
         return this.model
             .findOneAndUpdate(
