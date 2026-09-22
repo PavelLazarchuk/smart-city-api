@@ -8,5 +8,9 @@ export function secretFor(jwt: JwtService, token: string, keys: JwtKeySet): stri
 
     if (typeof kid !== 'string') return keys.secret;
 
-    return keys.accepted[kid];
+    if (!Object.hasOwn(keys.accepted, kid)) return undefined;
+
+    const secret = keys.accepted[kid];
+
+    return typeof secret === 'string' ? secret : undefined;
 }

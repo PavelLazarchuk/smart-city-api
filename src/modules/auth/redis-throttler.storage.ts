@@ -1,5 +1,5 @@
 import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
-import { type ThrottlerStorage } from '@nestjs/throttler';
+import { type ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
 import { Redis } from 'ioredis';
 import { PinoLogger } from 'nestjs-pino';
 
@@ -51,9 +51,20 @@ end
 return { hits, windowTtl, blockTtl }
 `;
 
+function redisTarget(url: string): string {
+    try {
+        const parsed = new URL(url);
+
+        return parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
+    } catch {
+        return 'unparsable';
+    }
+}
+
 @Injectable()
 export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShutdown {
     private readonly client: ThrottlerRedis;
+    private readonly fallback = new ThrottlerStorageService();
     private degraded = false;
 
     constructor(
@@ -103,16 +114,13 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShu
         } catch (error) {
             this.report(error);
 
-            return {
-                totalHits: 0,
-                timeToExpire: Math.ceil(ttl / 1000),
-                isBlocked: false,
-                timeToBlockExpire: 0,
-            };
+            return this.fallback.increment(key, ttl, limit, blockDuration, throttlerName);
         }
     }
 
     async onApplicationShutdown(): Promise<void> {
+        this.fallback.onApplicationShutdown();
+
         if (this.client.status === 'ready') await this.client.quit();
         else this.client.disconnect();
     }
@@ -121,6 +129,9 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShu
         if (this.degraded) return;
 
         this.degraded = true;
-        this.logger.error({ err: error, url: this.config.redis.url }, 'redis throttler storage unavailable');
+        this.logger.error(
+            { err: error, redis: redisTarget(this.config.redis.url) },
+            'redis throttler storage unavailable, throttling per instance until it recovers',
+        );
     }
 }

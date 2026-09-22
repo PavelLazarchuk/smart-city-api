@@ -57,24 +57,46 @@ describe('RedisThrottlerStorage', () => {
         expect(throttle).toHaveBeenCalledWith('auth:ip:1', 'auth:ip:1:blocked', 60_000, 10, 60_000);
     });
 
-    it('lets the request through when redis is down and logs the outage once', async () => {
+    it('keeps throttling in memory when redis is down and logs the outage once', async () => {
         const { storage, throttle, logger } = build();
         throttle.mockRejectedValue(new Error('ECONNREFUSED'));
 
-        await expect(storage.increment('ip:1', 60_000, 10, 60_000, 'global')).resolves.toEqual({
-            totalHits: 0,
-            timeToExpire: 60,
+        await expect(storage.increment('ip:1', 60_000, 2, 60_000, 'global')).resolves.toMatchObject({
+            totalHits: 1,
             isBlocked: false,
-            timeToBlockExpire: 0,
         });
-        await storage.increment('ip:1', 60_000, 10, 60_000, 'global');
+        await expect(storage.increment('ip:1', 60_000, 2, 60_000, 'global')).resolves.toMatchObject({
+            totalHits: 2,
+            isBlocked: false,
+        });
+        await expect(storage.increment('ip:1', 60_000, 2, 60_000, 'global')).resolves.toMatchObject({
+            totalHits: 3,
+            isBlocked: true,
+        });
+        await expect(storage.increment('ip:2', 60_000, 2, 60_000, 'global')).resolves.toMatchObject({
+            totalHits: 1,
+            isBlocked: false,
+        });
 
         expect(logger.error).toHaveBeenCalledTimes(1);
 
         throttle.mockResolvedValue([1, 60_000, 0]);
-        await storage.increment('ip:1', 60_000, 10, 60_000, 'global');
+        await storage.increment('ip:1', 60_000, 2, 60_000, 'global');
 
         expect(logger.info).toHaveBeenCalledWith('redis throttler storage recovered');
+
+        await storage.onApplicationShutdown();
+    });
+
+    it('never writes the redis url, which carries credentials, to the log', async () => {
+        const { storage, throttle, logger } = build();
+        throttle.mockRejectedValue(new Error('ECONNREFUSED'));
+        await storage.increment('ip:1', 60_000, 10, 60_000, 'global');
+
+        expect(logger.error.mock.calls[0]?.[0]).toMatchObject({ redis: '127.0.0.1:6379' });
+        expect(JSON.stringify(logger.error.mock.calls)).not.toContain('redis://');
+
+        await storage.onApplicationShutdown();
     });
 
     afterAll(() => jest.clearAllMocks());

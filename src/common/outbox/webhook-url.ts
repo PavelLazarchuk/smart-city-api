@@ -17,6 +17,10 @@ export function isPrivateHost(host: string): boolean {
 function isPrivateV4(address: string): boolean {
     const [a = 0, b = 0] = address.split('.').map(Number);
 
+    return isPrivateV4Octets(a, b);
+}
+
+function isPrivateV4Octets(a: number, b: number): boolean {
     return (
         a === 0 ||
         a === 10 ||
@@ -29,14 +33,56 @@ function isPrivateV4(address: string): boolean {
     );
 }
 
+function groupsOfV6(address: string): number[] | null {
+    let text = address;
+    const lastColon = text.lastIndexOf(':') + 1;
+    const tailPart = text.slice(lastColon);
+
+    if (tailPart.includes('.')) {
+        const octets = tailPart.split('.').map(Number);
+        const [o1 = -1, o2 = -1, o3 = -1, o4 = -1] = octets;
+
+        if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+            return null;
+
+        const high = ((o1 << 8) | o2).toString(16);
+        const low = ((o3 << 8) | o4).toString(16);
+        text = `${text.slice(0, lastColon)}${high}:${low}`;
+    }
+
+    const halves = text.split('::');
+
+    if (halves.length > 2) return null;
+
+    const [headPart = '', tailHalf = ''] = halves;
+    const head = headPart ? headPart.split(':') : [];
+    const tail = halves.length === 2 && tailHalf ? tailHalf.split(':') : [];
+    const gap = halves.length === 2 ? 8 - head.length - tail.length : 0;
+
+    if (gap < 0) return null;
+
+    const groups = [...head, ...Array<string>(gap).fill('0'), ...tail].map((part) =>
+        /^[0-9a-f]{1,4}$/.test(part) ? Number.parseInt(part, 16) : Number.NaN,
+    );
+
+    if (groups.length !== 8 || groups.some((group) => Number.isNaN(group))) return null;
+
+    return groups;
+}
+
 function isPrivateV6(address: string): boolean {
-    const lower = address.toLowerCase();
+    const groups = groupsOfV6(address.toLowerCase());
 
-    if (lower === '::' || lower === '::1') return true;
+    if (!groups) return true;
 
-    if (lower.startsWith('::ffff:')) return isPrivateV4(lower.slice('::ffff:'.length));
+    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0] = groups;
+    const embedsV4 = a === 0 && b === 0 && c === 0 && d === 0 && (e === 0 || (e === 0xffff && f === 0));
 
-    return lower.startsWith('fe80:') || lower.startsWith('fc') || lower.startsWith('fd');
+    if (embedsV4) return isPrivateV4Octets(g >>> 8, g & 0xff);
+
+    if ((a & 0xfe00) === 0xfc00) return true;
+
+    return (a & 0xffc0) === 0xfe80;
 }
 
 export interface UrlPolicy {

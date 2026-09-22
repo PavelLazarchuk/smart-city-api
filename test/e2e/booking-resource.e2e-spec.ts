@@ -156,6 +156,31 @@ describe('bookings as a resource, availability and idempotency (e2e)', () => {
             expect(JSON.stringify(res.body)).not.toContain('Anna');
         });
 
+        it('hides a service that is not published from anyone who may not see details', async () => {
+            const draftId = (
+                await fx.service(organization.id, {
+                    options: [option],
+                    status: 'draft',
+                    published_at: null,
+                })
+            ).id;
+
+            const anonymous = await t.http.get(`${t.prefix}/services/${draftId}/availability`);
+            expectError(anonymous, 404, 'SERVICE_NOT_FOUND');
+
+            const outsider = await t.http
+                .get(`${t.prefix}/services/${draftId}/availability`)
+                .set('Authorization', bearer);
+            expectError(outsider, 404, 'SERVICE_NOT_FOUND');
+
+            const owner = await t.http
+                .get(`${t.prefix}/services/${draftId}/availability`)
+                .set('Authorization', adminBearer);
+            expect(owner.status).toBe(200);
+            expect(owner.body.data.service_id).toBe(draftId);
+            expect(owner.headers['cache-control']).toBe('private, no-store, max-age=0');
+        });
+
         it('keeps only the slots inside the window', async () => {
             const empty = await t.http.get(
                 `${t.prefix}/services/${serviceId}/availability?from=2000-01-01&to=2000-01-02`,

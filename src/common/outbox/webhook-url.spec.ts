@@ -3,6 +3,7 @@ import { isPrivateHost, webhookUrlProblem } from './webhook-url';
 describe('webhook url policy', () => {
     const strict = { allowPrivateHosts: false, requireHttps: true };
     const lax = { allowPrivateHosts: true, requireHttps: false };
+    const httpAllowed = { allowPrivateHosts: false, requireHttps: false };
 
     it('recognises loopback, link-local, private and reserved addresses', () => {
         for (const host of [
@@ -28,6 +29,22 @@ describe('webhook url policy', () => {
         for (const host of ['example.com', '8.8.8.8', '172.32.0.1', '2001:db8::1']) {
             expect(isPrivateHost(host)).toBe(false);
         }
+    });
+
+    it('sees through the hex form a URL serialises IPv4-mapped literals into', () => {
+        for (const raw of [
+            'http://[::ffff:169.254.169.254]/latest/meta-data',
+            'http://[::ffff:127.0.0.1]:6379/',
+            'http://[::ffff:10.0.0.1]/',
+            'http://[::ffff:0:192.168.1.1]/',
+            'http://[0:0:0:0:0:ffff:7f00:1]/',
+            'http://[::127.0.0.1]/',
+        ]) {
+            expect(new URL(raw).hostname).not.toContain('.');
+            expect(webhookUrlProblem(raw, httpAllowed)).toMatch(/private/);
+        }
+
+        expect(webhookUrlProblem('http://[2606:4700:4700::1111]/hook', httpAllowed)).toBeNull();
     });
 
     it('refuses what an SSRF would need and accepts a public https target', () => {

@@ -171,10 +171,11 @@ export class ServicesController {
         @Param('id') id: string,
         @Query() query: AvailabilityQueryDto,
         @Res({ passthrough: true }) res: Response,
+        @CurrentUser() user?: AuthUser,
     ): Promise<AvailabilityResponse> {
-        res.setHeader('Cache-Control', 'public, max-age=60');
+        if (!user) res.setHeader('Cache-Control', 'public, max-age=60');
 
-        return this.services.availability(id, query);
+        return this.services.availability(id, query, user);
     }
 
     @Get(':id/history')

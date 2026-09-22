@@ -16,6 +16,8 @@ jobs:
                   cache: npm
             - name: Install
               run: npm ci --no-audit --no-fund
+            - name: Audit
+              run: npm run audit
             - name: Lint
               run: npm run lint
             - name: Format check

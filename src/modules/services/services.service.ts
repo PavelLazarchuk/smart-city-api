@@ -274,8 +274,19 @@ export class ServicesService implements OnModuleInit {
         }));
     }
 
-    async availability(id: string, query: AvailabilityQuery): Promise<AvailabilityResponse> {
+    async availability(
+        id: string,
+        query: AvailabilityQuery,
+        viewer?: AuthUser,
+    ): Promise<AvailabilityResponse> {
         const service = await this.getById(id, { 'value.subscribe': 0 });
+
+        if (
+            service.status !== 'published' &&
+            !this.masker.canSeeDetails(viewer, service.organization_id.toHexString())
+        )
+            throw ApiError.notFound('SERVICE_NOT_FOUND');
+
         const from = query.from ?? formatDateOnly(new Date());
         const horizon = new Date();
         horizon.setDate(horizon.getDate() + this.config.retention.recurrentHorizonDays);
