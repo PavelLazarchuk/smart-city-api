@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { expectError, waitFor } from '../support/assertions';
+import { dateOnly } from '../support/dates';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
@@ -173,13 +174,6 @@ describe('service options and slots (e2e)', () => {
     });
 
     describe('bulk operations', () => {
-        const dateOnly = (offsetDays: number): string => {
-            const now = new Date();
-            const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
-
-            return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-        };
-
         const day = (date: string, times: string[], id = randomUUID()) => ({
             id,
             label: 'Day',

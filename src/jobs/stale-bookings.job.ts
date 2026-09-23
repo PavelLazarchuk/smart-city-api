@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { TransactionRunner } from '../common/database/transaction-runner';
 import { BookingsRepository } from '../modules/bookings/bookings.repository';
-import { ServicesService } from '../modules/services/services.service';
+import { SlotsRepository } from '../modules/slots/slots.repository';
 import { JobRunner } from './job-runner';
 
 export const STALE_BOOKINGS_JOB = 'stale_bookings';
@@ -14,7 +14,7 @@ const BATCH = 200;
 export class StaleBookingsJob {
     constructor(
         private readonly bookings: BookingsRepository,
-        private readonly services: ServicesService,
+        private readonly slots: SlotsRepository,
         private readonly tx: TransactionRunner,
         private readonly runner: JobRunner,
     ) {}
@@ -58,25 +58,18 @@ export class StaleBookingsJob {
     }
 
     private async liveSlots(): Promise<Set<string>> {
-        const services = await this.services.findAllSlotIds();
         const live = new Set<string>();
 
-        for (const service of services) {
-            const serviceId = service._id.toHexString();
+        for await (const slot of this.slots.iterateKeys()) {
+            const serviceId = slot.service_id.toHexString();
+            const times = slot.value?.time ?? [];
 
-            for (const option of service.options ?? []) {
-                for (const slot of option.slots ?? []) {
-                    const times = slot.value?.time ?? [];
-
-                    if (times.length === 0) {
-                        live.add(this.keyOf(serviceId, option.id, slot.id, null));
-                        continue;
-                    }
-
-                    for (const entry of times)
-                        live.add(this.keyOf(serviceId, option.id, slot.id, entry.time));
-                }
+            if (times.length === 0) {
+                live.add(this.keyOf(serviceId, slot.option_id, slot.id, null));
+                continue;
             }
+
+            for (const entry of times) live.add(this.keyOf(serviceId, slot.option_id, slot.id, entry.time));
         }
 
         return live;

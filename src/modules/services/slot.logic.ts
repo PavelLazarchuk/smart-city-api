@@ -3,30 +3,53 @@ import { type Types } from 'mongoose';
 
 import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
+import { shiftDateOnly, weekdayOfDateOnly } from '../../common/time/zone';
 import { type BookingEntity } from '../bookings/bookings.repository';
 import { type ServiceOptionInput, type SlotInput } from './dto/service.schemas';
+import { type SlotBody, type SlotValue, type TimeEntry } from '../slots/schemas/slot.schema';
 import {
     type RecurrentDate,
     type ServiceOption,
-    type Slot,
-    type SlotValue,
-    type TimeEntry,
     WEEKDAYS,
     type WorkingHours,
 } from './schemas/service.schema';
 
-export function formatDateOnly(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+export type OptionTree = ServiceOption & { slots: SlotBody[] };
 
-    return `${year}-${month}-${day}`;
+export type ServiceTree<T extends { options: ServiceOption[] }> = Omit<T, 'options'> & {
+    options: OptionTree[];
+};
+
+export function growTrees<T extends { _id: Types.ObjectId; options: ServiceOption[] }>(
+    services: T[],
+    slots: (SlotBody & { service_id: Types.ObjectId; option_id: string })[],
+): ServiceTree<T>[] {
+    const byOption = new Map<string, SlotBody[]>();
+
+    for (const {
+        id,
+        label,
+        child_type: childType,
+        value,
+        service_id: serviceId,
+        option_id: optionId,
+    } of slots) {
+        const key = `${serviceId.toHexString()}|${optionId}`;
+        const bucket = byOption.get(key) ?? [];
+        bucket.push({ id, label, child_type: childType, value });
+        byOption.set(key, bucket);
+    }
+
+    return services.map((service) => ({
+        ...service,
+        options: (service.options ?? []).map((option) => ({
+            ...option,
+            slots: byOption.get(`${service._id.toHexString()}|${option.id}`) ?? [],
+        })),
+    }));
 }
 
-export function optionOf<T extends { options: ServiceOption[] }>(
-    service: T,
-    optionId: string,
-): ServiceOption {
+export function optionOf<T extends { id: string }>(service: { options: T[] }, optionId: string): T {
     const option = service.options.find((item) => item.id === optionId);
 
     if (!option) throw ApiError.notFound('OPTION_NOT_FOUND');
@@ -34,7 +57,7 @@ export function optionOf<T extends { options: ServiceOption[] }>(
     return option;
 }
 
-export function slotOf(option: { slots: Slot[] }, slotId: string): Slot {
+export function slotOf(option: { slots: SlotBody[] }, slotId: string): SlotBody {
     const slot = option.slots.find((item) => item.id === slotId);
 
     if (!slot) throw ApiError.notFound('SLOT_NOT_FOUND');
@@ -42,7 +65,7 @@ export function slotOf(option: { slots: Slot[] }, slotId: string): Slot {
     return slot;
 }
 
-export function slotFromInput(input: SlotInput): Slot {
+export function slotFromInput(input: SlotInput): SlotBody {
     const id = input.id ?? randomUUID();
     switch (input.child_type) {
         case 'date_time':
@@ -87,69 +110,24 @@ export function slotFromInput(input: SlotInput): Slot {
     }
 }
 
-export function optionFromInput(input: ServiceOptionInput): ServiceOption {
+export function optionFromInput(input: ServiceOptionInput): { option: ServiceOption; slots: SlotBody[] } {
     return {
-        id: input.id ?? randomUUID(),
-        label: input.label ?? texts.defaults.optionLabel,
-        service_type: input.service_type ?? 'service_apply',
-        enabled: input.enabled ?? true,
-        recurrent_dates:
-            input.recurrent_dates === null || input.recurrent_dates === undefined
-                ? undefined
-                : input.recurrent_dates.map((entry) => ({
-                      day: entry.day,
-                      time: entry.time.map((time) => ({ time: time.time, limit: time.limit ?? null })),
-                      limit: entry.limit ?? null,
-                  })),
+        option: {
+            id: input.id ?? randomUUID(),
+            label: input.label ?? texts.defaults.optionLabel,
+            service_type: input.service_type ?? 'service_apply',
+            enabled: input.enabled ?? true,
+            recurrent_dates:
+                input.recurrent_dates === null || input.recurrent_dates === undefined
+                    ? undefined
+                    : input.recurrent_dates.map((entry) => ({
+                          day: entry.day,
+                          time: entry.time.map((time) => ({ time: time.time, limit: time.limit ?? null })),
+                          limit: entry.limit ?? null,
+                      })),
+        },
         slots: (input.slots ?? []).map(slotFromInput),
     };
-}
-
-/**
- * Occupancy is copied by id. A renamed time finds no match and is kept while it still holds bookings, so an
- * edit can never strand one.
- */
-export function mergeBookings(existing: ServiceOption[], incoming: ServiceOption[]): ServiceOption[] {
-    const existingOptions = new Map(existing.map((option) => [option.id, option]));
-
-    return incoming.map((option) => {
-        const previous = existingOptions.get(option.id);
-
-        if (!previous) return option;
-
-        const previousSlots = new Map(previous.slots.map((slot) => [slot.id, slot]));
-
-        return {
-            ...option,
-            slots: option.slots.map((slot) => {
-                const old = previousSlots.get(slot.id);
-
-                if (!old || old.child_type !== slot.child_type) return slot;
-
-                if (slot.child_type === 'date_time') {
-                    const oldTimes = new Map((old.value.time ?? []).map((entry) => [entry.time, entry]));
-                    const incomingTimes = slot.value.time ?? [];
-                    const kept = incomingTimes.map((entry) => {
-                        const oldEntry = oldTimes.get(entry.time);
-
-                        return oldEntry ? { ...entry, booked_count: oldEntry.booked_count } : entry;
-                    });
-                    const requested = new Set(incomingTimes.map((entry) => entry.time));
-                    const booked = (old.value.time ?? []).filter(
-                        (entry) => !requested.has(entry.time) && entry.booked_count > 0,
-                    );
-
-                    return { ...slot, value: { ...slot.value, time: [...kept, ...booked] } };
-                }
-
-                if (slot.child_type === 'date' || slot.child_type === 'apply') {
-                    return { ...slot, value: { ...slot.value, booked_count: old.value.booked_count ?? 0 } };
-                }
-
-                return slot;
-            }),
-        };
-    });
 }
 
 export interface BookingView {
@@ -164,12 +142,12 @@ export interface BookingView {
 
 export type TimeEntryWithBookings = TimeEntry & { bookings?: BookingView[] };
 
-export type SlotWithBookings = Omit<Slot, 'value'> & {
+export type SlotWithBookings = Omit<SlotBody, 'value'> & {
     value: Omit<SlotValue, 'time'> & { time?: TimeEntryWithBookings[]; bookings?: BookingView[] };
 };
 
 /** Nothing is loaded for anyone else, so a public route cannot leak personal data even if `mask()` is forgotten. */
-export function attachBookings<T extends { id: string; slots: Slot[] }>(
+export function attachBookings<T extends { id: string; slots: SlotBody[] }>(
     options: T[],
     bookings: BookingEntity[],
 ): (Omit<T, 'slots'> & { slots: SlotWithBookings[] })[] {
@@ -264,7 +242,7 @@ export function timesFromWorkingHours(
 
 export function generateRecurrentDays(
     recurrent: RecurrentDate[],
-    from: Date,
+    from: string,
     horizonDays: number,
     context: RecurrenceContext = {},
 ): GeneratedDay[] {
@@ -275,15 +253,12 @@ export function generateRecurrentDays(
     const holidays = new Set(context.holidays ?? []);
     const blackouts = new Set(context.blackout_dates ?? []);
     const result: GeneratedDay[] = [];
-    const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
 
     for (let i = 1; i <= horizonDays; i += 1) {
-        cursor.setDate(cursor.getDate() + 1);
-        const config = byWeekday.get(cursor.getDay());
+        const date = shiftDateOnly(from, i);
+        const config = byWeekday.get(weekdayOfDateOnly(date));
 
         if (!config) continue;
-
-        const date = formatDateOnly(cursor);
 
         if (blackouts.has(date) || holidays.has(date.slice(5))) continue;
 
@@ -308,9 +283,8 @@ export function generateRecurrentDays(
 }
 
 export interface RecurrentSlotPlan {
-    add_slots: Slot[];
+    add_slots: SlotBody[];
     add_times: { slot_id: string; entries: TimeEntry[] }[];
-    /** Times no longer configured on an existing dated slot; only unbooked ones are dropped. */
     remove_times: { slot_id: string; times: string[] }[];
 }
 
@@ -319,7 +293,7 @@ export function isEmptyPlan(plan: RecurrentSlotPlan): boolean {
 }
 
 /** Returns additions and removals, not a rewritten `slots` array; times that hold bookings are never removed. */
-export function planRecurrentDays(slots: Slot[], days: GeneratedDay[]): RecurrentSlotPlan {
+export function planRecurrentDays(slots: SlotBody[], days: GeneratedDay[]): RecurrentSlotPlan {
     const plan: RecurrentSlotPlan = { add_slots: [], add_times: [], remove_times: [] };
 
     for (const day of days) {
@@ -360,7 +334,7 @@ export function planRecurrentDays(slots: Slot[], days: GeneratedDay[]): Recurren
     return plan;
 }
 
-export function isSlotExpired(slot: Slot, today: string): boolean {
+export function isSlotExpired(slot: Pick<SlotBody, 'child_type' | 'value'>, today: string): boolean {
     if (slot.child_type !== 'date_time' && slot.child_type !== 'date') return false;
 
     return typeof slot.value.date === 'string' && slot.value.date < today;

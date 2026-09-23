@@ -14,6 +14,9 @@ interface Migration {
 }
 
 /* eslint-disable @typescript-eslint/no-require-imports */
+const timezoneMigration =
+    require('../../migrations/20260922000000-organization-timezone-and-booking-start.js') as Migration;
+const slotsMigration = require('../../migrations/20260922100000-slots-collection.js') as Migration;
 const migrations: Migration[] = [
     require('../../migrations/20260905000000-initial-indexes.js') as Migration,
     require('../../migrations/20260911000000-bookings-collection.js') as Migration,
@@ -21,6 +24,8 @@ const migrations: Migration[] = [
     require('../../migrations/20260912000000-idempotency-keys.js') as Migration,
     require('../../migrations/20260914000000-p3-catalogue-and-lifecycle.js') as Migration,
     require('../../migrations/20260916000000-images-src-index.js') as Migration,
+    timezoneMigration,
+    slotsMigration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -57,6 +62,7 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     outbox_events: 'OutboxEvent',
     webhooks: 'Webhook',
     service_revisions: 'ServiceRevision',
+    slots: 'Slot',
 };
 
 describe('persistence (e2e)', () => {
@@ -217,6 +223,115 @@ describe('persistence (e2e)', () => {
                     bookings: [],
                 }),
             ).rejects.toMatchObject({ code: 11000 });
+        });
+
+        it('backfills the organization zone and resolves every dated booking into starts_at', async () => {
+            const db = t.connection.db!;
+            const migration = timezoneMigration;
+            const tokyo = new Types.ObjectId();
+            const berlin = new Types.ObjectId();
+            await db.collection('organizations').insertMany([
+                { _id: tokyo, main_label: 'Tokyo', main_image: 'x', timezone: 'Asia/Tokyo' },
+                { _id: berlin, main_label: 'Berlin', main_image: 'x' },
+            ]);
+            await db.collection('bookings').insertMany([
+                { id: 'a', organization_id: tokyo, slot_date: '2026-07-15', slot_time: '09:00' },
+                { id: 'b', organization_id: berlin, slot_date: '2026-07-15', slot_time: '09:00' },
+                { id: 'c', organization_id: berlin, slot_date: null, slot_time: null },
+            ]);
+
+            await migration.up(db);
+
+            const zones = await db
+                .collection<{ _id: Types.ObjectId; timezone: string }>('organizations')
+                .find({})
+                .toArray();
+            expect(zones.find((row) => row._id.equals(tokyo))?.timezone).toBe('Asia/Tokyo');
+            expect(zones.find((row) => row._id.equals(berlin))?.timezone).toBe(t.config.jobs.timezone);
+
+            const rows = await db
+                .collection<{ id: string; starts_at: Date | null }>('bookings')
+                .find({})
+                .toArray();
+            const startsAt = (id: string): Date | null =>
+                rows.find((row) => row.id === id)?.starts_at ?? null;
+            expect(startsAt('a')?.toISOString()).toBe('2026-07-15T00:00:00.000Z');
+            expect(startsAt('b')?.toISOString()).toBe('2026-07-15T09:00:00.000Z');
+            expect(startsAt('c')).toBeNull();
+
+            await migration.down(db);
+            await Promise.all(Object.values(t.connection.models).map((model) => model.syncIndexes()));
+        });
+
+        it('moves embedded slots into their own collection in order, and down puts them back', async () => {
+            const db = t.connection.db!;
+            const organizationId = new Types.ObjectId();
+            const serviceId = new Types.ObjectId();
+            const dated = (id: string, date: string) => ({
+                id,
+                label: id,
+                child_type: 'date',
+                value: { date, limit: 2, booked_count: 1 },
+            });
+            const timed = {
+                id: 'c',
+                label: 'c',
+                child_type: 'date_time',
+                value: { date: '2026-10-03', time: [{ time: '09:00', limit: 1, booked_count: 0 }] },
+            };
+            // The old embedded schema wrote `time: []` onto every slot.
+            const legacy = {
+                ...dated('a', '2026-10-01'),
+                value: { ...dated('a', '2026-10-01').value, time: [] },
+            };
+            const options = [
+                {
+                    id: 'o1',
+                    label: 'one',
+                    service_type: 'service_apply',
+                    enabled: true,
+                    slots: [dated('b', '2026-10-02'), legacy],
+                },
+                { id: 'o2', label: 'two', service_type: 'service_apply', enabled: true, slots: [timed] },
+            ];
+            await db
+                .collection('slots')
+                .drop()
+                .catch(() => undefined);
+            await db
+                .collection('services')
+                .insertOne({ _id: serviceId, organization_id: organizationId, label: 's', options });
+            // An interrupted earlier run that had copied only the first slot.
+            await db.collection('slots').insertOne({
+                service_id: serviceId,
+                organization_id: organizationId,
+                option_id: 'o1',
+                ...dated('b', '2026-10-02'),
+            });
+
+            await slotsMigration.up(db);
+            await slotsMigration.up(db);
+
+            const moved = await db.collection('slots').find({}).sort({ _id: 1 }).toArray();
+            expect(moved.map((row) => [row['option_id'], row['id']])).toEqual([
+                ['o1', 'b'],
+                ['o1', 'a'],
+                ['o2', 'c'],
+            ]);
+            expect(moved[1]).toMatchObject({ service_id: serviceId, organization_id: organizationId });
+            expect(moved[1]!['value']).toEqual({ date: '2026-10-01', limit: 2, booked_count: 1 });
+            expect(moved[2]!['value']).toEqual(timed.value);
+            const stripped = await db.collection('services').findOne({ _id: serviceId });
+            expect(stripped!['options']).toEqual(options.map(({ slots: _slots, ...option }) => option));
+
+            await slotsMigration.down(db);
+
+            expect((await db.collection('services').findOne({ _id: serviceId }))!['options']).toEqual([
+                { ...options[0], slots: [dated('b', '2026-10-02'), dated('a', '2026-10-01')] },
+                options[1],
+            ]);
+            expect(await db.listCollections({ name: 'slots' }).toArray()).toEqual([]);
+            await Promise.all(Object.values(t.connection.models).map((model) => model.syncIndexes()));
         });
     });
 });

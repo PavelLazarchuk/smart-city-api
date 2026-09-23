@@ -3,6 +3,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { type Model, Types } from 'mongoose';
 
+import { type Lean } from '../../src/common/database/base.repository';
 import { type Role, ROLES } from '../../src/common/decorators/roles.decorator';
 import { PasswordService } from '../../src/modules/auth/password.service';
 import { Session } from '../../src/modules/auth/schemas/session.schema';
@@ -13,7 +14,9 @@ import { InfoSection } from '../../src/modules/infosections/schemas/infosection.
 import { News } from '../../src/modules/news/schemas/news.schema';
 import { Organization } from '../../src/modules/organizations/schemas/organization.schema';
 import { Booking } from '../../src/modules/bookings/schemas/booking.schema';
-import { Service, type ServiceOption } from '../../src/modules/services/schemas/service.schema';
+import { Service } from '../../src/modules/services/schemas/service.schema';
+import { type OptionTree } from '../../src/modules/services/slot.logic';
+import { Slot } from '../../src/modules/slots/schemas/slot.schema';
 import { User } from '../../src/modules/users/schemas/user.schema';
 
 let counter = 0;
@@ -134,13 +137,15 @@ export class Fixtures {
         return { id: doc._id.toHexString() };
     }
 
+    /** Takes options with their slots, as the API shows them, and stores the slots in their own collection. */
     async service(
         organizationId: string,
-        overrides: Partial<Omit<Service, 'organization_id' | 'category_id'>> & {
+        overrides: Partial<Omit<Service, 'organization_id' | 'category_id' | 'options'>> & {
             category_id?: string | null;
+            options?: OptionTree[];
         } = {},
     ): Promise<{ id: string }> {
-        const { category_id: categoryId, ...rest } = overrides;
+        const { category_id: categoryId, options = [], ...rest } = overrides;
         const doc = await this.model<Service>(Service.name).create({
             organization_id: new Types.ObjectId(organizationId),
             category_id: categoryId ? new Types.ObjectId(categoryId) : null,
@@ -151,14 +156,24 @@ export class Fixtures {
             status: 'published',
             published_at: new Date(),
             value: { heading_value: `Service ${counter}` },
-            options: [],
             ...rest,
+            options: options.map(({ slots: _slots, ...option }) => option),
         });
+        const slots = options.flatMap((option) =>
+            option.slots.map((slot) => ({
+                service_id: doc._id,
+                organization_id: doc.organization_id,
+                option_id: option.id,
+                ...slot,
+            })),
+        );
+
+        if (slots.length > 0) await this.model<Slot>(Slot.name).insertMany(slots);
 
         return { id: doc._id.toHexString() };
     }
 
-    bookableOption(limit: number | null = 2, time = '10:00'): ServiceOption & { slot_id: string } {
+    bookableOption(limit: number | null = 2, time = '10:00'): OptionTree & { slot_id: string } {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         const date = tomorrow.toISOString().slice(0, 10);
@@ -179,6 +194,26 @@ export class Fixtures {
             ],
             slot_id: slotId,
         };
+    }
+
+    storedSlots(serviceId: string): Promise<Lean<Slot>[]> {
+        return this.model<Slot>(Slot.name)
+            .find({ service_id: new Types.ObjectId(serviceId) })
+            .sort({ _id: 1 })
+            .lean<Lean<Slot>[]>()
+            .exec();
+    }
+
+    async storedSlot(serviceId: string, slotId?: string): Promise<Lean<Slot>> {
+        const slot = await this.model<Slot>(Slot.name)
+            .findOne({ service_id: new Types.ObjectId(serviceId), ...(slotId ? { id: slotId } : {}) })
+            .sort({ _id: 1 })
+            .lean<Lean<Slot>>()
+            .exec();
+
+        if (!slot) throw new Error(`no slot stored for service ${serviceId}`);
+
+        return slot;
     }
 
     /** Seeds a booking the way the API does: a row in `bookings` plus the slot's occupancy counter. */
@@ -221,18 +256,20 @@ export class Fixtures {
 
         if (!active) return { id };
 
-        const counter = params.time
-            ? { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 1 }
-            : { 'options.$[option].slots.$[slot].value.booked_count': 1 };
-        const arrayFilters: Record<string, unknown>[] = [
-            { 'option.id': params.option_id },
-            { 'slot.id': params.slot_id },
-        ];
-
-        if (params.time) arrayFilters.push({ 'entry.time': params.time });
-
-        await this.model<Service>(Service.name)
-            .updateOne({ _id: params.service_id }, { $inc: counter }, { arrayFilters })
+        await this.model<Slot>(Slot.name)
+            .updateOne(
+                {
+                    service_id: new Types.ObjectId(params.service_id),
+                    option_id: params.option_id,
+                    id: params.slot_id,
+                },
+                {
+                    $inc: params.time
+                        ? { 'value.time.$[entry].booked_count': 1 }
+                        : { 'value.booked_count': 1 },
+                },
+                params.time ? { arrayFilters: [{ 'entry.time': params.time }] } : {},
+            )
             .exec();
 
         return { id };

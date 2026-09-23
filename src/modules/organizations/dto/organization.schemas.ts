@@ -9,6 +9,7 @@ import {
     isoDateTimeSchema,
     labelSchema,
     timestampsOutputSchema,
+    timeZoneSchema,
     urlSchema,
 } from '../../../common/zod/primitives';
 import { categoryResponseSchema } from '../../categories/dto/category.schemas';
@@ -45,6 +46,7 @@ export const organizationBaseResponseSchema = z.object({
     location: geoPointOutputSchema.optional(),
     working_hours: z.array(z.object({ day: z.enum(WEEKDAYS), from: z.string(), to: z.string() })).catch([]),
     holidays: z.array(z.string()).catch([]),
+    timezone: z.string().catch('UTC'),
     distance_m: z.number().optional(),
     ...timestampsOutputSchema,
 });
@@ -97,6 +99,7 @@ const organizationExtras = {
     location: geoPointInputSchema.nullable(),
     working_hours: z.array(workingHoursSchema).max(28),
     holidays: z.array(monthDaySchema).max(100),
+    timezone: timeZoneSchema,
 };
 
 export const createOrganizationSchema = z.object({
@@ -111,6 +114,7 @@ export const createOrganizationSchema = z.object({
     location: geoPointInputSchema.optional(),
     working_hours: organizationExtras.working_hours.optional(),
     holidays: organizationExtras.holidays.optional(),
+    timezone: timeZoneSchema.optional(),
 });
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export class CreateOrganizationDto extends createZodDto(createOrganizationSchema) {}

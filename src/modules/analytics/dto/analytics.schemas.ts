@@ -28,6 +28,7 @@ export const analyticsEventResponseSchema = z.object({
     date: z.string().optional(),
     time: z.string().optional(),
     request_id: z.string().optional(),
+    source: z.string().optional(),
     ...timestampsOutputSchema,
 });
 export class AnalyticsEventResponseDto extends createZodDto(analyticsEventResponseSchema) {}

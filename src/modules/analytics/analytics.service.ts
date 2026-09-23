@@ -47,9 +47,12 @@ export class AnalyticsService implements OnModuleInit {
         });
     }
 
-    /** Non-blocking write; failures are logged, never surfaced to the request. */
     record(type: EventType, fields: EventFields, actor?: AuthUser): void {
-        const document: Record<string, unknown> = { type, request_id: RequestContext.requestId() };
+        const document: Record<string, unknown> = {
+            type,
+            request_id: RequestContext.requestId(),
+            source: RequestContext.userAgent(),
+        };
 
         if (actor) {
             document['user_id'] = new Types.ObjectId(actor.id);

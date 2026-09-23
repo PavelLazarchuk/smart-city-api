@@ -9,8 +9,10 @@ import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { BookingsRepository } from '../bookings/bookings.repository';
-import { attachBookings } from '../services/slot.logic';
-import { type ServiceView, ServicesMasker } from '../services/services.masker';
+import { type ServiceOption } from '../services/schemas/service.schema';
+import { attachBookings, growTrees } from '../services/slot.logic';
+import { ServicesMasker } from '../services/services.masker';
+import { SlotsRepository } from '../slots/slots.repository';
 import {
     type CreateOrganizationInput,
     type ListOrganizationsQuery,
@@ -25,6 +27,8 @@ import {
 import { type Organization } from './schemas/organization.schema';
 
 const ORGANIZATION_SORTABLE = ['created_at', 'main_label', 'main_category'] as const;
+
+type ServiceRow = { _id: Types.ObjectId; organization_id: Types.ObjectId; options: ServiceOption[] };
 
 export type ServiceCardRow = Record<string, unknown> & {
     _id: Types.ObjectId;
@@ -49,6 +53,7 @@ export class OrganizationsService {
         private readonly cascade: CascadeRegistry,
         private readonly masker: ServicesMasker,
         private readonly bookings: BookingsRepository,
+        private readonly slots: SlotsRepository,
     ) {}
 
     async list(
@@ -89,7 +94,12 @@ export class OrganizationsService {
         const serviceIds = visible.flatMap((row) =>
             (row.services ?? []).map((service) => String((service as { _id: unknown })._id)),
         );
-        const bookings = await this.bookings.findActiveByServices(serviceIds);
+        const [bookings, slots] = await Promise.all([
+            this.bookings.findActiveByServices(serviceIds),
+            this.slots.findByServices(
+                rows.flatMap((row) => (row.services ?? []).map((service) => (service as ServiceRow)._id)),
+            ),
+        ]);
         const byService = new Map<string, typeof bookings>();
 
         for (const booking of bookings) {
@@ -103,12 +113,7 @@ export class OrganizationsService {
 
             return {
                 ...row,
-                services: (row.services ?? []).map((service) => {
-                    const view = service as ServiceView & {
-                        _id: Types.ObjectId;
-                        options?: { id: string; slots: never[] }[];
-                    };
-
+                services: growTrees((row.services as ServiceRow[] | undefined) ?? [], slots).map((view) => {
                     if (!privileged) return this.masker.maskCounts(view);
 
                     return {
@@ -181,6 +186,7 @@ export class OrganizationsService {
             location: location ? { type: 'Point', coordinates: [location.lng, location.lat] } : undefined,
             working_hours: input.working_hours ?? [],
             holidays: [...new Set(input.holidays ?? [])],
+            timezone: input.timezone ?? this.config.jobs.timezone,
         });
     }
 
@@ -280,5 +286,13 @@ export class OrganizationsService {
 
     holidays(): Promise<Map<string, string[]>> {
         return this.organizations.holidays();
+    }
+
+    timezones(): Promise<Map<string, string>> {
+        return this.organizations.timezones();
+    }
+
+    async timezoneOf(id: string): Promise<string> {
+        return (await this.organizations.timezoneOf(id)) ?? this.config.jobs.timezone;
     }
 }

@@ -7,6 +7,7 @@ import { OutboxService } from '../../src/common/outbox/outbox.service';
 import { ConsoleMailProvider } from '../../src/integrations/mail/console-mail.provider';
 import { BookingRemindersJob } from '../../src/jobs/booking-reminders.job';
 import { expectError, waitFor } from '../support/assertions';
+import { dateOnly } from '../support/dates';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
@@ -48,10 +49,12 @@ async function receiver(): Promise<{
 const uuid = (n: number) =>
     `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`;
 
-function dateOnly(offsetDays: number, base = new Date()): string {
-    const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offsetDays);
+function hourBefore(date: string, time: string): Date {
+    return new Date(Date.parse(`${date}T${time}:00Z`) - 3_600_000);
+}
 
-    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+function remindedUntil(now: Date): string {
+    return new Date(now.getTime() + 24 * 3_600_000).toISOString();
 }
 
 describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
@@ -358,16 +361,8 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             const service = await serviceWith({}, 2, '10:00', 1);
             const created = await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' });
             const id = created.body.data.booking_id as string;
-            const counts = async () => {
-                const stored = await fx
-                    .collection<{ options: { slots: { value: { time?: { booked_count: number }[] } }[] }[] }>(
-                        'Service',
-                    )
-                    .findById(service.id)
-                    .lean();
-
-                return stored!.options[0]!.slots[0]!.value.time!.map((entry) => entry.booked_count);
-            };
+            const counts = async () =>
+                (await fx.storedSlot(service.id)).value.time!.map((entry) => entry.booked_count);
             expect(await counts()).toEqual([1, 0]);
 
             const moved = await t.http
@@ -562,8 +557,9 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             const created = await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' });
             await book(service.id, { option_id: uuid(1), slot_id: uuid(3) });
             const job = t.app.get(BookingRemindersJob);
-            expect(await job.execute(new Date())).toEqual({ date: dateOnly(1), reminders: 1 });
-            expect(await job.execute(new Date())).toEqual({ date: dateOnly(1), reminders: 0 });
+            const now = hourBefore(dateOnly(1), '10:00');
+            expect(await job.execute(now)).toEqual({ until: remindedUntil(now), reminders: 1 });
+            expect(await job.execute(now)).toEqual({ until: remindedUntil(now), reminders: 0 });
             const row = await fx
                 .collection<{ reminder_sent_at: Date | null }>('Booking')
                 .findOne({ id: created.body.data.booking_id })
@@ -589,7 +585,8 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                 const service = await serviceWith({}, 1);
                 await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' });
                 const job = t.app.get(BookingRemindersJob);
-                expect(await job.execute(new Date())).toEqual({ date: dateOnly(1), reminders: 1 });
+                const now = hourBefore(dateOnly(1), '10:00');
+                expect(await job.execute(now)).toEqual({ until: remindedUntil(now), reminders: 1 });
                 await waitFor(
                     async () =>
                         (await fx

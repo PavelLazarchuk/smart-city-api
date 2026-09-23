@@ -22,6 +22,7 @@ export class AnalyticsEvent {
     @Prop({ type: String }) date?: string;
     @Prop({ type: String }) time?: string;
     @Prop({ type: String }) request_id?: string;
+    @Prop({ type: String }) source?: string;
 }
 
 export type AnalyticsEventDocument = HydratedDocument<AnalyticsEvent>;

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Types } from 'mongoose';
 
 import { ConsoleMailProvider } from '../../src/integrations/mail/console-mail.provider';
@@ -12,16 +13,8 @@ describe('bookings (e2e)', () => {
     let admin: FixtureUser;
     let mailSpy: jest.SpyInstance;
 
-    const timeEntry = async (serviceId: string, index = 0) => {
-        const stored = await fx
-            .collection<{ options: { slots: { value: { time: { booked_count: number }[] } }[] }[] }>(
-                'Service',
-            )
-            .findById(serviceId)
-            .lean();
-
-        return stored!.options[0]!.slots[0]!.value.time[index]!;
-    };
+    const timeEntry = async (serviceId: string, index = 0) =>
+        (await fx.storedSlot(serviceId)).value.time![index]!;
 
     beforeAll(async () => {
         t = await createTestApp();
@@ -77,11 +70,7 @@ describe('bookings (e2e)', () => {
             .lean();
         expect(rows).toHaveLength(1);
         expect(rows[0]).toMatchObject({ person: 'Anna', info: 'first visit', slot_time: '10:00' });
-        const embedded = await fx
-            .collection<{ options: { slots: { value: Record<string, unknown> }[] }[] }>('Service')
-            .findById(service.id)
-            .lean();
-        expect(JSON.stringify(embedded!.options)).not.toContain('Anna');
+        expect(JSON.stringify(await fx.storedSlot(service.id))).not.toContain('Anna');
 
         const refs = await t.http.get(`${t.prefix}/users/${client.id}/bookings`).set('Authorization', bearer);
         expect(refs.body.data).toHaveLength(1);
@@ -327,7 +316,35 @@ describe('bookings (e2e)', () => {
         expect(await entry()).toMatchObject({ booked_count: 0 });
     });
 
-    it('renaming a booked time in PATCH /services/:id keeps the booking', async () => {
+    it('shows the public reserved markers on an apply slot that still carries a legacy empty time list', async () => {
+        const optionId = randomUUID();
+        const service = await fx.service(organization.id, {
+            options: [
+                {
+                    id: optionId,
+                    label: 'Apply',
+                    service_type: 'service_apply',
+                    enabled: true,
+                    slots: [
+                        {
+                            id: randomUUID(),
+                            label: 'Queue',
+                            child_type: 'apply',
+                            value: { limit: 5, booked_count: 2, time: [] },
+                        },
+                    ],
+                },
+            ],
+        });
+        const res = await t.http.get(`${t.prefix}/services/${service.id}`);
+        expect(res.status).toBe(200);
+        expect(res.body.data.options[0].slots[0].value.bookings).toEqual([
+            { status: 'reserved' },
+            { status: 'reserved' },
+        ]);
+    });
+
+    it('PATCH /services/:id refuses options instead of dropping them, and the booking stays', async () => {
         const option = fx.bookableOption(2, '10:00');
         const service = await fx.service(organization.id, { options: [option] });
         const owner = await fx.client();
@@ -342,16 +359,13 @@ describe('bookings (e2e)', () => {
             .patch(`${t.prefix}/services/${service.id}`)
             .set('Authorization', await fx.bearer(admin))
             .send({
+                label: 'Renamed',
                 options: [
                     {
                         id: option.id,
-                        label: option.label,
-                        service_type: option.service_type,
-                        enabled: option.enabled,
                         slots: [
                             {
                                 id: slot.id,
-                                label: slot.label,
                                 child_type: 'date_time',
                                 value: { date: slot.value.date, time: [{ time: '10:30', limit: 2 }] },
                             },
@@ -359,18 +373,10 @@ describe('bookings (e2e)', () => {
                     },
                 ],
             });
-        expect(patched.status).toBe(200);
-        const times = patched.body.data.options[0].slots[0].value.time as {
-            time: string;
-            booked_count: number;
-            bookings: unknown[];
-        }[];
-        expect(times.map((time) => time.time)).toEqual(['10:30', '10:00']);
-        expect(times[1]).toMatchObject({ booked_count: 1 });
-        const refs = await t.http
-            .get(`${t.prefix}/users/${owner.id}/bookings`)
-            .set('Authorization', await fx.bearer(owner));
-        expect(refs.body.data).toHaveLength(1);
+        expectError(patched, 400, 'VALIDATION_ERROR');
+        expect(patched.body.error.details).toEqual([expect.objectContaining({ path: 'options' })]);
+        expect(await timeEntry(service.id)).toMatchObject({ time: '10:00', booked_count: 1 });
+        expect(await fx.collection('Service').countDocuments({ label: 'Renamed' })).toBe(0);
     });
 
     it('deleting the service or the user removes the bookings on the other side', async () => {
@@ -420,6 +426,7 @@ describe('bookings (e2e)', () => {
             ).status,
         ).toBe(204);
         expect(await fx.collection('Service').findById(service.id).lean()).toBeNull();
+        expect(await fx.collection('Slot').countDocuments({})).toBe(0);
         expect(await fx.collection('Booking').countDocuments({})).toBe(0);
     });
 });

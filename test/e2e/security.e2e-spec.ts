@@ -255,14 +255,26 @@ describe('tokens, sessions, password policy and uploads (e2e)', () => {
 
         it('treats a public route answered for a signed-in caller as private too', async () => {
             const anonymous = await t.http.get(`${t.prefix}/organizations`);
-            expect(anonymous.headers['cache-control']).toBeUndefined();
+            expect(anonymous.headers['cache-control']).toBe('public, max-age=60, must-revalidate');
             expect(anonymous.headers['x-robots-tag']).toBeUndefined();
+            expect(anonymous.headers['vary']).toContain('Authorization');
 
             const signed = await t.http
                 .get(`${t.prefix}/organizations`)
                 .set('Authorization', await fx.bearer(admin));
             expect(signed.headers['cache-control']).toBe('private, no-store, max-age=0');
             expect(signed.headers['x-robots-tag']).toBe('noindex, nofollow');
+        });
+
+        it('answers a revalidated public read with 304 and no body', async () => {
+            const first = await t.http.get(`${t.prefix}/organizations`);
+            expect(first.status).toBe(200);
+            expect(first.headers['etag']).toBeDefined();
+
+            const revalidated = await t.http
+                .get(`${t.prefix}/organizations`)
+                .set('If-None-Match', first.headers['etag'] as string);
+            expect(revalidated.status).toBe(304);
         });
 
         it('shares uploads only with allow-listed origins', async () => {

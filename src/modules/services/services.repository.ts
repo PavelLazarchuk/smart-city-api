@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import {
-    type AnyBulkWriteOperation,
     type ClientSession,
     type FilterQuery,
     Model,
@@ -11,17 +10,38 @@ import {
 } from 'mongoose';
 
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
+import { SEARCH_FACET_LIMIT } from '../../common/config/constants';
 import { nextPosition, reorderSiblings } from '../../common/database/reorder';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { type ResolvedPagination } from '../../common/pagination/pagination.service';
-import {
-    type RecurrentDate,
-    Service,
-    type ServiceOption,
-    type Slot,
-    type TimeEntry,
-} from './schemas/service.schema';
-import { type RecurrentSlotPlan } from './slot.logic';
+import { type RecurrentDate, Service, type ServiceOption } from './schemas/service.schema';
+
+export interface FacetBucket {
+    value: string;
+    count: number;
+}
+
+export interface ServiceFacets {
+    tags: FacetBucket[];
+    categories: FacetBucket[];
+    organizations: FacetBucket[];
+}
+
+const LOOSE_MIN_LENGTH = 3;
+const LOOSE_MAX_TERMS = 5;
+
+function looseTerms(q: string): string[] {
+    return [
+        ...new Set(
+            q
+                .toLowerCase()
+                .split(/[^\p{L}\p{N}]+/u)
+                .filter((word) => word.length >= LOOSE_MIN_LENGTH),
+        ),
+    ]
+        .slice(0, LOOSE_MAX_TERMS)
+        .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+}
 
 export type ServiceEntity = Lean<Service>;
 
@@ -98,11 +118,88 @@ export class ServicesRepository extends BaseRepository<Service> {
             this.model.countDocuments(textFilter).exec(),
         ]);
 
+        if (total > 0)
+            return {
+                items: items.map(({ score: _score, ...item }) => item as ServiceEntity),
+                total,
+                page: pagination.page,
+                limit: pagination.limit,
+            };
+
+        return this.searchLoose(filter, q, pagination, projection);
+    }
+
+    private async searchLoose(
+        filter: FilterQuery<Service>,
+        q: string,
+        pagination: ResolvedPagination,
+        projection?: ProjectionType<Service>,
+    ): Promise<PaginatedResult<ServiceEntity>> {
+        const words = looseTerms(q);
+
+        if (words.length === 0)
+            return { items: [], total: 0, page: pagination.page, limit: pagination.limit };
+
+        const loose: FilterQuery<Service> = {
+            ...filter,
+            $or: words.flatMap((word) => [
+                { label: { $regex: word, $options: 'i' } },
+                { description: { $regex: word, $options: 'i' } },
+                { tags: { $regex: word, $options: 'i' } },
+            ]),
+        };
+        const [items, total] = await Promise.all([
+            this.model
+                .find(loose, projection)
+                .sort({ position: 1, _id: 1 })
+                .skip(pagination.skip)
+                .limit(pagination.limit)
+                .lean<ServiceEntity[]>()
+                .exec(),
+            this.model.countDocuments(loose).exec(),
+        ]);
+
+        return { items, total, page: pagination.page, limit: pagination.limit };
+    }
+
+    async facets(filter: FilterQuery<Service>): Promise<ServiceFacets> {
+        const top = (field: string): PipelineStage.FacetPipelineStage[] => [
+            { $unwind: `$${field}` },
+            { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: SEARCH_FACET_LIMIT },
+        ];
+        const grouped = (field: string): PipelineStage.FacetPipelineStage[] => [
+            { $match: { [field]: { $ne: null } } },
+            { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: SEARCH_FACET_LIMIT },
+        ];
+        const [row] = await this.aggregate<{
+            tags: { _id: string; count: number }[];
+            categories: { _id: Types.ObjectId; count: number }[];
+            organizations: { _id: Types.ObjectId; count: number }[];
+        }>([
+            { $match: filter },
+            {
+                $facet: {
+                    tags: top('tags'),
+                    categories: grouped('category_id'),
+                    organizations: grouped('organization_id'),
+                },
+            },
+        ]);
+
         return {
-            items: items.map(({ score: _score, ...item }) => item as ServiceEntity),
-            total,
-            page: pagination.page,
-            limit: pagination.limit,
+            tags: (row?.tags ?? []).map((entry) => ({ value: entry._id, count: entry.count })),
+            categories: (row?.categories ?? []).map((entry) => ({
+                value: entry._id.toHexString(),
+                count: entry.count,
+            })),
+            organizations: (row?.organizations ?? []).map((entry) => ({
+                value: entry._id.toHexString(),
+                count: entry.count,
+            })),
         };
     }
 
@@ -230,265 +327,11 @@ export class ServicesRepository extends BaseRepository<Service> {
         );
     }
 
-    async pushSlot(id: string, optionId: string, slot: Slot, session?: ClientSession): Promise<boolean> {
-        return this.matched(
-            { _id: new Types.ObjectId(id), 'options.id': optionId },
-            { $push: { 'options.$[option].slots': slot } },
-            [{ 'option.id': optionId }],
-            session,
-        );
-    }
-
-    async setSlotFields(
-        id: string,
-        optionId: string,
-        slotId: string,
-        fields: Record<string, unknown>,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        return this.matched(
-            { _id: new Types.ObjectId(id) },
-            { $set: prefix('options.$[option].slots.$[slot]', fields) },
-            [{ 'option.id': optionId }, { 'slot.id': slotId }],
-            session,
-        );
-    }
-
-    async pullSlots(
-        serviceId: string,
-        optionId: string,
-        slotIds: string[],
-        session?: ClientSession,
-    ): Promise<boolean> {
-        if (slotIds.length === 0) return false;
-
-        return this.matched(
-            { _id: new Types.ObjectId(serviceId) },
-            { $pull: { 'options.$[option].slots': { id: { $in: slotIds } } } },
-            [{ 'option.id': optionId }],
-            session,
-        );
-    }
-
-    /** Adds time entries to a `date_time` slot without rewriting the ones already there. */
-    async pushTimes(
-        id: string,
-        optionId: string,
-        slotId: string,
-        entries: TimeEntry[],
-        session?: ClientSession,
-    ): Promise<boolean> {
-        if (entries.length === 0) return false;
-
-        return this.matched(
-            { _id: new Types.ObjectId(id) },
-            { $push: { 'options.$[option].slots.$[slot].value.time': { $each: entries } } },
-            [{ 'option.id': optionId }, { 'slot.id': slotId }],
-            session,
-        );
-    }
-
-    async pullTimes(
-        id: string,
-        optionId: string,
-        slotId: string,
-        times: string[],
-        session?: ClientSession,
-    ): Promise<boolean> {
-        if (times.length === 0) return false;
-
-        return this.matched(
-            { _id: new Types.ObjectId(id) },
-            { $pull: { 'options.$[option].slots.$[slot].value.time': { time: { $in: times } } } },
-            [{ 'option.id': optionId }, { 'slot.id': slotId }],
-            session,
-        );
-    }
-
-    async setTimeLimit(
-        id: string,
-        optionId: string,
-        slotId: string,
-        time: string,
-        limit: number | null,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        return this.matched(
-            { _id: new Types.ObjectId(id) },
-            { $set: { 'options.$[option].slots.$[slot].value.time.$[entry].limit': limit } },
-            [{ 'option.id': optionId }, { 'slot.id': slotId }, { 'entry.time': time }],
-            session,
-        );
-    }
-
-    async renameTimes(
-        id: string,
-        optionId: string,
-        slotId: string,
-        moves: [string, string][],
-        session?: ClientSession,
-    ): Promise<number> {
-        if (moves.length === 0) return 0;
-
-        const result = await this.model.bulkWrite(
-            moves.map(([from, to]) => ({
-                updateOne: {
-                    filter: { _id: new Types.ObjectId(id) },
-                    update: { $set: { 'options.$[option].slots.$[slot].value.time.$[entry].time': to } },
-                    arrayFilters: [{ 'option.id': optionId }, { 'slot.id': slotId }, { 'entry.time': from }],
-                },
-            })),
-            { session, ordered: true },
-        );
-
-        return result.modifiedCount;
-    }
-
-    async clearSlotCount(
-        id: string,
-        optionId: string,
-        slotId: string,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        return this.matched(
-            { _id: new Types.ObjectId(id) },
-            { $set: { 'options.$[option].slots.$[slot].value.booked_count': 0 } },
-            [{ 'option.id': optionId }, { 'slot.id': slotId }],
-            session,
-        );
-    }
-
-    async clearTimeCounts(
-        id: string,
-        optionId: string,
-        slotId: string,
-        time: string | undefined,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const path = time
-            ? 'options.$[option].slots.$[slot].value.time.$[entry].booked_count'
-            : 'options.$[option].slots.$[slot].value.time.$[].booked_count';
-        const filters: Record<string, unknown>[] = [{ 'option.id': optionId }, { 'slot.id': slotId }];
-
-        if (time) filters.push({ 'entry.time': time });
-
-        return this.matched({ _id: new Types.ObjectId(id) }, { $set: { [path]: 0 } }, filters, session);
-    }
-
-    /**
-     * `arrayFilters` match the slot **and** `booked_count < limit`, so `modifiedCount === 0` means full.
-     * Timestamps are off — `updated_at` alone would count as a modification.
-     */
-    async incrementTimeCount(
-        serviceId: string,
-        optionId: string,
-        slotId: string,
-        time: string,
-        limit: number | null,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const timeFilter: Record<string, unknown> = { 'entry.time': time };
-
-        if (limit !== null) timeFilter['entry.booked_count'] = { $lt: limit };
-
-        const result = await this.model
-            .updateOne(
-                { _id: new Types.ObjectId(serviceId) },
-                { $inc: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': 1 } },
-                {
-                    arrayFilters: [{ 'option.id': optionId }, { 'slot.id': slotId }, timeFilter],
-                    session,
-                    timestamps: false,
-                },
-            )
-            .exec();
-
-        return result.modifiedCount === 1;
-    }
-
-    /** Same guard for `date` and `apply` slots, whose counter lives directly on the slot value. */
-    async incrementSlotCount(
-        serviceId: string,
-        optionId: string,
-        slotId: string,
-        limit: number | null,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const slotFilter: Record<string, unknown> = { 'slot.id': slotId };
-
-        if (limit !== null) slotFilter['slot.value.booked_count'] = { $lt: limit };
-
-        const result = await this.model
-            .updateOne(
-                { _id: new Types.ObjectId(serviceId) },
-                { $inc: { 'options.$[option].slots.$[slot].value.booked_count': 1 } },
-                { arrayFilters: [{ 'option.id': optionId }, slotFilter], session, timestamps: false },
-            )
-            .exec();
-
-        return result.modifiedCount === 1;
-    }
-
-    /** Guarded by `booked_count > 0` so it cannot go negative; deleting the row is what makes cancel idempotent. */
-    async decrementTimeCount(
-        serviceId: string,
-        optionId: string,
-        slotId: string,
-        time: string,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const result = await this.model
-            .updateOne(
-                { _id: new Types.ObjectId(serviceId) },
-                { $inc: { 'options.$[option].slots.$[slot].value.time.$[entry].booked_count': -1 } },
-                {
-                    arrayFilters: [
-                        { 'option.id': optionId },
-                        { 'slot.id': slotId },
-                        { 'entry.time': time, 'entry.booked_count': { $gt: 0 } },
-                    ],
-                    session,
-                    timestamps: false,
-                },
-            )
-            .exec();
-
-        return result.modifiedCount === 1;
-    }
-
-    async decrementSlotCount(
-        serviceId: string,
-        optionId: string,
-        slotId: string,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const result = await this.model
-            .updateOne(
-                { _id: new Types.ObjectId(serviceId) },
-                { $inc: { 'options.$[option].slots.$[slot].value.booked_count': -1 } },
-                {
-                    arrayFilters: [
-                        { 'option.id': optionId },
-                        { 'slot.id': slotId, 'slot.value.booked_count': { $gt: 0 } },
-                    ],
-                    session,
-                    timestamps: false,
-                },
-            )
-            .exec();
-
-        return result.modifiedCount === 1;
-    }
-
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
         return this.findMany(
             { 'options.recurrent_dates.0': { $exists: true }, deleted_at: null, status: { $ne: 'archived' } },
             { _id: 1 },
         );
-    }
-
-    findWithDatedSlots(): Promise<ServiceEntity[]> {
-        return this.findMany({ 'options.slots.child_type': { $in: ['date_time', 'date'] } }, { _id: 1 });
     }
 
     findAllForDebtorReport(): Promise<ServiceEntity[]> {
@@ -498,87 +341,42 @@ export class ServicesRepository extends BaseRepository<Service> {
             deleted_at: 1,
             label: 1,
             'value.heading_value': 1,
+            'options.id': 1,
             'options.service_type': 1,
             'options.enabled': 1,
             'options.recurrent_dates': 1,
-            'options.slots.child_type': 1,
-            'options.slots.value.date': 1,
         });
     }
 
-    /** Slot coordinates only — the reconciliation job must not load whole service documents. */
     imageReferences(): Promise<string[]> {
         return this.model.distinct('value.image_value').exec();
     }
 
-    findAllSlotIds(): Promise<ServiceEntity[]> {
-        return this.projected({
-            'options.id': 1,
-            'options.slots.id': 1,
-            'options.slots.child_type': 1,
-            'options.slots.value.time.time': 1,
-        });
+    async touch(id: string, session?: ClientSession): Promise<void> {
+        await this.model
+            .updateOne({ _id: new Types.ObjectId(id) }, { $set: { updated_at: new Date() } }, { session })
+            .exec();
+    }
+
+    async cancelDeadlines(ids: string[], session?: ClientSession): Promise<Map<string, number | null>> {
+        if (ids.length === 0) return new Map();
+
+        const rows = await this.model
+            .find(
+                { _id: { $in: ids.map((id) => new Types.ObjectId(id)) } },
+                { 'booking_policy.cancel_deadline_minutes': 1 },
+            )
+            .session(session ?? null)
+            .lean<{ _id: Types.ObjectId; booking_policy?: { cancel_deadline_minutes?: number | null } }[]>()
+            .exec();
+
+        return new Map(
+            rows.map((row) => [row._id.toHexString(), row.booking_policy?.cancel_deadline_minutes ?? null]),
+        );
     }
 
     private projected(projection: Record<string, 0 | 1>): Promise<ServiceEntity[]> {
         return this.model.find({}, projection).lean<ServiceEntity[]>().exec();
-    }
-
-    /** `$push`/`$pull`, never an array rewrite, and the `$pull` refuses a time entry that gained a booking. */
-    async applyRecurrentPlans(
-        plans: { id: string; option_id: string; plan: RecurrentSlotPlan }[],
-        session?: ClientSession,
-    ): Promise<number> {
-        const operations: AnyBulkWriteOperation<Service>[] = [];
-
-        for (const { id, option_id: optionId, plan } of plans) {
-            const filter = { _id: new Types.ObjectId(id) };
-
-            if (plan.add_slots.length > 0) {
-                operations.push({
-                    updateOne: {
-                        filter,
-                        update: { $push: { 'options.$[option].slots': { $each: plan.add_slots } } },
-                        arrayFilters: [{ 'option.id': optionId }],
-                    },
-                });
-            }
-
-            for (const { slot_id: slotId, entries } of plan.add_times) {
-                operations.push({
-                    updateOne: {
-                        filter,
-                        update: {
-                            $push: { 'options.$[option].slots.$[slot].value.time': { $each: entries } },
-                        },
-                        arrayFilters: [{ 'option.id': optionId }, { 'slot.id': slotId }],
-                    },
-                });
-            }
-
-            for (const { slot_id: slotId, times } of plan.remove_times) {
-                operations.push({
-                    updateOne: {
-                        filter,
-                        update: {
-                            $pull: {
-                                'options.$[option].slots.$[slot].value.time': {
-                                    time: { $in: times },
-                                    booked_count: { $lte: 0 },
-                                },
-                            },
-                        },
-                        arrayFilters: [{ 'option.id': optionId }, { 'slot.id': slotId }],
-                    },
-                });
-            }
-        }
-
-        if (operations.length === 0) return 0;
-
-        const result = await this.model.bulkWrite(operations, { session, ordered: false });
-
-        return result.modifiedCount;
     }
 
     private async matched(

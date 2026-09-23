@@ -11,6 +11,9 @@ export class RequestContextMiddleware implements NestMiddleware {
     use(req: Request & { id?: string }, res: Response, next: NextFunction): void {
         const requestId = resolveRequestId(req);
         res.setHeader(REQUEST_ID_HEADER, requestId);
-        RequestContext.run({ request_id: requestId }, () => next());
+        RequestContext.run(
+            { request_id: requestId, user_agent: req.headers['user-agent']?.slice(0, 256) },
+            () => next(),
+        );
     }
 }

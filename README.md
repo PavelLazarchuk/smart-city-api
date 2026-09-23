@@ -118,9 +118,15 @@ migration that creates the index, because changing one needs a `collMod` migrati
   (with `Idempotency-Replayed: true`) instead of answering `409 BOOKING_ALREADY_EXISTS`.
 - `GET /services/:id/availability?from=&to=` is the cacheable, personal-data-free view of free capacity —
   no need to download the whole service to render a booking form.
+- `GET /services/:id/slots` is the same capacity flattened to one row per bookable moment, each carrying
+  `starts_at`/`ends_at` as ISO instants with the organization's offset, so a caller never rebuilds one from
+  `date` + `time`. It filters server side (`after=`, `before=`, `option_id=`, `only_available=true`), drops
+  times that have already passed, caps the list at `limit` (20 by default) and reports the uncapped `total`.
 - Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
   `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
   `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.
+  They are the only way to edit them: `PATCH /services/:id` answers `400 VALIDATION_ERROR` on `options`.
+  `POST /services` still accepts the whole tree on creation.
 - A slot also has two bulk admin operations, both in one transaction:
   `POST /services/:id/options/:option_id/slots/:slot_id/cancel` cancels every active booking of the slot, or of
   the one `time` given. With `remove` the slot (or that time) is deleted as well — the cabinet is closed, so its
@@ -141,12 +147,15 @@ migration that creates the index, because changing one needs a `collMod` migrati
   (`PUT /services/:id/status`; the public sees published only), `description`, `tags`, numeric `price` +
   `currency`, `address` + `location` (`GET /services/nearby?lat=&lng=&radius_m=`), `working_hours`, `holidays`,
   `blackout_dates`, `booking_policy`, `form_fields`, `required_documents`. Lists take `?q=` (full text),
-  `?tags=`, `?include=organization,category` and `?fields=` (sparse fieldsets, `400 FIELDS_NOT_ALLOWED` for an
-  unknown name). `DELETE` is a soft delete (`?deleted=true` lists the trash, `POST /services/:id/restore`,
+  `?tags=`, `?include=organization,category`, `?facets=true` (value counts for `tags`, `categories` and
+  `organizations` over the whole match, in `meta`) and `?fields=` (sparse fieldsets, `400 FIELDS_NOT_ALLOWED`
+  for an unknown name). `?q=` goes to the text index first and retries the same words as a loose match on
+  label, description and tags when it scores nothing, so a near-miss spelling still answers. `DELETE` is a soft delete (`?deleted=true` lists the trash, `POST /services/:id/restore`,
   `?permanent=true` for super-admins), and `GET /services/:id/history` is the change log.
 - Bookings have a lifecycle: `pending → confirmed → completed | no_show`, or `cancelled`
-  (`PATCH /bookings/:id/status`, admins); `GET /bookings/:id`; `POST /bookings/:id/reschedule` moves one in a
-  single transaction; `GET /bookings/stats` gives no-show and cancellation rates; cancelled and finished rows
+  (`PATCH /bookings/:id/status`, admins); `GET /bookings/:id`; `POST /bookings/:id/confirm` is the owner's half
+  of `requires_confirmation`, moving their own `pending` booking to `confirmed` without an admin;
+  `POST /bookings/:id/reschedule` moves one in a single transaction; `GET /bookings/stats` gives no-show and cancellation rates; cancelled and finished rows
   stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
   (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told when a
   place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.

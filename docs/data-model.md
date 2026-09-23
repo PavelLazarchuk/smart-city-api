@@ -16,15 +16,16 @@ transaction and its children are removed by the hooks registered in the `Cascade
 
 | Collection           | Owns                                             | Key fields                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `organizations`      | The tenant                                       | `main_label`, `main_category`, `main_image`, `status` (`active` \| `temporarily_closed`), `closed_reason`, `closed_until`, `address`, `location`, `working_hours[]`, `holidays[]`                                                                                                                                                                                                         |
+| `organizations`      | The tenant                                       | `main_label`, `main_category`, `main_image`, `status` (`active` \| `temporarily_closed`), `closed_reason`, `closed_until`, `address`, `location`, `working_hours[]`, `holidays[]`, `timezone`                                                                                                                                                                                             |
 | `categories`         | Grouping inside an organization                  | `organization_id`, `position`, `label`, `enabled`                                                                                                                                                                                                                                                                                                                                         |
 | `services`           | The bookable/"apply" unit                        | `organization_id`, `category_id` (`null` = direct child), `position`, `label`, `slug`, `status`, `published_at`, `enabled`, `description`, `tags[]`, `duration_minutes`, `buffer_minutes`, `price`, `currency`, `address`, `location`, `working_hours[]`, `holidays[]`, `blackout_dates[]`, `booking_policy`, `form_fields[]`, `required_documents[]`, `value`, `options[]`, `deleted_at` |
+| `slots`              | One slot of one service option                   | `service_id`, `organization_id`, `option_id`, `id` (uuid, unique per option), `label`, `child_type`, `value` (`date`, `time[]`, `limit`, `booked_count`, …)                                                                                                                                                                                                                               |
 | `service_revisions`  | Change history of a service                      | `service_id`, `organization_id`, `action`, `actor_id`, `actor_role`, `changes` (`{ field: { before, after } }`)                                                                                                                                                                                                                                                                           |
 | `news`               | Publications                                     | `organization_id`, `position`, `label`, `slug`, `rubric`, `enabled`, `date`, `publish_at`, `is_main`, `is_offer`, `expires_at`, `value`                                                                                                                                                                                                                                                   |
 | `infosections`       | Static info blocks                               | `organization_id`, `position`, `label`, `enabled`, `control`, `value`                                                                                                                                                                                                                                                                                                                     |
 | `images`             | Uploaded files                                   | `organization_id`, storage key, mime, size                                                                                                                                                                                                                                                                                                                                                |
 | `archives`           | Snapshots of finished bookings                   | `organization_id`, `service_id`, `type`, `payload` (Mixed)                                                                                                                                                                                                                                                                                                                                |
-| `bookings`           | One booking of one slot                          | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `finished_at`, `reminder_sent_at`                                                                                                                                                 |
+| `bookings`           | One booking of one slot                          | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `starts_at`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `finished_at`, `reminder_sent_at`                                                                                                                                    |
 | `waitlist`           | Clients waiting for a full slot                  | `id`, slot coordinates, `user_id`, `person`, `phone`, `status` (`waiting` \| `notified`), `notified_at`                                                                                                                                                                                                                                                                                   |
 | `outbox_events`      | Transactional outbox                             | `id`, `type`, `organization_id`, `payload`, `internal`, `status`, `attempts`, `next_attempt_at`, `claimed_until`, `deliveries[]`                                                                                                                                                                                                                                                          |
 | `webhooks`           | Subscriber URLs                                  | `organization_id` (`null` = platform-wide), `url`, `secret` (select: false), `events[]`, `enabled`, last outcome                                                                                                                                                                                                                                                                          |
@@ -40,22 +41,33 @@ transaction and its children are removed by the hooks registered in the `Cascade
 
 ## The service tree and its bookings
 
-A service document carries the bookable structure; the bookings themselves are their own collection:
+A service document carries its options; slots and bookings are collections of their own:
 
 ```
 services
 └─ options[]                 id, label, service_type, enabled, recurrent_dates[]
-   └─ slots[]                id, label, child_type, value
-      └─ value
-         ├─ date, description, link, price
-         ├─ limit, booked_count                  (slot booked as a whole)
-         └─ time[]                               (slot booked per time)
-            └─ time, limit, booked_count
+
+slots                        one document per slot
+  service_id, organization_id, option_id, id, label, child_type,
+  value
+  ├─ date, description, link, price
+  ├─ limit, booked_count                         (slot booked as a whole)
+  └─ time[]                                      (slot booked per time)
+     └─ time, limit, booked_count
 
 bookings                     one document per booking
   id, service_id, organization_id, option_id, slot_id, slot_date, slot_time,
   user_id, person, phone, info, created_at
 ```
+
+Responses still show the tree as `options[].slots[]`: the slots of a page of services are read in one query
+and grafted in by `option_id`, in insertion (`_id`) order. A `fields=` list without `options` skips that
+query.
+
+Slots used to live inside `options[]` too. Every slot edit, every booking's counter update and every job
+wrote the one service document, and the only way to change several slots at once was a `PATCH` with the
+whole `options` array, which had to merge the stored counters back in by id. Now a slot is written on its own,
+`PATCH /services/:id` refuses `options`, and a service stays small however many dates it carries.
 
 Bookings used to live inside `options[].slots[]` **and** be mirrored in `users.bookings[]`. That put every
 booking of a service into one 16 MB document, funnelled all of its write concurrency through that document,
@@ -67,8 +79,9 @@ copies. Four things to know about the shape that replaced it:
   capacity from a count of booking documents.
 - **Duplicates are an index, not a check.** `{ service_id, option_id, slot_id, slot_time, user_id }` is
   unique; a second identical booking fails the insert and surfaces as `409 BOOKING_ALREADY_EXISTS`.
-- **Never rewrite `options` wholesale.** Jobs and the sub-resource routes use targeted `$push` / `$pull` /
-  `$inc` on the exact path, so a booking made concurrently with a job cannot be clobbered.
+- **Never rewrite a slot wholesale.** Jobs and the sub-resource routes use targeted `$push` / `$pull` /
+  `$inc` on the exact path of one slot document, so a booking made concurrently with a job cannot be
+  clobbered.
 - **Bookings are also a resource of their own.** `GET /bookings`, `GET /me/bookings`,
   `GET /services/:id/bookings` and `DELETE /bookings/:id` read and write the collection directly, so a
   client no longer downloads a whole service document to see or cancel one booking.
@@ -104,6 +117,11 @@ copies. Four things to know about the shape that replaced it:
 - **`booking_policy`** — `max_active_per_user`, `lead_time_minutes`, `max_advance_days`,
   `cancel_deadline_minutes`, `requires_confirmation` — is enforced by the booking service for clients; the
   organization's admins are exempt from the client-facing rules.
+- **Time zone.** A slot's `date` and `time` are wall clock in the owning organization's `timezone`, and every
+  rule that compares them against "now" — lead time, the advance horizon, expiry, the recurrence walk,
+  the debtor report — reads that zone, never the server's. A booking stores the resolved instant as
+  `starts_at`, so the reminder window and the cancel deadline are one UTC comparison with no zone lookup, and
+  `GET /services/:id/slots` renders it with the organization's offset.
 - **`form_fields` and `required_documents`** describe what a booking must carry: answers arrive as `fields`
   (validated per type, unknown keys refused) and `documents` (keys the client confirms); both are stored on
   the booking row.
@@ -142,6 +160,9 @@ Shape of the set:
   `{ organization_id, created_at }` cover the three cascade paths and "my bookings";
   `{ organization_id, slot_date }` serves a desk asking for one day; `id` is unique, and
   `{ service_id, option_id, slot_id, slot_time, user_id }` is the uniqueness guard described above.
+- **Slots** — `{ service_id, option_id, id }` is unique and is also how a service's slots are read;
+  `{ organization_id }` serves the organization cascade, and a partial `{ value.date }` over dated slots
+  is the expiry job's scan.
 - **Idempotency** — `idempotency_keys` is unique on `{ scope, user_id, key }`: claiming that key _is_ the
   atomic operation that makes a retried booking replay instead of running twice.
 - **Catalogue** — `services` and `news` each carry one text index (`service_text`, `news_text`, weighted

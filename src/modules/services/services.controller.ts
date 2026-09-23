@@ -50,9 +50,9 @@ import {
     BookingCreatedResponseDto,
     bookingCreatedResponseSchema,
     CloseSlotDto,
-    type CloseSlotResult,
     CloseSlotResponseDto,
     closeSlotResponseSchema,
+    type CloseSlotResult,
     CreateBookingDto,
     CreateOptionDto,
     CreateServiceDto,
@@ -63,24 +63,27 @@ import {
     MaskedServiceResponseDto,
     maskedServiceResponseSchema,
     MoveSlotDto,
-    type MoveSlotResult,
     MoveSlotResponseDto,
     moveSlotResponseSchema,
+    type MoveSlotResult,
     NearbyQueryDto,
     RecurrenceDto,
-    serviceSchemaForViewer,
     ServiceResponseDto,
     serviceResponseSchema,
     ServiceRevisionResponseDto,
     serviceRevisionResponseSchema,
+    serviceSchemaForViewer,
+    ServiceSlotsQueryDto,
+    type ServiceSlotsResponse,
+    ServiceSlotsResponseDto,
+    serviceSlotsResponseSchema,
     SetServiceStatusDto,
     UpdateOptionDto,
     UpdateServiceDto,
     UpdateSlotDto,
 } from './dto/service.schemas';
 import { type ServiceRevisionEntity } from './service-revisions.repository';
-import { type ServiceEntity } from './services.repository';
-import { type ServiceListItem, ServicesService } from './services.service';
+import { type ServiceListItem, ServicesService, type ServiceTreeEntity } from './services.service';
 import { SlotAdminService } from './slot-admin.service';
 
 function parseIdempotencyKey(raw: string | undefined): string | undefined {
@@ -178,6 +181,22 @@ export class ServicesController {
         return this.services.availability(id, query, user);
     }
 
+    @Get(':id/slots')
+    @Public()
+    @ApiData(ServiceSlotsResponseDto)
+    @ApiErrors('SERVICE_NOT_FOUND')
+    @Serialize(serviceSlotsResponseSchema)
+    async slotCandidates(
+        @Param('id') id: string,
+        @Query() query: ServiceSlotsQueryDto,
+        @Res({ passthrough: true }) res: Response,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<ServiceSlotsResponse> {
+        if (!user) res.setHeader('Cache-Control', 'public, max-age=60');
+
+        return this.services.candidates(id, query, user);
+    }
+
     @Get(':id/history')
     @ApiBearerAuth()
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
@@ -202,13 +221,14 @@ export class ServicesController {
         'CATEGORY_NOT_FOUND',
         'CATEGORY_ORGANIZATION_MISMATCH',
         'SERVICE_SLUG_TAKEN',
+        'CONFLICT',
     )
     @Serialize(serviceResponseSchema)
     async create(
         @Body() body: CreateServiceDto,
         @CurrentUser() user: AuthUser,
         @Res({ passthrough: true }) res: Response,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         const service = await this.services.create(body, user);
         res.setHeader('Location', `/services/${service._id.toHexString()}`);
 
@@ -231,7 +251,7 @@ export class ServicesController {
         @Param('id') id: string,
         @Body() body: UpdateServiceDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.update(id, body, user);
     }
 
@@ -246,7 +266,7 @@ export class ServicesController {
         @Param('id') id: string,
         @Body() body: SetServiceStatusDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.setStatus(id, body.status, user);
     }
 
@@ -274,23 +294,22 @@ export class ServicesController {
     @ApiData(ServiceResponseDto)
     @ApiErrors('SERVICE_NOT_FOUND', 'SERVICE_NOT_DELETED')
     @Serialize(serviceResponseSchema)
-    restore(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<ServiceEntity> {
+    restore(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<ServiceTreeEntity> {
         return this.services.restore(id, user);
     }
 
-    /** These routes write with `arrayFilters`, so neighbouring edits and a booking in between survive. */
     @Post(':id/options')
     @ApiBearerAuth()
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiCreatedResponse({ type: ServiceResponseDto })
-    @ApiErrors('SERVICE_NOT_FOUND')
+    @ApiErrors('SERVICE_NOT_FOUND', 'CONFLICT')
     @Serialize(serviceResponseSchema)
     addOption(
         @Param('id') id: string,
         @Body() body: CreateOptionDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.addOption(id, body, user);
     }
 
@@ -306,7 +325,7 @@ export class ServicesController {
         @Param('option_id') optionId: string,
         @Body() body: UpdateOptionDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.updateOption(id, optionId, body, user);
     }
 
@@ -336,7 +355,7 @@ export class ServicesController {
         @Param('option_id') optionId: string,
         @Body() body: RecurrenceDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.setRecurrence(id, optionId, body, user);
     }
 
@@ -358,7 +377,7 @@ export class ServicesController {
         @Param('option_id') optionId: string,
         @Body() body: unknown,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.addSlot(id, optionId, parseBody(createSlotSchema, body), user);
     }
 
@@ -383,7 +402,7 @@ export class ServicesController {
         @Param('slot_id') slotId: string,
         @Body() body: UpdateSlotDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         return this.services.updateSlot(id, optionId, slotId, body, user);
     }
 

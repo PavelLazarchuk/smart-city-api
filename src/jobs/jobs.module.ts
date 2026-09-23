@@ -10,6 +10,7 @@ import { ImagesModule } from '../modules/images/images.module';
 import { NewsModule } from '../modules/news/news.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
 import { ServicesModule } from '../modules/services/services.module';
+import { SlotsModule } from '../modules/slots/slots.module';
 import { UsersModule } from '../modules/users/users.module';
 import { BookingRemindersJob } from './booking-reminders.job';
 import { CascadeReconcileJob } from './cascade-reconcile.job';
@@ -32,6 +33,7 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         ScheduleModule.forRoot(),
         MongooseModule.forFeature([{ name: JobLock.name, schema: JobLockSchema }]),
         ServicesModule,
+        SlotsModule,
         BookingsModule,
         NewsModule,
         ArchivesModule,

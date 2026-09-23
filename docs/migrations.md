@@ -72,7 +72,7 @@ existing index). Roll it back the same way, with the previous value.
 is still running**: add fields and indexes first, switch the code in the next release, drop the old field in
 the one after.
 
-### The one exception so far
+### The exceptions so far
 
 [`20260911000000-bookings-collection.js`](../migrations/20260911000000-bookings-collection.js) moves
 bookings out of the service and user documents and removes the embedded arrays in the same step, so the
@@ -80,6 +80,12 @@ previous version cannot serve bookings once it has run. It needs a short window 
 deploy: stop the old replicas, run `migrate:up`, start the new ones. Its `down` rebuilds the embedded
 arrays from the collection, so a rollback in that window is a rollback, not a data loss — but bookings
 created after the switch are only restored if `down` runs before the old version writes again.
+
+[`20260922100000-slots-collection.js`](../migrations/20260922100000-slots-collection.js) is the second
+exception: it copies every `options[].slots[]` into the `slots` collection and unsets the embedded arrays,
+so the previous version sees services without slots once it has run. Deploy it the same way — stop, migrate,
+start. `up` is safe to rerun after a partial run (the unique index refuses the copies already made), and
+`down` rebuilds each service's embedded slots in their stored order and drops the collection.
 
 [`20260912000000-idempotency-keys.js`](../migrations/20260912000000-idempotency-keys.js) is back to the
 ordinary kind: it only adds the `idempotency_keys` collection with its unique and TTL indexes, plus one

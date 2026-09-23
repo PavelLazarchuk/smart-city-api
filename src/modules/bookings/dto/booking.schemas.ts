@@ -24,6 +24,8 @@ export const bookingResourceSchema = z.object({
     service_label: z.string().catch(''),
     date: z.string().nullable().catch(null),
     time: z.string().nullable().catch(null),
+    starts_at: isoDateTimeSchema.nullable().catch(null),
+    cancel_deadline_at: isoDateTimeSchema.nullable().catch(null),
     user_id: idOutputSchema,
     person: z.string().catch(''),
     phone: z.string().catch(''),

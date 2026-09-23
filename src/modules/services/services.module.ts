@@ -5,6 +5,7 @@ import { MailModule } from '../../integrations/mail/mail.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { CategoriesModule } from '../categories/categories.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { SlotsModule } from '../slots/slots.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
 import { BookingsService } from './bookings.service';
@@ -24,6 +25,7 @@ import { SlotAdminService } from './slot-admin.service';
             { name: ServiceRevision.name, schema: ServiceRevisionSchema },
         ]),
         BookingsModule,
+        SlotsModule,
         OrganizationsModule,
         CategoriesModule,
         MailModule,

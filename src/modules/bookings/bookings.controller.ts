@@ -126,6 +126,15 @@ export class BookingsController {
         return this.bookings.setStatus(bookingId, body.status, user);
     }
 
+    @Post('bookings/:booking_id/confirm')
+    @HttpCode(HttpStatus.OK)
+    @ApiData(BookingResourceDto)
+    @ApiErrors('BOOKING_NOT_FOUND', 'BOOKING_STATUS_TRANSITION')
+    @Serialize(bookingResourceSchema)
+    confirm(@Param('booking_id') bookingId: string, @CurrentUser() user: AuthUser): Promise<BookingResource> {
+        return this.bookings.confirm(bookingId, user);
+    }
+
     @Post('bookings/:booking_id/reschedule')
     @HttpCode(HttpStatus.OK)
     @ApiData(BookingResourceDto)

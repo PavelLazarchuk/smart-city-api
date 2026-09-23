@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestContextData {
     request_id: string;
     user_id?: string;
+    user_agent?: string;
 }
 
 export class RequestContext {
@@ -18,5 +19,9 @@ export class RequestContext {
 
     static requestId(): string | undefined {
         return RequestContext.storage.getStore()?.request_id;
+    }
+
+    static userAgent(): string | undefined {
+        return RequestContext.storage.getStore()?.user_agent;
     }
 }

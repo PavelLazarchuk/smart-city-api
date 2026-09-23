@@ -302,6 +302,8 @@ export const includedOrganizationSchema = z.object({
     main_category: z.string().optional(),
     main_image: z.string(),
     status: z.string().catch('active'),
+    address: z.string().optional(),
+    timezone: z.string().catch('UTC'),
 });
 
 export const includedCategorySchema = z.object({
@@ -479,8 +481,10 @@ export const updateServiceSchema = z
         label: labelSchema,
         enabled: enabledSchema,
         value: serviceContentInputSchema,
-        options: z.array(serviceOptionInputSchema).max(50),
         ...descriptiveFields,
+        options: z
+            .never({ error: 'Options and slots are edited through /services/{id}/options' })
+            .describe('Not accepted. Options and slots are edited through /services/{id}/options.'),
     })
     .partial();
 export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
@@ -525,6 +529,7 @@ export const listServicesQuerySchema = paginationQuerySchema.extend({
     deleted: z.stringbool().optional(),
     include: includeSchema,
     fields: z.string().optional(),
+    facets: z.stringbool().optional(),
 });
 export type ListServicesQuery = z.infer<typeof listServicesQuerySchema>;
 export class ListServicesQueryDto extends createZodDto(listServicesQuerySchema) {}
@@ -688,6 +693,47 @@ export const availabilityResponseSchema = z.object({
 });
 export type AvailabilityResponse = z.infer<typeof availabilityResponseSchema>;
 export class AvailabilityResponseDto extends createZodDto(availabilityResponseSchema) {}
+
+export const serviceSlotsQuerySchema = z.object({
+    from: dateOnlySchema.optional(),
+    to: dateOnlySchema.optional(),
+    after: isoDateTimeSchema.optional(),
+    before: isoDateTimeSchema.optional(),
+    option_id: uuidSchema.optional(),
+    only_available: z.stringbool().optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(20),
+});
+export type ServiceSlotsQuery = z.infer<typeof serviceSlotsQuerySchema>;
+export class ServiceSlotsQueryDto extends createZodDto(serviceSlotsQuerySchema) {}
+
+export const slotCandidateSchema = z.object({
+    option_id: z.string(),
+    option_label: z.string(),
+    service_type: z.enum(SERVICE_TYPES),
+    slot_id: z.string(),
+    slot_label: z.string(),
+    child_type: z.enum(SLOT_TYPES),
+    date: outputText.nullable(),
+    time: outputText.nullable(),
+    starts_at: isoDateTimeSchema.nullable(),
+    ends_at: isoDateTimeSchema.nullable(),
+    limit: limitSchema,
+    booked_count: z.number().int().min(0),
+    available: z.number().int().min(0).nullable(),
+});
+export type SlotCandidate = z.infer<typeof slotCandidateSchema>;
+
+export const serviceSlotsResponseSchema = z.object({
+    service_id: idOutputSchema,
+    organization_id: idOutputSchema,
+    timezone: z.string(),
+    from: outputText,
+    to: outputText,
+    total: z.number().int().min(0),
+    items: z.array(slotCandidateSchema),
+});
+export type ServiceSlotsResponse = z.infer<typeof serviceSlotsResponseSchema>;
+export class ServiceSlotsResponseDto extends createZodDto(serviceSlotsResponseSchema) {}
 
 export const bookingFieldsSchema = z.record(fieldKeySchema, z.unknown());
 

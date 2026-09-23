@@ -137,11 +137,8 @@ describe('public read limits (e2e)', () => {
             expect(detail.status).toBe(200);
 
             await fx
-                .collection('Service')
-                .updateOne(
-                    { label: 'legacy' },
-                    { $set: { 'options.0.slots.0.child_type': 'something_unknown' } },
-                );
+                .collection('Slot')
+                .collection.updateOne({ label: 'd' }, { $set: { child_type: 'something_unknown' } });
             const afterBreakage = await t.http.get(`${t.prefix}/services?organization_id=${organization.id}`);
             expect(afterBreakage.status).toBe(200);
             expect(afterBreakage.body.data).toHaveLength(1);

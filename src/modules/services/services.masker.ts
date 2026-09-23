@@ -11,6 +11,7 @@ export interface ServiceView {
     value?: { subscribe?: string };
     options?: {
         slots?: {
+            child_type?: string;
             value?: {
                 booked_count?: number;
                 bookings?: unknown[];
@@ -38,7 +39,6 @@ export class ServicesMasker {
         return viewer.role === ROLES.COMMON_ADMIN && viewer.organization_ids.includes(organizationId);
     }
 
-    /** Rebuilt from `booked_count`: occupancy without personal data, at a size independent of the bookings. */
     maskCounts<T extends ServiceView>(service: T): T {
         const marker = { status: texts.bookings.reservedStatus };
         const markers = (count?: number): unknown[] =>
@@ -55,9 +55,9 @@ export class ServicesMasker {
                     value: slot.value
                         ? {
                               ...slot.value,
-                              ...(slot.value.time
+                              ...(slot.child_type === 'date_time'
                                   ? {
-                                        time: slot.value.time.map((entry) => ({
+                                        time: (slot.value.time ?? []).map((entry) => ({
                                             ...entry,
                                             bookings: markers(entry.booked_count),
                                         })),

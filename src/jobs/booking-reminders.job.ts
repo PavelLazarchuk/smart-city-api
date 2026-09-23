@@ -3,7 +3,6 @@ import { Injectable } from '@nestjs/common';
 import { AppConfig } from '../common/config/app-config';
 import { OutboxService } from '../common/outbox/outbox.service';
 import { BookingsRepository } from '../modules/bookings/bookings.repository';
-import { formatDateOnly } from '../modules/services/slot.logic';
 import { UsersService } from '../modules/users/users.service';
 import { JobRunner } from './job-runner';
 
@@ -25,13 +24,12 @@ export class BookingRemindersJob {
         return this.runner.run(BOOKING_REMINDERS_JOB, () => this.execute(now));
     }
 
-    async execute(now: Date): Promise<{ date: string; reminders: number }> {
-        const target = new Date(now.getTime() + this.config.bookings.reminderHours * 60 * 60 * 1000);
-        const date = formatDateOnly(target);
+    async execute(now: Date): Promise<{ until: string; reminders: number }> {
+        const until = new Date(now.getTime() + this.config.bookings.reminderHours * 60 * 60 * 1000);
         let reminders = 0;
 
         for (;;) {
-            const due = await this.bookings.findDueReminders(date, BATCH);
+            const due = await this.bookings.findDueReminders(now, until, BATCH);
 
             if (due.length === 0) break;
 
@@ -72,6 +70,6 @@ export class BookingRemindersJob {
 
         if (reminders > 0) this.outbox.poke();
 
-        return { date, reminders };
+        return { until: until.toISOString(), reminders };
     }
 }

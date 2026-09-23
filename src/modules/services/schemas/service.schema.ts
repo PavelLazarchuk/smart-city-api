@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { type HydratedDocument, Types, SchemaTypes } from 'mongoose';
 
+import { SEARCH_DEFAULT_LANGUAGE } from '../../../common/config/constants';
 import { baseSchemaOptions, subSchemaOptions } from '../../../common/database/schema-options';
 
 export const SERVICE_TYPES = ['service_apply', 'service_payment', 'service_delivery'] as const;
@@ -35,37 +36,6 @@ export const WEEKDAYS = [
     'saturday',
 ] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
-
-/** Bookings live in the `bookings` collection; only the counter stays here, for the conditional `$inc` guard. */
-@Schema(subSchemaOptions)
-export class TimeEntry {
-    @Prop({ type: String, required: true }) time!: string;
-    @Prop({ type: Number, default: null }) limit!: number | null;
-    @Prop({ type: Number, required: true, default: 0 }) booked_count!: number;
-}
-export const TimeEntrySchema = SchemaFactory.createForClass(TimeEntry);
-
-/** Superset of every `child_type` value shape; exact shapes are enforced by zod. */
-@Schema(subSchemaOptions)
-export class SlotValue {
-    @Prop({ type: String }) date?: string;
-    @Prop({ type: [TimeEntrySchema] }) time?: TimeEntry[];
-    @Prop({ type: Number, default: undefined }) limit?: number | null;
-    @Prop({ type: Number }) booked_count?: number;
-    @Prop({ type: String }) description?: string;
-    @Prop({ type: String }) link?: string;
-    @Prop({ type: String }) price?: string;
-}
-export const SlotValueSchema = SchemaFactory.createForClass(SlotValue);
-
-@Schema(subSchemaOptions)
-export class Slot {
-    @Prop({ type: String, required: true }) id!: string;
-    @Prop({ type: String, required: true }) label!: string;
-    @Prop({ type: String, enum: SLOT_TYPES, required: true }) child_type!: SlotType;
-    @Prop({ type: SlotValueSchema, required: true, default: () => ({}) }) value!: SlotValue;
-}
-export const SlotSchema = SchemaFactory.createForClass(Slot);
 
 @Schema(subSchemaOptions)
 export class RecurrentTime {
@@ -135,7 +105,6 @@ export class ServiceOption {
     service_type!: ServiceType;
     @Prop({ type: Boolean, required: true, default: true }) enabled!: boolean;
     @Prop({ type: [RecurrentDateSchema], default: undefined }) recurrent_dates?: RecurrentDate[];
-    @Prop({ type: [SlotSchema], default: [] }) slots!: Slot[];
 }
 export const ServiceOptionSchema = SchemaFactory.createForClass(ServiceOption);
 
@@ -262,6 +231,7 @@ ServiceSchema.index(
     },
     {
         name: 'service_text',
+        default_language: SEARCH_DEFAULT_LANGUAGE,
         weights: { description: 3, label: 10, tags: 8, 'value.heading_value': 6, 'value.text_value': 1 },
     },
 );

@@ -6,7 +6,8 @@ import { MailService } from '../integrations/mail/mail.service';
 import { OrganizationsService } from '../modules/organizations/organizations.service';
 import { type ServiceEntity } from '../modules/services/services.repository';
 import { ServicesService } from '../modules/services/services.service';
-import { formatDateOnly } from '../modules/services/slot.logic';
+import { type OptionSlotStats, SlotsRepository } from '../modules/slots/slots.repository';
+import { dateOnlyIn } from '../common/time/zone';
 import { JobRunner } from './job-runner';
 import { buildReportWorkbook, REPORT_CONTENT_TYPE } from './report.workbook';
 
@@ -23,6 +24,7 @@ export class DebtorReportJob {
     constructor(
         private readonly organizations: OrganizationsService,
         private readonly services: ServicesService,
+        private readonly slots: SlotsRepository,
         private readonly mail: MailService,
         private readonly config: AppConfig,
         private readonly runner: JobRunner,
@@ -67,8 +69,13 @@ export class DebtorReportJob {
         const byId = new Map(
             organizations.map((organization) => [organization._id.toHexString(), organization]),
         );
-        const services = await this.services.findAllForDebtorReport();
-        const today = formatDateOnly(now);
+        const [services, stats] = await Promise.all([
+            this.services.findAllForDebtorReport(),
+            this.slots.optionStats(),
+        ]);
+        const byOption = new Map(
+            stats.map((row) => [`${row.service_id.toHexString()}|${row.option_id}`, row]),
+        );
         const rows: DebtorRow[] = [];
 
         for (const service of services) {
@@ -76,7 +83,12 @@ export class DebtorReportJob {
 
             if (!organization || service.deleted_at || service.status === 'archived') continue;
 
-            if (DebtorReportJob.isDebtor(service, today)) {
+            const today = dateOnlyIn(now, organization.timezone ?? this.config.jobs.timezone);
+
+            const statsOf = (optionId: string): OptionSlotStats | undefined =>
+                byOption.get(`${service._id.toHexString()}|${optionId}`);
+
+            if (DebtorReportJob.isDebtor(service, statsOf, today)) {
                 rows.push({
                     organization: organization.main_label,
                     service: service.value.heading_value || service.label || texts.report.untitledService,
@@ -87,25 +99,20 @@ export class DebtorReportJob {
         return rows;
     }
 
-    static isDebtor(service: ServiceEntity, today: string): boolean {
+    static isDebtor(
+        service: ServiceEntity,
+        statsOf: (optionId: string) => OptionSlotStats | undefined,
+        today: string,
+    ): boolean {
         for (const option of service.options) {
             if (option.service_type !== 'service_apply' || !option.enabled || option.recurrent_dates?.length)
                 continue;
 
-            if (option.slots.length === 0) return true;
+            const stats = statsOf(option.id);
 
-            let hasDated = false;
-            let hasUpcoming = false;
+            if (!stats || stats.total === 0) return true;
 
-            for (const slot of option.slots) {
-                if (slot.child_type !== 'date' && slot.child_type !== 'date_time') continue;
-
-                hasDated = true;
-
-                if (typeof slot.value.date === 'string' && slot.value.date >= today) hasUpcoming = true;
-            }
-
-            if (hasDated && !hasUpcoming) return true;
+            if (stats.dated > 0 && (stats.last_date === null || stats.last_date < today)) return true;
         }
 
         return false;

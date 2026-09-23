@@ -82,21 +82,13 @@ describe('jobs (e2e)', () => {
                 ],
             });
             const job = t.app.get(RecurrentSlotsJob);
-            const now = new Date(2026, 8, 5);
+            const now = new Date('2026-09-05T00:00:00Z');
             expect(await job.execute(now)).toEqual({ services_updated: 1 });
-            const stored = await fx
-                .collection<{
-                    options: {
-                        slots: {
-                            child_type: string;
-                            value: { date: string; time: { time: string; limit: number | null }[] };
-                        }[];
-                    }[];
-                }>('Service')
-                .findById(service.id)
-                .lean();
-            const slots = stored!.options[0]!.slots;
+            const slots = await fx.storedSlots(service.id);
             expect(slots).toHaveLength(9);
+            expect(slots.every((slot) => slot.option_id === '11111111-1111-4111-8111-111111111111')).toBe(
+                true,
+            );
             expect(slots.every((slot) => slot.child_type === 'date_time')).toBe(true);
             expect(slots[0]!.value).toMatchObject({
                 date: '2026-09-07',
@@ -147,26 +139,15 @@ describe('jobs (e2e)', () => {
                 phone: '4915291112233',
             });
 
-            expect(await t.app.get(RecurrentSlotsJob).execute(new Date(2026, 8, 5))).toEqual({
+            expect(await t.app.get(RecurrentSlotsJob).execute(new Date('2026-09-05T00:00:00Z'))).toEqual({
                 services_updated: 1,
             });
-            const stored = await fx
-                .collection<{
-                    options: {
-                        slots: {
-                            id: string;
-                            value: { date: string; time: { time: string; booked_count: number }[] };
-                        }[];
-                    }[];
-                }>('Service')
-                .findById(service.id)
-                .lean();
-            const slot = stored!.options[0]!.slots.find((item) => item.id === slotId)!;
-            const times = slot.value.time.map((entry) => entry.time);
+            const slot = await fx.storedSlot(service.id, slotId);
+            const times = slot.value.time!.map((entry) => entry.time);
             expect(times).toContain('09:00');
             expect(times).toContain('18:00');
             expect(times).not.toContain('20:00');
-            expect(slot.value.time.find((entry) => entry.time === '18:00')).toMatchObject({
+            expect(slot.value.time!.find((entry) => entry.time === '18:00')).toMatchObject({
                 booked_count: 1,
             });
         });
@@ -234,11 +215,7 @@ describe('jobs (e2e)', () => {
                 services_updated: 1,
                 slots_archived: 1,
             });
-            const stored = await fx
-                .collection<{ options: { slots: { id: string }[] }[] }>('Service')
-                .findById(service.id)
-                .lean();
-            expect(stored!.options[0]!.slots.map((slot) => slot.id)).toEqual([
+            expect((await fx.storedSlots(service.id)).map((slot) => slot.id)).toEqual([
                 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
                 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
             ]);

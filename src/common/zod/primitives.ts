@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { z } from 'zod';
 
+import { isSupportedTimeZone } from '../time/zone';
+
 export const objectIdSchema = z
     .string()
     .regex(/^[a-f0-9]{24}$/i, 'Must be a valid object id')
@@ -32,6 +34,12 @@ export const dateOnlySchema = z.iso.date();
 export const timeOfDaySchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:mm');
 
 export const isoDateTimeSchema = z.iso.datetime({ offset: true });
+
+export const timeZoneSchema = z
+    .string()
+    .trim()
+    .max(64)
+    .refine(isSupportedTimeZone, 'Must be an IANA time zone name');
 
 export const uuidSchema = z.uuid();
 

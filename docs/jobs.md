@@ -21,8 +21,8 @@ reports in shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of 
   `GET /api/v1/health/jobs` (super-admin) serves those rows, so "the nightly job has been throwing for a
   week" is a question anyone can answer without a log search. Alert on `job_runs_total{result="failed"}`,
   then read the route for the reason.
-- **Writes.** Jobs update slots with targeted `$push` / `$pull` operations and never rewrite the whole
-  `options` array, so a booking made while a job runs cannot be overwritten.
+- **Writes.** Jobs insert and delete slot documents and update times with targeted `$push` / `$pull` on one
+  slot, never a whole array, so a booking made while a job runs cannot be overwritten.
 
 ## The jobs
 

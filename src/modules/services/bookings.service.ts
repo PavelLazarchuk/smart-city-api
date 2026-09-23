@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
+import { AppConfig } from '../../common/config/app-config';
 import { type TransactionContext, TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ROLES } from '../../common/decorators/roles.decorator';
@@ -12,6 +13,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
+import { dateOnlyIn, instantIn, shiftDateOnly } from '../../common/time/zone';
 import { MailService } from '../../integrations/mail/mail.service';
 import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
 import {
@@ -34,15 +36,16 @@ import {
 import { type WaitlistEntry } from '../bookings/schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { type SlotBody } from '../slots/schemas/slot.schema';
+import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import { eventPayload, notice, recipientEmail, text } from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
-import { BOOKABLE_SLOT_TYPES, type ServiceOption, type Slot } from './schemas/service.schema';
+import { BOOKABLE_SLOT_TYPES, type ServiceOption } from './schemas/service.schema';
 import { ServicesMasker } from './services.masker';
 import { type ServiceEntity, ServicesRepository } from './services.repository';
-import { formatDateOnly } from './slot.logic';
 
 const DUPLICATE_KEY = 11000;
 const BOOKING_SORTABLE = ['created_at', 'slot_date'] as const;
@@ -66,9 +69,14 @@ interface DateRange {
 
 interface Target {
     option: ServiceOption;
-    slot: Slot;
+    slot: SlotBody;
     time: string | undefined;
     limit: number | null;
+}
+
+interface Bookable {
+    service: ServiceEntity;
+    timeZone: string;
 }
 
 interface Cancelled {
@@ -78,7 +86,13 @@ interface Cancelled {
     child_type: string;
 }
 
-function toResource(booking: BookingEntity): BookingResource {
+function toResource(booking: BookingEntity, cancelDeadlineMinutes?: number | null): BookingResource {
+    const startsAt = booking.starts_at ?? null;
+    const deadline =
+        startsAt && cancelDeadlineMinutes !== null && cancelDeadlineMinutes !== undefined
+            ? new Date(startsAt.getTime() - cancelDeadlineMinutes * 60_000)
+            : null;
+
     return {
         id: booking.id,
         service_id: booking.service_id.toHexString(),
@@ -89,6 +103,8 @@ function toResource(booking: BookingEntity): BookingResource {
         service_label: booking.service_label,
         date: booking.slot_date,
         time: booking.slot_time,
+        starts_at: startsAt ? startsAt.toISOString() : null,
+        cancel_deadline_at: deadline ? deadline.toISOString() : null,
         user_id: booking.user_id.toHexString(),
         person: booking.person,
         phone: booking.phone,
@@ -121,23 +137,19 @@ function toWaitlistResource(entry: WaitlistEntryEntity): WaitlistEntryResource {
     };
 }
 
-function slotStart(date: string | null | undefined, time: string | null | undefined): Date | null {
-    if (!date) return null;
-
-    const [year = 0, month = 1, day = 1] = date.split('-').map(Number);
-    const [hours = 0, minutes = 0] = (time ?? '00:00').split(':').map(Number);
-
-    return new Date(year, month - 1, day, hours, minutes);
+function slotStart(
+    date: string | null | undefined,
+    time: string | null | undefined,
+    timeZone: string,
+): Date | null {
+    return date ? instantIn(date, time, timeZone) : null;
 }
 
-/**
- * Row and `booked_count` change in one transaction: the counter enforces capacity, the partial unique index
- * refuses duplicates, and notifications are outbox events delivered after the commit.
- */
 @Injectable()
 export class BookingsService implements OnModuleInit {
     constructor(
         private readonly repository: ServicesRepository,
+        private readonly slots: SlotsRepository,
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
         private readonly organizations: OrganizationsService,
@@ -150,6 +162,7 @@ export class BookingsService implements OnModuleInit {
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
+        private readonly config: AppConfig,
     ) {}
 
     onModuleInit(): void {
@@ -242,9 +255,17 @@ export class BookingsService implements OnModuleInit {
         const createdAt = new Date();
 
         return this.tx.run(async (ctx) => {
-            const service = await this.loadBookable(serviceId, actor, ctx.session);
-            const target = this.resolveTarget(service, input.option_id, input.slot_id, input.time, createdAt);
-            this.assertPolicy(service, target, actor, createdAt);
+            const bookable = await this.loadBookable(serviceId, actor, ctx.session);
+            const { service, timeZone } = bookable;
+            const target = await this.resolveTarget(
+                bookable,
+                input.option_id,
+                input.slot_id,
+                input.time,
+                createdAt,
+                ctx.session,
+            );
+            this.assertPolicy(bookable, target, actor, createdAt);
             await this.assertActiveLimit(service, actor, ctx.session);
             const { fields, documents } = this.validateForm(service, input);
             const status: BookingStatus = service.booking_policy?.requires_confirmation
@@ -259,6 +280,7 @@ export class BookingsService implements OnModuleInit {
                 child_type: target.slot.child_type,
                 slot_date: target.slot.value.date ?? null,
                 slot_time: target.time ?? null,
+                starts_at: slotStart(target.slot.value.date, target.time, timeZone),
                 service_label: service.value.heading_value ?? service.label,
                 user_id: new Types.ObjectId(actor.id),
                 person: actor.name ?? '',
@@ -345,7 +367,7 @@ export class BookingsService implements OnModuleInit {
 
         if (!booking || !this.mayAccess(booking, actor)) throw ApiError.notFound('BOOKING_NOT_FOUND');
 
-        return toResource(booking);
+        return this.asResource(booking);
     }
 
     async stats(query: BookingStatsQuery, actor: AuthUser): Promise<BookingStats> {
@@ -395,8 +417,16 @@ export class BookingsService implements OnModuleInit {
         }
 
         const result = await this.bookings.list(scoped, pagination);
+        const deadlines = await this.repository.cancelDeadlines([
+            ...new Set(result.items.map((booking) => booking.service_id.toHexString())),
+        ]);
 
-        return { ...result, items: result.items.map(toResource) };
+        return {
+            ...result,
+            items: result.items.map((booking) =>
+                toResource(booking, deadlines.get(booking.service_id.toHexString()) ?? null),
+            ),
+        };
     }
 
     private organizationScope(organizationId: string | undefined, actor: AuthUser): FilterQuery<Booking> {
@@ -477,7 +507,39 @@ export class BookingsService implements OnModuleInit {
             return moved;
         });
 
-        return toResource(updated);
+        return this.asResource(updated);
+    }
+
+    async confirm(bookingId: string, actor: AuthUser): Promise<BookingResource> {
+        const confirmed = await this.tx.run(async (ctx) => {
+            const booking = await this.bookings.findByPublicId(bookingId, ctx.session);
+
+            if (!booking || !this.mayAccess(booking, actor)) throw ApiError.notFound('BOOKING_NOT_FOUND');
+
+            if (booking.status !== 'pending')
+                throw ApiError.unprocessable('BOOKING_STATUS_TRANSITION', [
+                    { path: 'status', message: `Cannot move from ${booking.status} to confirmed` },
+                ]);
+
+            const moved = await this.bookings.transition(
+                booking.id,
+                ['pending'],
+                'confirmed',
+                new Types.ObjectId(actor.id),
+                new Date(),
+                ctx.session,
+            );
+
+            if (!moved) throw ApiError.conflict('CONFLICT');
+
+            await this.emit(ctx, 'booking.status_changed', moved, undefined, {
+                previous_status: booking.status,
+            });
+
+            return moved;
+        });
+
+        return this.asResource(confirmed);
     }
 
     async reschedule(
@@ -496,16 +558,18 @@ export class BookingsService implements OnModuleInit {
             if (!booking.active) throw ApiError.unprocessable('BOOKING_NOT_ACTIVE');
 
             const admin = this.isAdminOf(booking, actor);
-            const service = await this.loadBookable(booking.service_id.toHexString(), actor, ctx.session);
+            const bookable = await this.loadBookable(booking.service_id.toHexString(), actor, ctx.session);
+            const { service, timeZone } = bookable;
 
             if (!admin) this.assertDeadline(service, booking, now);
 
-            const target = this.resolveTarget(
-                service,
+            const target = await this.resolveTarget(
+                bookable,
                 input.option_id ?? booking.option_id,
                 input.slot_id,
                 input.time,
                 now,
+                ctx.session,
             );
 
             if (
@@ -515,7 +579,7 @@ export class BookingsService implements OnModuleInit {
             )
                 throw ApiError.conflict('BOOKING_ALREADY_EXISTS');
 
-            if (!admin) this.assertPolicy(service, target, actor, now);
+            if (!admin) this.assertPolicy(bookable, target, actor, now);
 
             await this.releaseCapacity(booking, ctx.session);
             await this.take(service._id.toHexString(), target, ctx.session);
@@ -529,6 +593,7 @@ export class BookingsService implements OnModuleInit {
                         child_type: target.slot.child_type,
                         slot_date: target.slot.value.date ?? null,
                         slot_time: target.time ?? null,
+                        starts_at: slotStart(target.slot.value.date, target.time, timeZone),
                     },
                     ctx.session,
                 );
@@ -554,7 +619,13 @@ export class BookingsService implements OnModuleInit {
             return updated;
         });
 
-        return toResource(moved);
+        return this.asResource(moved);
+    }
+
+    private async asResource(booking: BookingEntity): Promise<BookingResource> {
+        const deadlines = await this.repository.cancelDeadlines([booking.service_id.toHexString()]);
+
+        return toResource(booking, deadlines.get(booking.service_id.toHexString()) ?? null);
     }
 
     private async finish(
@@ -590,8 +661,16 @@ export class BookingsService implements OnModuleInit {
     ): Promise<WaitlistEntryResource> {
         const entry = await this.tx.run(async (ctx) => {
             const now = new Date();
-            const service = await this.loadBookable(serviceId, actor, ctx.session);
-            const target = this.resolveTarget(service, input.option_id, input.slot_id, input.time, now);
+            const bookable = await this.loadBookable(serviceId, actor, ctx.session);
+            const { service } = bookable;
+            const target = await this.resolveTarget(
+                bookable,
+                input.option_id,
+                input.slot_id,
+                input.time,
+                now,
+                ctx.session,
+            );
             const booked =
                 target.time === undefined
                     ? (target.slot.value.booked_count ?? 0)
@@ -709,18 +788,18 @@ export class BookingsService implements OnModuleInit {
         serviceId: string,
         actor: AuthUser,
         session: ClientSession,
-    ): Promise<ServiceEntity> {
+    ): Promise<Bookable> {
         const service = await this.repository.findById(serviceId, session);
 
         if (!service || service.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        const privileged = this.masker.canSeeDetails(actor, service.organization_id.toHexString());
+        const organization = await this.organizations.getById(service.organization_id.toHexString());
+        const timeZone = organization.timezone ?? this.config.jobs.timezone;
 
-        if (privileged) return service;
+        if (this.masker.canSeeDetails(actor, service.organization_id.toHexString()))
+            return { service, timeZone };
 
         if (service.status !== 'published') throw ApiError.unprocessable('SERVICE_NOT_PUBLISHED');
-
-        const organization = await this.organizations.getById(service.organization_id.toHexString());
 
         const closedUntil = organization.closed_until?.getTime();
         const stillClosed = closedUntil === undefined || closedUntil === null || closedUntil > Date.now();
@@ -728,18 +807,21 @@ export class BookingsService implements OnModuleInit {
         if (organization.status === 'temporarily_closed' && stillClosed)
             throw ApiError.unprocessable('ORGANIZATION_CLOSED');
 
-        return service;
+        return { service, timeZone };
     }
 
-    private resolveTarget(
-        service: ServiceEntity,
+    private async resolveTarget(
+        { service, timeZone }: Bookable,
         optionId: string,
         slotId: string,
         time: string | undefined,
         now: Date,
-    ): Target {
+        session: ClientSession,
+    ): Promise<Target> {
         const option = service.options.find((item) => item.id === optionId);
-        const slot = option?.slots.find((item) => item.id === slotId);
+        const slot = option
+            ? await this.slots.findSlot(service._id.toHexString(), optionId, slotId, session)
+            : null;
 
         if (!option || !slot) throw ApiError.notFound('SLOT_NOT_FOUND');
 
@@ -747,7 +829,7 @@ export class BookingsService implements OnModuleInit {
 
         if (!BOOKABLE_SLOT_TYPES.includes(slot.child_type)) throw ApiError.unprocessable('SLOT_NOT_BOOKABLE');
 
-        if (typeof slot.value.date === 'string' && slot.value.date < formatDateOnly(now))
+        if (typeof slot.value.date === 'string' && slot.value.date < dateOnlyIn(now, timeZone))
             throw ApiError.unprocessable('SLOT_EXPIRED');
 
         if (slot.child_type === 'date_time') {
@@ -769,11 +851,11 @@ export class BookingsService implements OnModuleInit {
         );
     }
 
-    private assertPolicy(service: ServiceEntity, target: Target, actor: AuthUser, now: Date): void {
+    private assertPolicy({ service, timeZone }: Bookable, target: Target, actor: AuthUser, now: Date): void {
         if (this.masker.canSeeDetails(actor, service.organization_id.toHexString())) return;
 
         const policy = service.booking_policy;
-        const start = slotStart(target.slot.value.date, target.time);
+        const start = slotStart(target.slot.value.date, target.time, timeZone);
 
         if (!policy || !start) return;
 
@@ -783,13 +865,8 @@ export class BookingsService implements OnModuleInit {
         }
 
         if (policy.max_advance_days !== null && policy.max_advance_days !== undefined) {
-            const horizon = new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate() + policy.max_advance_days,
-                23,
-                59,
-            );
+            const last = shiftDateOnly(dateOnlyIn(now, timeZone), policy.max_advance_days);
+            const horizon = instantIn(last, '23:59', timeZone);
 
             if (start.getTime() > horizon.getTime()) throw ApiError.unprocessable('BOOKING_TOO_FAR_AHEAD');
         }
@@ -823,7 +900,7 @@ export class BookingsService implements OnModuleInit {
 
     private assertDeadline(service: ServiceEntity, booking: BookingEntity, now: Date): void {
         const deadline = service.booking_policy?.cancel_deadline_minutes;
-        const start = slotStart(booking.slot_date, booking.slot_time);
+        const start = booking.starts_at;
 
         if (deadline === null || deadline === undefined || !start) return;
 
@@ -872,14 +949,14 @@ export class BookingsService implements OnModuleInit {
     private async take(serviceId: string, target: Target, session: ClientSession): Promise<void> {
         const accepted =
             target.time === undefined
-                ? await this.repository.incrementSlotCount(
+                ? await this.slots.incrementSlotCount(
                       serviceId,
                       target.option.id,
                       target.slot.id,
                       target.limit,
                       session,
                   )
-                : await this.repository.incrementTimeCount(
+                : await this.slots.incrementTimeCount(
                       serviceId,
                       target.option.id,
                       target.slot.id,
@@ -910,7 +987,7 @@ export class BookingsService implements OnModuleInit {
         const serviceId = booking.service_id.toHexString();
 
         if (booking.slot_time) {
-            await this.repository.decrementTimeCount(
+            await this.slots.decrementTimeCount(
                 serviceId,
                 booking.option_id,
                 booking.slot_id,
@@ -921,6 +998,6 @@ export class BookingsService implements OnModuleInit {
             return;
         }
 
-        await this.repository.decrementSlotCount(serviceId, booking.option_id, booking.slot_id, session);
+        await this.slots.decrementSlotCount(serviceId, booking.option_id, booking.slot_id, session);
     }
 }

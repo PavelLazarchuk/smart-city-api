@@ -1,6 +1,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type ClientSession, Types } from 'mongoose';
 
+import { AppConfig } from '../../common/config/app-config';
 import { SLOT_BULK_MAX_BOOKINGS } from '../../common/config/constants';
 import { type TransactionContext, TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
@@ -8,9 +9,13 @@ import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { type EnqueueRequest, OutboxService } from '../../common/outbox/outbox.service';
+import { dateOnlyIn, instantIn } from '../../common/time/zone';
 import { MailService } from '../../integrations/mail/mail.service';
 import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
 import { WaitlistRepository } from '../bookings/waitlist.repository';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { type SlotBody } from '../slots/schemas/slot.schema';
+import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import { announced, eventPayload, notice, previousOf, recipientEmail } from './booking-events';
@@ -21,10 +26,10 @@ import {
     type MoveSlotInput,
     type MoveSlotResult,
 } from './dto/service.schemas';
-import { BOOKABLE_SLOT_TYPES, type Slot } from './schemas/service.schema';
-import { type ServiceEntity, ServicesRepository } from './services.repository';
-import { ServicesService } from './services.service';
-import { formatDateOnly, minutesOf, optionOf, slotOf, timeOf } from './slot.logic';
+import { BOOKABLE_SLOT_TYPES } from './schemas/service.schema';
+import { ServicesRepository } from './services.repository';
+import { ServicesService, type ServiceTreeEntity } from './services.service';
+import { minutesOf, optionOf, slotOf, timeOf } from './slot.logic';
 
 const DAY_MINUTES = 24 * 60;
 
@@ -47,6 +52,7 @@ export class SlotAdminService implements OnModuleInit {
         private readonly services: ServicesService,
         private readonly lifecycle: BookingsService,
         private readonly repository: ServicesRepository,
+        private readonly slots: SlotsRepository,
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
         private readonly users: UsersService,
@@ -55,7 +61,16 @@ export class SlotAdminService implements OnModuleInit {
         private readonly outbox: OutboxService,
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
+        private readonly organizations: OrganizationsService,
+        private readonly config: AppConfig,
     ) {}
+
+    private async timeZoneOf(service: { organization_id: Types.ObjectId }): Promise<string> {
+        return (
+            (await this.organizations.timezoneOf(service.organization_id.toHexString())) ??
+            this.config.jobs.timezone
+        );
+    }
 
     onModuleInit(): void {
         this.outbox.registerHandler('booking.cancelled', 'mail', async (event) => {
@@ -156,6 +171,9 @@ export class SlotAdminService implements OnModuleInit {
                     reason: input.reason ?? null,
                 }),
             }));
+
+            if (closing) await this.repository.touch(serviceId, ctx.session);
+
             const after = await this.services.load(serviceId, ctx.session);
             const removed = this.gone(after, optionId, slotId, time);
 
@@ -189,7 +207,9 @@ export class SlotAdminService implements OnModuleInit {
             if (slot.child_type !== 'date_time' && slot.child_type !== 'date')
                 throw ApiError.unprocessable('SLOT_NOT_DATED');
 
-            if (input.date < formatDateOnly(new Date())) throw ApiError.unprocessable('SLOT_EXPIRED');
+            const timeZone = await this.timeZoneOf(before);
+
+            if (input.date < dateOnlyIn(new Date(), timeZone)) throw ApiError.unprocessable('SLOT_EXPIRED');
 
             if (option.slots.some((item) => item.id !== slotId && item.value.date === input.date))
                 throw ApiError.conflict('SLOT_DATE_TAKEN');
@@ -212,7 +232,7 @@ export class SlotAdminService implements OnModuleInit {
             const waiting = await this.affectedWaiting(serviceId, optionId, slotId, ctx.session);
 
             if (previousDate !== input.date)
-                await this.repository.setSlotFields(
+                await this.slots.setFields(
                     serviceId,
                     optionId,
                     slotId,
@@ -220,7 +240,7 @@ export class SlotAdminService implements OnModuleInit {
                     ctx.session,
                 );
 
-            await this.repository.renameTimes(
+            await this.slots.renameTimes(
                 serviceId,
                 optionId,
                 slotId,
@@ -228,11 +248,11 @@ export class SlotAdminService implements OnModuleInit {
                 ctx.session,
             );
             const moved = await this.bookings.moveMany(
-                this.destinations(bookings, input.date, shifted, minutes),
+                this.destinations(bookings, input.date, shifted, minutes, timeZone),
                 ctx.session,
             );
             await this.waitlist.moveMany(
-                this.destinations(waiting, input.date, shifted, minutes),
+                this.destinations(waiting, input.date, shifted, minutes, timeZone),
                 ctx.session,
             );
 
@@ -251,6 +271,7 @@ export class SlotAdminService implements OnModuleInit {
                     },
                 }),
             }));
+            await this.repository.touch(serviceId, ctx.session);
             const after = await this.services.load(serviceId, ctx.session);
             await this.services.recordSlotChange(before, after, actor, ctx.session);
 
@@ -327,28 +348,28 @@ export class SlotAdminService implements OnModuleInit {
     private async drop(
         serviceId: string,
         optionId: string,
-        slot: Slot,
+        slot: SlotBody,
         time: string | undefined,
         session: ClientSession,
     ): Promise<void> {
-        if (time === undefined) await this.repository.pullSlots(serviceId, optionId, [slot.id], session);
-        else await this.repository.pullTimes(serviceId, optionId, slot.id, [time], session);
+        if (time === undefined) await this.slots.deleteSlots(serviceId, optionId, [slot.id], session);
+        else await this.slots.pullTimes(serviceId, optionId, slot.id, [time], session);
     }
 
     private async clearCounters(
         serviceId: string,
         optionId: string,
-        slot: Slot,
+        slot: SlotBody,
         time: string | undefined,
         session: ClientSession,
     ): Promise<void> {
         if (slot.child_type === 'date_time')
-            await this.repository.clearTimeCounts(serviceId, optionId, slot.id, time, session);
-        else await this.repository.clearSlotCount(serviceId, optionId, slot.id, session);
+            await this.slots.clearTimeCounts(serviceId, optionId, slot.id, time, session);
+        else await this.slots.clearSlotCount(serviceId, optionId, slot.id, session);
     }
 
     private gone(
-        service: ServiceEntity,
+        service: ServiceTreeEntity,
         optionId: string,
         slotId: string,
         time: string | undefined,
@@ -364,7 +385,7 @@ export class SlotAdminService implements OnModuleInit {
         return !(slot.value.time ?? []).some((entry) => entry.time === time);
     }
 
-    private shift(slot: Slot, minutes: number): Map<string, string> {
+    private shift(slot: SlotBody, minutes: number): Map<string, string> {
         const moves = new Map<string, string>();
 
         if (minutes === 0) return moves;
@@ -402,12 +423,18 @@ export class SlotAdminService implements OnModuleInit {
         date: string,
         moves: Map<string, string>,
         minutes: number,
-    ): { id: string; slot_date: string; slot_time: string | null }[] {
-        return [...rows].sort(byShift(minutes)).map((row) => ({
-            id: row.id,
-            slot_date: date,
-            slot_time: this.movedTime(row.slot_time, moves),
-        }));
+        timeZone: string,
+    ): { id: string; slot_date: string; slot_time: string | null; starts_at: Date | null }[] {
+        return [...rows].sort(byShift(minutes)).map((row) => {
+            const time = this.movedTime(row.slot_time, moves);
+
+            return {
+                id: row.id,
+                slot_date: date,
+                slot_time: time,
+                starts_at: instantIn(date, time, timeZone),
+            };
+        });
     }
 
     private async announce(
@@ -441,7 +468,7 @@ export class SlotAdminService implements OnModuleInit {
         return notify ? bookings.length : 0;
     }
 
-    private resolveTime(slot: Slot, time: string | undefined): string | undefined {
+    private resolveTime(slot: SlotBody, time: string | undefined): string | undefined {
         if (time === undefined) return undefined;
 
         if (slot.child_type !== 'date_time') throw ApiError.unprocessable('SLOT_NOT_TIMED');

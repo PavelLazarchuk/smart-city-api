@@ -112,17 +112,22 @@ export class BookingsRepository extends BaseRepository<Booking> {
     }
 
     async moveMany(
-        moves: { id: string; slot_date: string; slot_time: string | null }[],
+        moves: { id: string; slot_date: string; slot_time: string | null; starts_at: Date | null }[],
         session?: ClientSession,
     ): Promise<number> {
         if (moves.length === 0) return 0;
 
         const result = await this.model.bulkWrite(
-            moves.map(({ id, slot_date: slotDate, slot_time: slotTime }) => ({
+            moves.map(({ id, slot_date: slotDate, slot_time: slotTime, starts_at: startsAt }) => ({
                 updateOne: {
                     filter: { id, active: true },
                     update: {
-                        $set: { slot_date: slotDate, slot_time: slotTime, reminder_sent_at: null },
+                        $set: {
+                            slot_date: slotDate,
+                            slot_time: slotTime,
+                            starts_at: startsAt,
+                            reminder_sent_at: null,
+                        },
                     },
                 },
             })),
@@ -208,6 +213,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
             child_type: string;
             slot_date: string | null;
             slot_time: string | null;
+            starts_at: Date | null;
         },
         session?: ClientSession,
     ): Promise<BookingEntity | null> {
@@ -278,9 +284,9 @@ export class BookingsRepository extends BaseRepository<Booking> {
             .cursor({ batchSize: 200 });
     }
 
-    findDueReminders(date: string, limit: number): Promise<BookingEntity[]> {
+    findDueReminders(from: Date, to: Date, limit: number): Promise<BookingEntity[]> {
         return this.model
-            .find({ active: true, slot_date: date, reminder_sent_at: null })
+            .find({ active: true, starts_at: { $gt: from, $lte: to }, reminder_sent_at: null })
             .sort({ _id: 1 })
             .limit(limit)
             .lean<BookingEntity[]>()

@@ -303,7 +303,7 @@ describe('content resources (e2e)', () => {
     });
 
     describe('services options', () => {
-        it('validates slot shapes per child_type and keeps bookings when options are replaced', async () => {
+        it('validates slot shapes per child_type and keeps bookings when a slot is edited', async () => {
             const bad = await t.http
                 .post(`${t.prefix}/services`)
                 .set('Authorization', bearers['admin']!)
@@ -328,28 +328,17 @@ describe('content resources (e2e)', () => {
                 person: 'P',
             });
 
-            const replaced = await t.http
-                .patch(`${t.prefix}/services/${service.id}`)
+            const renamed = await t.http
+                .patch(`${t.prefix}/services/${service.id}/options/${option.id}`)
                 .set('Authorization', bearers['admin']!)
-                .send({
-                    options: [
-                        {
-                            id: option.id,
-                            label: 'Renamed option',
-                            slots: [
-                                {
-                                    id: slot.id,
-                                    child_type: 'date_time',
-                                    value: {
-                                        date: slot.value.date,
-                                        time: [{ time: '10:00', limit: 5 }, { time: '11:00' }],
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                });
+                .send({ label: 'Renamed option' });
+            expect(renamed.status).toBe(200);
+            const replaced = await t.http
+                .patch(`${t.prefix}/services/${service.id}/options/${option.id}/slots/${slot.id}`)
+                .set('Authorization', bearers['admin']!)
+                .send({ time: [{ time: '10:00', limit: 5 }, { time: '11:00' }] });
             expect(replaced.status).toBe(200);
+            expect(replaced.body.data.options[0].label).toBe('Renamed option');
             const time = replaced.body.data.options[0].slots[0].value.time;
             expect(time[0]).toMatchObject({ time: '10:00', limit: 5, booked_count: 1 });
             expect(time[0].bookings).toHaveLength(1);

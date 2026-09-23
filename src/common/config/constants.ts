@@ -33,6 +33,12 @@ export const OUTBOX = { maxAttempts: 8, batchSize: 100, webhookTimeoutMs: 5000 }
 
 export const MAIL_FROM_NAME = 'Smart City';
 
+export const SEARCH_DEFAULT_LANGUAGE = 'english';
+
+export const SEARCH_FACET_LIMIT = 10;
+
+export const PUBLIC_CACHE_MAX_AGE_SECONDS = 60;
+
 export const UPLOADS_CACHE_MAX_AGE_SECONDS = 3600;
 export const UPLOAD_LIMITS = { maxPixels: 40_000_000, maxDimension: 10_000 } as const;
 

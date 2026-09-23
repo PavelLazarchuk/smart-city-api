@@ -47,6 +47,9 @@ export class Organization {
 
     @Prop({ type: [String], default: [] })
     holidays!: string[];
+
+    @Prop({ type: String, required: true, default: 'UTC' })
+    timezone!: string;
 }
 
 export type OrganizationDocument = HydratedDocument<Organization>;

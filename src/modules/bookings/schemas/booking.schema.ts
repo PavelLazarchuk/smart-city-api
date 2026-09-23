@@ -39,6 +39,9 @@ export class Booking {
     @Prop({ type: String, default: null })
     slot_time!: string | null;
 
+    @Prop({ type: Date, default: null })
+    starts_at!: Date | null;
+
     @Prop({ type: String, default: '' })
     service_label!: string;
 
@@ -94,4 +97,5 @@ BookingSchema.index({ service_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, slot_date: 1 });
 BookingSchema.index({ active: 1, slot_date: 1, reminder_sent_at: 1 });
+BookingSchema.index({ active: 1, starts_at: 1, reminder_sent_at: 1 });
 BookingSchema.index({ organization_id: 1, status: 1, slot_date: 1 });

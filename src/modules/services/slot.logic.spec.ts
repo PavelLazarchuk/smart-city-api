@@ -1,14 +1,14 @@
 import { Types } from 'mongoose';
 
 import { type BookingEntity } from '../bookings/bookings.repository';
-import { type ServiceOption, type Slot } from './schemas/service.schema';
+import { type SlotBody } from '../slots/schemas/slot.schema';
 import {
     attachBookings,
-    formatDateOnly,
     generateRecurrentDays,
     isSlotExpired,
     isEmptyPlan,
-    mergeBookings,
+    type OptionTree,
+    growTrees,
     optionFromInput,
     planRecurrentDays,
     slotFromInput,
@@ -25,6 +25,7 @@ const booking = (
     child_type: 'date_time',
     slot_date: '2026-03-01',
     slot_time: null,
+    starts_at: new Date('2026-03-01T00:00:00Z'),
     service_label: 'S',
     user_id: new Types.ObjectId(),
     person: 'P',
@@ -44,10 +45,6 @@ const booking = (
 });
 
 describe('slot.logic', () => {
-    it('formats dates as YYYY-MM-DD in local time', () => {
-        expect(formatDateOnly(new Date(2026, 0, 5))).toBe('2026-01-05');
-    });
-
     it('builds persisted slots from input with counters seeded', () => {
         const dateTime = slotFromInput({
             child_type: 'date_time',
@@ -65,135 +62,60 @@ describe('slot.logic', () => {
     });
 
     it('builds options with defaults', () => {
-        const option = optionFromInput({ recurrent_dates: [{ day: 'monday', time: [{ time: '09:00' }] }] });
+        const { option, slots } = optionFromInput({
+            recurrent_dates: [{ day: 'monday', time: [{ time: '09:00' }] }],
+            slots: [{ child_type: 'apply', value: {} }],
+        });
         expect(option.service_type).toBe('service_apply');
         expect(option.enabled).toBe(true);
         expect(option.recurrent_dates).toEqual([
             { day: 'monday', time: [{ time: '09:00', limit: null }], limit: null },
         ]);
-        expect(optionFromInput({ recurrent_dates: null }).recurrent_dates).toBeUndefined();
+        expect(option).not.toHaveProperty('slots');
+        expect(slots).toEqual([
+            expect.objectContaining({ child_type: 'apply', value: { limit: null, booked_count: 0 } }),
+        ]);
+        expect(optionFromInput({ recurrent_dates: null }).option.recurrent_dates).toBeUndefined();
     });
 
-    it('mergeBookings keeps occupancy counters of slots that survive an options replacement', () => {
-        const existing: ServiceOption[] = [
-            {
-                id: 'o1',
-                label: 'x',
-                service_type: 'service_apply',
-                enabled: true,
-                slots: [
-                    {
-                        id: 's1',
-                        label: 'd',
-                        child_type: 'date_time',
-                        value: {
-                            date: '2026-03-01',
-                            time: [{ time: '09:00', limit: 2, booked_count: 1 }],
-                        },
-                    },
-                    {
-                        id: 's2',
-                        label: 'a',
-                        child_type: 'apply',
-                        value: { limit: null, booked_count: 1 },
-                    },
-                ],
-            },
-        ];
-        const incoming: ServiceOption[] = [
-            {
-                id: 'o1',
-                label: 'renamed',
-                service_type: 'service_apply',
-                enabled: true,
-                slots: [
-                    {
-                        id: 's1',
-                        label: 'd',
-                        child_type: 'date_time',
-                        value: {
-                            date: '2026-03-01',
-                            time: [
-                                { time: '09:00', limit: 5, booked_count: 0 },
-                                { time: '11:00', limit: 1, booked_count: 0 },
-                            ],
-                        },
-                    },
-                    {
-                        id: 's2',
-                        label: 'a',
-                        child_type: 'apply',
-                        value: { limit: 3, booked_count: 0 },
-                    },
-                    {
-                        id: 's3',
-                        label: 'new',
-                        child_type: 'apply',
-                        value: { limit: null, booked_count: 0 },
-                    },
-                ],
-            },
-            { id: 'o2', label: 'fresh', service_type: 'service_payment', enabled: true, slots: [] },
-        ];
-        const merged = mergeBookings(existing, incoming);
-        const time = merged[0]!.slots[0]!.value.time!;
-        expect(time[0]).toMatchObject({ time: '09:00', limit: 5, booked_count: 1 });
-        expect(time[1]).toMatchObject({ time: '11:00', booked_count: 0 });
-        expect(merged[0]!.slots[1]!.value).toMatchObject({ limit: 3, booked_count: 1 });
-        expect(merged[0]!.slots[2]!.value.booked_count).toBe(0);
-        expect(merged[1]!.slots).toEqual([]);
-        expect(merged[0]!.label).toBe('renamed');
-    });
-
-    it('mergeBookings keeps a booked time the edit renamed away, and drops an unbooked one', () => {
-        const existing: ServiceOption[] = [
-            {
-                id: 'o1',
-                label: 'x',
-                service_type: 'service_apply',
-                enabled: true,
-                slots: [
-                    {
-                        id: 's1',
-                        label: 'd',
-                        child_type: 'date_time',
-                        value: {
-                            date: '2026-03-01',
-                            time: [
-                                { time: '10:00', limit: 2, booked_count: 1 },
-                                { time: '14:00', limit: 2, booked_count: 0 },
-                            ],
-                        },
-                    },
-                ],
-            },
-        ];
-        const incoming: ServiceOption[] = [
-            {
-                id: 'o1',
-                label: 'x',
-                service_type: 'service_apply',
-                enabled: true,
-                slots: [
-                    {
-                        id: 's1',
-                        label: 'd',
-                        child_type: 'date_time',
-                        value: {
-                            date: '2026-03-01',
-                            time: [{ time: '10:30', limit: 2, booked_count: 0 }],
-                        },
-                    },
-                ],
-            },
-        ];
-        const time = mergeBookings(existing, incoming)[0]!.slots[0]!.value.time!;
-        expect(time.map((entry) => entry.time)).toEqual(['10:30', '10:00']);
-        expect(time[1]).toMatchObject({ booked_count: 1 });
+    it('grows each service its own slots per option, in the order they were stored', () => {
+        const first = new Types.ObjectId();
+        const second = new Types.ObjectId();
+        const option = { label: 'x', service_type: 'service_apply' as const, enabled: true };
+        const slot = (serviceId: Types.ObjectId, optionId: string, id: string) => ({
+            service_id: serviceId,
+            option_id: optionId,
+            id,
+            label: id,
+            child_type: 'apply' as const,
+            value: { limit: null, booked_count: 0 },
+        });
+        const [one, two] = growTrees(
+            [
+                {
+                    _id: first,
+                    options: [
+                        { ...option, id: 'o1' },
+                        { ...option, id: 'o2' },
+                    ],
+                },
+                { _id: second, options: [{ ...option, id: 'o1' }] },
+            ],
+            [
+                slot(first, 'o1', 'a'),
+                slot(second, 'o1', 'c'),
+                slot(first, 'o1', 'b'),
+                slot(first, 'gone', 'd'),
+            ],
+        );
+        expect(one!.options.map((item) => item.slots.map((entry) => entry.id))).toEqual([['a', 'b'], []]);
+        expect(two!.options[0]!.slots).toEqual([
+            { id: 'c', label: 'c', child_type: 'apply', value: { limit: null, booked_count: 0 } },
+        ]);
     });
 
     it('grafts bookings from their own collection back onto the right slot and time entry', () => {
-        const options: ServiceOption[] = [
+        const options: OptionTree[] = [
             {
                 id: 'o1',
                 label: 'x',
@@ -233,13 +155,12 @@ describe('slot.logic', () => {
     });
 
     it('generates recurrent days over the horizon starting tomorrow; a day without times is skipped', () => {
-        const from = new Date(2026, 8, 5);
         const days = generateRecurrentDays(
             [
                 { day: 'monday', time: [{ time: '09:00', limit: 1 }] },
                 { day: 'sunday', time: [] },
             ],
-            from,
+            '2026-09-05',
             14,
         );
         expect(days.map((day) => day.date)).toEqual(['2026-09-07', '2026-09-14']);
@@ -247,7 +168,7 @@ describe('slot.logic', () => {
     });
 
     it('planRecurrentDays adds missing dates and times and drops only unbooked stale ones', () => {
-        const slots: Slot[] = [
+        const slots: SlotBody[] = [
             {
                 id: 's1',
                 label: 'd',
@@ -274,7 +195,7 @@ describe('slot.logic', () => {
         expect(plan.remove_times).toEqual([{ slot_id: 's1', times: ['12:00'] }]);
         expect(slots[0]!.value.time).toHaveLength(2);
 
-        const settled: Slot[] = [
+        const settled: SlotBody[] = [
             {
                 id: 's1',
                 label: 'd',
@@ -301,21 +222,11 @@ describe('slot.logic', () => {
     });
 
     it('isSlotExpired compares date-only strings and ignores undated slots', () => {
-        expect(
-            isSlotExpired(
-                { id: 'x', label: 'x', child_type: 'date', value: { date: '2026-01-01' } },
-                '2026-01-02',
-            ),
-        ).toBe(true);
-        expect(
-            isSlotExpired(
-                { id: 'x', label: 'x', child_type: 'date', value: { date: '2026-01-02' } },
-                '2026-01-02',
-            ),
-        ).toBe(false);
-        expect(isSlotExpired({ id: 'x', label: 'x', child_type: 'apply', value: {} }, '2026-01-02')).toBe(
+        expect(isSlotExpired({ child_type: 'date', value: { date: '2026-01-01' } }, '2026-01-02')).toBe(true);
+        expect(isSlotExpired({ child_type: 'date', value: { date: '2026-01-02' } }, '2026-01-02')).toBe(
             false,
         );
+        expect(isSlotExpired({ child_type: 'apply', value: {} }, '2026-01-02')).toBe(false);
     });
 });
 
@@ -341,7 +252,7 @@ describe('slot.logic — working hours and closures', () => {
                 { day: 'monday', time: [], limit: 1 },
                 { day: 'wednesday', time: [{ time: '12:00', limit: null }] },
             ],
-            new Date(2026, 8, 5),
+            '2026-09-05',
             14,
             {
                 working_hours: [{ day: 'monday', from: '09:00', to: '10:00' }],

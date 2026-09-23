@@ -229,6 +229,26 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
         ]);
     }
 
+    async timezones(): Promise<Map<string, string>> {
+        const rows = await this.model
+            .find({}, { timezone: 1 })
+            .lean<{ _id: Types.ObjectId; timezone?: string }[]>()
+            .exec();
+
+        return new Map(rows.flatMap((row) => (row.timezone ? [[row._id.toHexString(), row.timezone]] : [])));
+    }
+
+    async timezoneOf(id: string): Promise<string | null> {
+        if (!Types.ObjectId.isValid(id)) return null;
+
+        const row = await this.model
+            .findById(id, { timezone: 1 })
+            .lean<{ timezone?: string } | null>()
+            .exec();
+
+        return row?.timezone ?? null;
+    }
+
     async holidays(): Promise<Map<string, string[]>> {
         const rows = await this.model
             .find({ 'holidays.0': { $exists: true } }, { holidays: 1 })

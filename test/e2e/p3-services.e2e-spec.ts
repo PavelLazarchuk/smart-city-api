@@ -375,18 +375,10 @@ describe('services catalogue (e2e)', () => {
                     },
                 ],
             });
-            expect(await t.app.get(RecurrentSlotsJob).execute(new Date(2026, 8, 5))).toEqual({
+            expect(await t.app.get(RecurrentSlotsJob).execute(new Date('2026-09-05T00:00:00Z'))).toEqual({
                 services_updated: 1,
             });
-            const stored = await fx
-                .collection<{
-                    options: {
-                        slots: { value: { date: string; time: { time: string; limit: number | null }[] } }[];
-                    }[];
-                }>('Service')
-                .findById(service.id)
-                .lean();
-            const slots = stored!.options[0]!.slots;
+            const slots = await fx.storedSlots(service.id);
             expect(slots.map((slot) => slot.value.date)).toEqual(['2026-09-07', '2026-09-28', '2026-10-05']);
             expect(slots[0]!.value.time).toEqual([
                 { time: '09:00', limit: 3, booked_count: 0 },

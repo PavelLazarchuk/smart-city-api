@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 
+import { AppConfig } from '../common/config/app-config';
 import { TransactionRunner } from '../common/database/transaction-runner';
+import { dateOnlyIn, shiftDateOnly } from '../common/time/zone';
 import { ArchivesService } from '../modules/archives/archives.service';
 import { BookingsRepository } from '../modules/bookings/bookings.repository';
 import { WaitlistRepository } from '../modules/bookings/waitlist.repository';
-import { ServicesService } from '../modules/services/services.service';
-import { formatDateOnly, isSlotExpired } from '../modules/services/slot.logic';
+import { OrganizationsService } from '../modules/organizations/organizations.service';
+import { isSlotExpired } from '../modules/services/slot.logic';
+import { type SlotEntity, SlotsRepository } from '../modules/slots/slots.repository';
 import { JobRunner } from './job-runner';
 
 export const SLOT_EXPIRY_JOB = 'slot_expiry';
@@ -13,7 +16,9 @@ export const SLOT_EXPIRY_JOB = 'slot_expiry';
 @Injectable()
 export class SlotExpiryJob {
     constructor(
-        private readonly services: ServicesService,
+        private readonly slots: SlotsRepository,
+        private readonly organizations: OrganizationsService,
+        private readonly config: AppConfig,
         private readonly archives: ArchivesService,
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
@@ -26,52 +31,65 @@ export class SlotExpiryJob {
     }
 
     async execute(now: Date): Promise<{ services_updated: number; slots_archived: number }> {
-        const today = formatDateOnly(now);
-        const candidates = await this.services.findWithDatedSlots();
+        const timezones = await this.organizations.timezones();
+        const todayOf = (slot: SlotEntity): string =>
+            dateOnlyIn(now, timezones.get(slot.organization_id.toHexString()) ?? this.config.jobs.timezone);
+        // No zone runs more than a day ahead of UTC, so this bound still covers every organization's past.
+        const candidates = await this.slots.findDatedBefore(shiftDateOnly(dateOnlyIn(now, 'UTC'), 1));
+        const byService = new Map<string, SlotEntity[]>();
+
+        for (const slot of candidates) {
+            if (!isSlotExpired(slot, todayOf(slot))) continue;
+
+            const key = slot.service_id.toHexString();
+            byService.set(key, [...(byService.get(key) ?? []), slot]);
+        }
+
         let servicesUpdated = 0;
         let slotsArchived = 0;
 
-        for (const candidate of candidates) {
-            const id = candidate._id.toHexString();
+        for (const [serviceId, expired] of byService) {
             const archived = await this.tx.run(async (ctx) => {
-                const service = await this.services.findForUpdate(id, ctx.session);
+                let count = 0;
 
-                if (!service) return 0;
+                for (const candidate of expired) {
+                    const slot = await this.slots.findById(candidate._id.toHexString(), ctx.session);
 
-                const expired = service.options.flatMap((option) =>
-                    option.slots
-                        .filter((slot) => isSlotExpired(slot, today))
-                        .map((slot) => ({ option, slot })),
-                );
+                    if (!slot || !isSlotExpired(slot, todayOf(slot))) continue;
 
-                if (expired.length === 0) return 0;
-
-                for (const { option, slot } of expired) {
-                    const bookings = await this.bookings.findBySlots(id, option.id, [slot.id], ctx.session);
+                    const optionId = slot.option_id;
+                    const bookings = await this.bookings.findBySlots(
+                        serviceId,
+                        optionId,
+                        [slot.id],
+                        ctx.session,
+                    );
                     await this.archives.createSnapshot(
                         {
-                            organization_id: service.organization_id,
-                            service_id: service._id,
+                            organization_id: slot.organization_id,
+                            service_id: slot.service_id,
                             type: 'service',
-                            data: { service_id: id, option_id: option.id, slot, bookings },
+                            data: {
+                                service_id: serviceId,
+                                option_id: optionId,
+                                slot: {
+                                    id: slot.id,
+                                    label: slot.label,
+                                    child_type: slot.child_type,
+                                    value: slot.value,
+                                },
+                                bookings,
+                            },
                         },
                         ctx.session,
                     );
+                    await this.slots.deleteSlots(serviceId, optionId, [slot.id], ctx.session);
+                    await this.bookings.deleteBySlots(serviceId, optionId, [slot.id], ctx.session, true);
+                    await this.waitlist.deleteBySlots(serviceId, optionId, [slot.id], ctx.session);
+                    count += 1;
                 }
 
-                const byOption = new Map<string, string[]>();
-
-                for (const { option, slot } of expired) {
-                    byOption.set(option.id, [...(byOption.get(option.id) ?? []), slot.id]);
-                }
-
-                for (const [optionId, slotIds] of byOption) {
-                    await this.services.pullSlots(id, optionId, slotIds, ctx.session);
-                    await this.bookings.deleteBySlots(id, optionId, slotIds, ctx.session, true);
-                    await this.waitlist.deleteBySlots(id, optionId, slotIds, ctx.session);
-                }
-
-                return expired.length;
+                return count;
             });
 
             if (archived > 0) {

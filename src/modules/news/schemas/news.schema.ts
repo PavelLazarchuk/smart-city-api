@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { type HydratedDocument, Types, SchemaTypes } from 'mongoose';
 
+import { SEARCH_DEFAULT_LANGUAGE } from '../../../common/config/constants';
 import { baseSchemaOptions, subSchemaOptions } from '../../../common/database/schema-options';
 
 @Schema(subSchemaOptions)
@@ -73,5 +74,9 @@ NewsSchema.index({ rubric: 1, date: -1 });
 NewsSchema.index({ publish_at: 1 });
 NewsSchema.index(
     { label: 'text', 'value.heading_value': 'text', 'value.text_value': 'text' },
-    { name: 'news_text', weights: { label: 10, 'value.heading_value': 6, 'value.text_value': 1 } },
+    {
+        name: 'news_text',
+        default_language: SEARCH_DEFAULT_LANGUAGE,
+        weights: { label: 10, 'value.heading_value': 6, 'value.text_value': 1 },
+    },
 );

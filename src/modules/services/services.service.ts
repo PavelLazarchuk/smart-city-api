@@ -12,6 +12,7 @@ import { texts } from '../../common/i18n/messages';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { slugify, uniqueSlug } from '../../common/slug';
+import { dateOnlyIn, instantIn, isoAtIn, shiftDateOnly } from '../../common/time/zone';
 import { BookingsRepository } from '../bookings/bookings.repository';
 import { CategoriesService } from '../categories/categories.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -25,11 +26,16 @@ import {
     type RecurrenceInput,
     type ServiceInclude,
     type ServiceOptionInput,
+    type ServiceSlotsQuery,
+    type ServiceSlotsResponse,
+    type SlotCandidate,
     type SlotInput,
     type UpdateOptionInput,
     type UpdateServiceInput,
     type UpdateSlotInput,
 } from './dto/service.schemas';
+import { type SlotBody, type TimeEntry } from '../slots/schemas/slot.schema';
+import { SlotsRepository } from '../slots/slots.repository';
 import { type RevisionAction } from './schemas/service-revision.schema';
 import {
     BOOKABLE_SLOT_TYPES,
@@ -37,27 +43,41 @@ import {
     type RecurrentDate,
     type Service,
     type ServiceStatus,
-    type Slot,
-    type TimeEntry,
 } from './schemas/service.schema';
 import { type ServiceRevisionEntity, ServiceRevisionsRepository } from './service-revisions.repository';
 import { ServicesMasker } from './services.masker';
 import { type ServiceEntity, ServicesRepository } from './services.repository';
 import {
     attachBookings,
-    formatDateOnly,
-    mergeBookings,
+    growTrees,
     optionFromInput,
     optionOf,
-    type RecurrentSlotPlan,
+    type ServiceTree,
     slotFromInput,
     slotOf,
 } from './slot.logic';
 
 const SERVICE_SORTABLE = ['position', 'created_at', 'label', 'price', 'published_at'] as const;
-const REVISION_IGNORED = new Set(['updated_at', 'created_at', '_id']);
 
-export type ServiceListItem = ServiceEntity & {
+function byStart(left: SlotCandidate, right: SlotCandidate): number {
+    if (left.starts_at !== right.starts_at) {
+        if (!left.starts_at) return 1;
+
+        if (!right.starts_at) return -1;
+
+        return left.starts_at < right.starts_at ? -1 : 1;
+    }
+
+    return (
+        left.option_label.localeCompare(right.option_label) || left.option_id.localeCompare(right.option_id)
+    );
+}
+const REVISION_IGNORED = new Set(['updated_at', 'created_at', '_id']);
+const DUPLICATE_KEY = 11000;
+
+export type ServiceTreeEntity = ServiceTree<ServiceEntity>;
+
+export type ServiceListItem = ServiceTreeEntity & {
     distance_m?: number;
     organization?: unknown;
     category?: unknown;
@@ -104,6 +124,7 @@ export function diffTopLevel(
 export class ServicesService implements OnModuleInit {
     constructor(
         private readonly services: ServicesRepository,
+        private readonly slots: SlotsRepository,
         private readonly revisions: ServiceRevisionsRepository,
         private readonly bookings: BookingsRepository,
         private readonly organizations: OrganizationsService,
@@ -125,6 +146,7 @@ export class ServicesService implements OnModuleInit {
         });
         this.cascade.register('organization', 'services.delete', async (organizationId, ctx) => {
             await this.revisions.deleteByOrganization(organizationId, ctx.session);
+            await this.slots.deleteByOrganization(organizationId, ctx.session);
             await this.services.deleteByOrganization(organizationId, ctx.session);
         });
         this.cascade.register('category', 'services.delete', async (categoryId, ctx) => {
@@ -136,6 +158,9 @@ export class ServicesService implements OnModuleInit {
         });
         this.cascade.register('service', 'revisions.delete', async (serviceId, ctx) => {
             await this.revisions.deleteByService(serviceId, ctx.session);
+        });
+        this.cascade.register('service', 'slots.delete', async (serviceId, ctx) => {
+            await this.slots.deleteByService(serviceId, ctx.session);
         });
     }
 
@@ -159,12 +184,19 @@ export class ServicesService implements OnModuleInit {
         if (query.tags.length > 0) filter['tags'] = { $in: query.tags };
 
         const projection = this.projectionFor(viewer);
-        const result = query.q
-            ? await this.services.searchText(filter, query.q, pagination, projection)
-            : await this.services.paginate(filter, pagination, projection);
-        const items = await this.present(result.items, viewer);
+        const [result, facets] = await Promise.all([
+            query.q
+                ? this.services.searchText(filter, query.q, pagination, projection)
+                : this.services.paginate(filter, pagination, projection),
+            query.facets ? this.services.facets(filter) : Promise.resolve(undefined),
+        ]);
+        const items = await this.present(await this.withSlots(result.items, query.fields), viewer);
 
-        return { ...result, items: await this.attachIncludes(items, query.include) };
+        return {
+            ...result,
+            ...(facets ? { meta_extra: { ...result.meta_extra, facets } } : {}),
+            items: await this.attachIncludes(items, query.include),
+        };
     }
 
     async nearby(query: NearbyQuery, viewer?: AuthUser): Promise<ServiceListItem[]> {
@@ -181,7 +213,7 @@ export class ServicesService implements OnModuleInit {
             filter,
             projection as Record<string, 0 | 1> | undefined,
         );
-        const items = await this.present(rows, viewer);
+        const items = await this.present(await this.withSlots(rows, query.fields), viewer);
 
         return this.attachIncludes(items, query.include);
     }
@@ -204,7 +236,7 @@ export class ServicesService implements OnModuleInit {
             throw ApiError.notFound('SERVICE_NOT_FOUND');
 
         const [presented] = await this.attachIncludes(
-            await this.present([service], viewer),
+            await this.present(await this.withSlots([service], query?.fields), viewer),
             query?.include ?? [],
         );
 
@@ -279,7 +311,7 @@ export class ServicesService implements OnModuleInit {
         query: AvailabilityQuery,
         viewer?: AuthUser,
     ): Promise<AvailabilityResponse> {
-        const service = await this.getById(id, { 'value.subscribe': 0 });
+        const service = await this.tree(await this.getById(id, { 'value.subscribe': 0 }));
 
         if (
             service.status !== 'published' &&
@@ -287,10 +319,8 @@ export class ServicesService implements OnModuleInit {
         )
             throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        const from = query.from ?? formatDateOnly(new Date());
-        const horizon = new Date();
-        horizon.setDate(horizon.getDate() + this.config.retention.recurrentHorizonDays);
-        const to = query.to ?? formatDateOnly(horizon);
+        const timeZone = await this.timeZoneOf(service.organization_id.toHexString());
+        const { from, to } = this.horizon(query, timeZone);
         const free = (limit: number | null | undefined, booked: number): number | null =>
             limit === null || limit === undefined ? null : Math.max(0, limit - booked);
         const options = service.options
@@ -342,7 +372,133 @@ export class ServicesService implements OnModuleInit {
         };
     }
 
-    async create(input: CreateServiceInput, viewer?: AuthUser): Promise<ServiceEntity> {
+    private async timeZoneOf(organizationId: string): Promise<string> {
+        return (await this.organizations.timezoneOf(organizationId)) ?? this.config.jobs.timezone;
+    }
+
+    private horizon(query: { from?: string; to?: string }, timeZone: string): { from: string; to: string } {
+        const from = query.from ?? dateOnlyIn(new Date(), timeZone);
+
+        return {
+            from,
+            to: query.to ?? shiftDateOnly(from, this.config.retention.recurrentHorizonDays),
+        };
+    }
+
+    async candidates(id: string, query: ServiceSlotsQuery, viewer?: AuthUser): Promise<ServiceSlotsResponse> {
+        const service = await this.tree(await this.getById(id, { 'value.subscribe': 0 }));
+
+        if (
+            service.status !== 'published' &&
+            !this.masker.canSeeDetails(viewer, service.organization_id.toHexString())
+        )
+            throw ApiError.notFound('SERVICE_NOT_FOUND');
+
+        const timeZone = await this.timeZoneOf(service.organization_id.toHexString());
+        const { from, to } = this.horizon(query, timeZone);
+        const now = new Date();
+        const today = dateOnlyIn(now, timeZone);
+        const after = query.after ? new Date(query.after) : undefined;
+        const before = query.before ? new Date(query.before) : undefined;
+        const windowed = after !== undefined || before !== undefined;
+        const candidates: SlotCandidate[] = [];
+
+        for (const option of service.options) {
+            if (!option.enabled) continue;
+
+            if (query.option_id && option.id !== query.option_id) continue;
+
+            for (const slot of option.slots) {
+                if (!BOOKABLE_SLOT_TYPES.includes(slot.child_type)) continue;
+
+                const date = slot.value.date ?? null;
+
+                if (date !== null && (date < from || date > to)) continue;
+
+                if (date !== null && date < today) continue;
+
+                const base = {
+                    option_id: option.id,
+                    option_label: option.label,
+                    service_type: option.service_type,
+                    slot_id: slot.id,
+                    slot_label: slot.label,
+                    child_type: slot.child_type,
+                    date,
+                };
+
+                for (const entry of this.momentsOf(slot)) {
+                    const startsAt = date ? instantIn(date, entry.time, timeZone) : null;
+
+                    if (startsAt && entry.time !== null && startsAt.getTime() <= now.getTime()) continue;
+
+                    if (windowed && !startsAt) continue;
+
+                    if (after && startsAt && startsAt.getTime() < after.getTime()) continue;
+
+                    if (before && startsAt && startsAt.getTime() > before.getTime()) continue;
+
+                    const available =
+                        entry.limit === null || entry.limit === undefined
+                            ? null
+                            : Math.max(0, entry.limit - entry.booked_count);
+
+                    if (query.only_available && available === 0) continue;
+
+                    candidates.push({
+                        ...base,
+                        time: entry.time,
+                        starts_at: startsAt ? isoAtIn(startsAt, timeZone) : null,
+                        ends_at: this.endsAt(startsAt, service.duration_minutes, timeZone),
+                        limit: entry.limit ?? null,
+                        booked_count: entry.booked_count,
+                        available,
+                    });
+                }
+            }
+        }
+
+        candidates.sort(byStart);
+
+        return {
+            service_id: service._id.toHexString(),
+            organization_id: service.organization_id.toHexString(),
+            timezone: timeZone,
+            from,
+            to,
+            total: candidates.length,
+            items: candidates.slice(0, query.limit),
+        };
+    }
+
+    private momentsOf(slot: SlotBody): { time: string | null; limit: number | null; booked_count: number }[] {
+        if (slot.child_type === 'date_time')
+            return (slot.value.time ?? []).map((entry) => ({
+                time: entry.time,
+                limit: entry.limit ?? null,
+                booked_count: entry.booked_count,
+            }));
+
+        return [
+            {
+                time: null,
+                limit: slot.value.limit ?? null,
+                booked_count: slot.value.booked_count ?? 0,
+            },
+        ];
+    }
+
+    private endsAt(
+        startsAt: Date | null,
+        durationMinutes: number | null | undefined,
+        timeZone: string,
+    ): string | null {
+        if (!startsAt || durationMinutes === null || durationMinutes === undefined) return null;
+
+        return isoAtIn(new Date(startsAt.getTime() + durationMinutes * 60_000), timeZone);
+    }
+
+    async create(input: CreateServiceInput, viewer?: AuthUser): Promise<ServiceTreeEntity> {
         await this.organizations.assertExists(input.organization_id);
         const categoryId = input.category_id ?? null;
 
@@ -360,44 +516,40 @@ export class ServicesService implements OnModuleInit {
                     !(value === null && (key === 'location' || key === 'address' || key === 'description')),
             ),
         );
-        const created = await this.services.create({
-            organization_id: organizationId,
-            category_id: categoryId ? new Types.ObjectId(categoryId) : null,
-            position,
-            label,
-            slug,
-            status,
-            enabled: status === 'published',
-            published_at: status === 'published' ? new Date() : null,
-            value: input.value ?? {},
-            options: (input.options ?? []).map(optionFromInput),
-            ...fields,
+        const options = (input.options ?? []).map(optionFromInput);
+        this.assertUniqueOptions(options.map(({ option }) => option.id));
+        const created = await this.tx.run(async (ctx) => {
+            const service = await this.services.create(
+                {
+                    organization_id: organizationId,
+                    category_id: categoryId ? new Types.ObjectId(categoryId) : null,
+                    position,
+                    label,
+                    slug,
+                    status,
+                    enabled: status === 'published',
+                    published_at: status === 'published' ? new Date() : null,
+                    value: input.value ?? {},
+                    options: options.map(({ option }) => option),
+                    ...fields,
+                },
+                ctx.session,
+            );
+
+            for (const { option, slots } of options)
+                await this.insertSlots(service, option.id, slots, ctx.session);
+
+            const tree = await this.load(service._id.toHexString(), ctx.session);
+            await this.record(tree, 'create', null, tree, viewer, ctx.session);
+
+            return tree;
         });
-        await this.record(created, 'create', null, created, viewer);
 
         return this.presented(created, viewer);
     }
 
-    /**
-     * Replacing `options` is a read-modify-write, so it runs in a transaction: a booking committed in between
-     * conflicts and retries instead of being dropped.
-     */
-    async update(id: string, input: UpdateServiceInput, viewer?: AuthUser): Promise<ServiceEntity> {
-        const updated =
-            input.options === undefined
-                ? await this.applyUpdate(id, input, viewer)
-                : await this.tx.run((ctx) => this.applyUpdate(id, input, viewer, ctx.session));
-
-        return this.presented(updated, viewer);
-    }
-
-    private async applyUpdate(
-        id: string,
-        input: UpdateServiceInput,
-        viewer?: AuthUser,
-        session?: ClientSession,
-    ): Promise<ServiceEntity> {
-        const existing = await this.services.findById(id, session);
+    async update(id: string, input: UpdateServiceInput, viewer?: AuthUser): Promise<ServiceTreeEntity> {
+        const existing = await this.services.findById(id);
 
         if (!existing || existing.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
@@ -414,18 +566,14 @@ export class ServicesService implements OnModuleInit {
 
             if ((nextCategory ? nextCategory.toHexString() : null) !== currentCategory) {
                 set['category_id'] = nextCategory;
-                set['position'] = await this.services.nextPosition(
-                    organizationId,
-                    input.category_id ?? null,
-                    session,
-                );
+                set['position'] = await this.services.nextPosition(organizationId, input.category_id ?? null);
             }
         }
 
         if (input.label !== undefined) set['label'] = input.label;
 
         if (input.slug !== undefined) {
-            if (await this.services.slugTaken(existing.organization_id, input.slug, id, session))
+            if (await this.services.slugTaken(existing.organization_id, input.slug, id))
                 throw ApiError.conflict('SERVICE_SLUG_TAKEN');
 
             set['slug'] = input.slug;
@@ -444,10 +592,6 @@ export class ServicesService implements OnModuleInit {
 
         if (input.value !== undefined) set['value'] = input.value;
 
-        if (input.options !== undefined) {
-            set['options'] = mergeBookings(existing.options, input.options.map(optionFromInput));
-        }
-
         for (const [key, value] of Object.entries(this.descriptiveFields(input))) {
             if (value === undefined) continue;
 
@@ -462,19 +606,16 @@ export class ServicesService implements OnModuleInit {
 
         if (Object.keys(unset).length) update['$unset'] = unset;
 
-        const updated = Object.keys(update).length
-            ? await this.services.updateById(id, update, session)
-            : existing;
+        const updated = Object.keys(update).length ? await this.services.updateById(id, update) : existing;
 
         if (!updated) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        if (Object.keys(update).length)
-            await this.record(updated, 'update', existing, updated, viewer, session);
+        if (Object.keys(update).length) await this.record(updated, 'update', existing, updated, viewer);
 
-        return updated;
+        return this.presented(await this.tree(updated), viewer);
     }
 
-    async setStatus(id: string, status: ServiceStatus, viewer?: AuthUser): Promise<ServiceEntity> {
+    async setStatus(id: string, status: ServiceStatus, viewer?: AuthUser): Promise<ServiceTreeEntity> {
         return this.update(id, { status }, viewer);
     }
 
@@ -498,7 +639,7 @@ export class ServicesService implements OnModuleInit {
         await this.record(deleted, 'delete', existing, deleted, viewer);
     }
 
-    async restore(id: string, viewer?: AuthUser): Promise<ServiceEntity> {
+    async restore(id: string, viewer?: AuthUser): Promise<ServiceTreeEntity> {
         const existing = await this.services.findById(id);
 
         if (!existing) throw ApiError.notFound('SERVICE_NOT_FOUND');
@@ -511,7 +652,7 @@ export class ServicesService implements OnModuleInit {
 
         await this.record(restored, 'restore', existing, restored, viewer);
 
-        return this.presented(restored, viewer);
+        return this.presented(await this.tree(restored), viewer);
     }
 
     async purge(id: string): Promise<void> {
@@ -585,7 +726,7 @@ export class ServicesService implements OnModuleInit {
         return uniqueSlug(slugify(label), (candidate) => this.services.slugTaken(organizationId, candidate));
     }
 
-    private descriptiveFields(input: Partial<UpdateServiceInput>): Record<string, unknown> {
+    private descriptiveFields(input: Omit<Partial<UpdateServiceInput>, 'options'>): Record<string, unknown> {
         const fields: Record<string, unknown> = {};
 
         if (input.description !== undefined) fields['description'] = input.description;
@@ -655,18 +796,16 @@ export class ServicesService implements OnModuleInit {
     }
 
     private async record(
-        service: ServiceEntity,
+        service: ServiceEntity | ServiceTreeEntity,
         action: RevisionAction,
-        before: ServiceEntity | null,
-        after: ServiceEntity | null,
+        before: ServiceEntity | ServiceTreeEntity | null,
+        after: ServiceEntity | ServiceTreeEntity | null,
         viewer?: AuthUser,
         session?: ClientSession,
     ): Promise<void> {
         const changes = diffTopLevel(
             before as unknown as Record<string, unknown> | null,
-            action === 'create'
-                ? (after as unknown as Record<string, unknown>)
-                : (after as unknown as Record<string, unknown> | null),
+            after as unknown as Record<string, unknown> | null,
         );
 
         if (action === 'update' && Object.keys(changes).length === 0) return;
@@ -685,19 +824,21 @@ export class ServicesService implements OnModuleInit {
     }
 
     recordSlotChange(
-        before: ServiceEntity,
-        after: ServiceEntity,
+        before: ServiceTreeEntity,
+        after: ServiceTreeEntity,
         viewer: AuthUser,
         session: ClientSession,
     ): Promise<void> {
         return this.record(after, 'slot.update', before, after, viewer, session);
     }
 
-    /** Validated against the stored document in a transaction, then written with `arrayFilters`. */
-    async addOption(id: string, input: ServiceOptionInput, viewer?: AuthUser): Promise<ServiceEntity> {
+    async addOption(id: string, input: ServiceOptionInput, viewer?: AuthUser): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            await this.services.pushOption(id, optionFromInput(input), ctx.session);
+            const { option, slots } = optionFromInput(input);
+            this.assertUniqueOptions([...before.options.map((item) => item.id), option.id]);
+            await this.services.pushOption(id, option, ctx.session);
+            await this.insertSlots(before, option.id, slots, ctx.session);
             const after = await this.load(id, ctx.session);
             await this.record(after, 'option.add', before, after, viewer, ctx.session);
 
@@ -712,7 +853,7 @@ export class ServicesService implements OnModuleInit {
         optionId: string,
         input: UpdateOptionInput,
         viewer?: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
             optionOf(before, optionId);
@@ -745,6 +886,7 @@ export class ServicesService implements OnModuleInit {
                 throw ApiError.conflict('OPTION_HAS_BOOKINGS');
 
             await this.services.pullOption(id, optionId, ctx.session);
+            await this.slots.deleteByOption(id, optionId, ctx.session);
             const after = await this.load(id, ctx.session);
             await this.record(after, 'option.remove', before, after, viewer, ctx.session);
         });
@@ -755,7 +897,7 @@ export class ServicesService implements OnModuleInit {
         optionId: string,
         input: RecurrenceInput,
         viewer?: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
             optionOf(before, optionId);
@@ -777,7 +919,12 @@ export class ServicesService implements OnModuleInit {
         return this.presented(service, viewer);
     }
 
-    async addSlot(id: string, optionId: string, input: SlotInput, viewer?: AuthUser): Promise<ServiceEntity> {
+    async addSlot(
+        id: string,
+        optionId: string,
+        input: SlotInput,
+        viewer?: AuthUser,
+    ): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
             const option = optionOf(before, optionId);
@@ -785,7 +932,8 @@ export class ServicesService implements OnModuleInit {
 
             if (option.slots.some((item) => item.id === slot.id)) throw ApiError.conflict('CONFLICT');
 
-            await this.services.pushSlot(id, optionId, slot, ctx.session);
+            await this.insertSlots(before, optionId, [slot], ctx.session);
+            await this.services.touch(id, ctx.session);
             const after = await this.load(id, ctx.session);
             await this.record(after, 'slot.add', before, after, viewer, ctx.session);
 
@@ -802,7 +950,7 @@ export class ServicesService implements OnModuleInit {
         slotId: string,
         input: UpdateSlotInput,
         viewer?: AuthUser,
-    ): Promise<ServiceEntity> {
+    ): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
             const slot = slotOf(optionOf(before, optionId), slotId);
@@ -825,7 +973,7 @@ export class ServicesService implements OnModuleInit {
             }
 
             if (Object.keys(fields).length > 0)
-                await this.services.setSlotFields(id, optionId, slotId, fields, ctx.session);
+                await this.slots.setFields(id, optionId, slotId, fields, ctx.session);
 
             if (input.time !== undefined) {
                 if (slot.child_type !== 'date_time') throw ApiError.unprocessable('SLOT_NOT_TIMED');
@@ -833,6 +981,7 @@ export class ServicesService implements OnModuleInit {
                 await this.applyTimes(id, optionId, slot, input.time, ctx.session);
             }
 
+            await this.services.touch(id, ctx.session);
             const after = await this.load(id, ctx.session);
             await this.record(after, 'slot.update', before, after, viewer, ctx.session);
 
@@ -850,7 +999,8 @@ export class ServicesService implements OnModuleInit {
             if ((await this.bookings.countActiveBySlot(id, optionId, slotId, ctx.session)) > 0)
                 throw ApiError.conflict('SLOT_HAS_BOOKINGS');
 
-            await this.services.pullSlots(id, optionId, [slotId], ctx.session);
+            await this.slots.deleteSlots(id, optionId, [slotId], ctx.session);
+            await this.services.touch(id, ctx.session);
             const after = await this.load(id, ctx.session);
             await this.record(after, 'slot.remove', before, after, viewer, ctx.session);
         });
@@ -859,7 +1009,7 @@ export class ServicesService implements OnModuleInit {
     private async applyTimes(
         id: string,
         optionId: string,
-        slot: Slot,
+        slot: SlotBody,
         input: { time: string; limit?: number | null }[],
         session: ClientSession,
     ): Promise<void> {
@@ -872,34 +1022,84 @@ export class ServicesService implements OnModuleInit {
 
             if (booked > 0) throw ApiError.conflict('SLOT_TIME_BOOKED');
 
-            await this.services.pullTimes(id, optionId, slot.id, removed, session);
+            await this.slots.pullTimes(id, optionId, slot.id, removed, session);
         }
 
         const added = input
             .filter((entry) => !existing.some((item) => item.time === entry.time))
             .map((entry): TimeEntry => ({ time: entry.time, limit: entry.limit ?? null, booked_count: 0 }));
 
-        if (added.length > 0) await this.services.pushTimes(id, optionId, slot.id, added, session);
+        if (added.length > 0) await this.slots.pushTimes(id, optionId, slot.id, added, session);
 
         for (const entry of input) {
             const previous = existing.find((item) => item.time === entry.time);
 
             if (!previous || entry.limit === undefined || previous.limit === entry.limit) continue;
 
-            await this.services.setTimeLimit(id, optionId, slot.id, entry.time, entry.limit, session);
+            await this.slots.setTimeLimit(id, optionId, slot.id, entry.time, entry.limit, session);
         }
     }
 
-    async load(id: string, session: ClientSession): Promise<ServiceEntity> {
+    private assertUniqueOptions(ids: string[]): void {
+        if (new Set(ids).size !== ids.length) throw ApiError.conflict('CONFLICT');
+    }
+
+    private async insertSlots(
+        service: Pick<ServiceEntity, '_id' | 'organization_id'>,
+        optionId: string,
+        slots: SlotBody[],
+        session: ClientSession,
+    ): Promise<void> {
+        try {
+            await this.slots.insert(
+                { service_id: service._id, organization_id: service.organization_id, option_id: optionId },
+                slots,
+                session,
+            );
+        } catch (error) {
+            if ((error as { code?: number }).code === DUPLICATE_KEY) throw ApiError.conflict('CONFLICT');
+
+            throw error;
+        }
+    }
+
+    async load(id: string, session: ClientSession): Promise<ServiceTreeEntity> {
         const service = await this.services.findById(id, session);
 
         if (!service || service.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        return service;
+        return this.tree(service, session);
+    }
+
+    async tree(service: ServiceEntity, session?: ClientSession): Promise<ServiceTreeEntity> {
+        const [tree] = await this.withSlots([service], undefined, session);
+
+        return tree!;
+    }
+
+    private async withSlots<T extends ServiceEntity>(
+        services: T[],
+        fields?: string,
+        session?: ClientSession,
+    ): Promise<ServiceTree<T>[]> {
+        const wanted =
+            fields === undefined ||
+            fields
+                .split(',')
+                .map((field) => field.trim())
+                .includes('options');
+        const slots = wanted
+            ? await this.slots.findByServices(
+                  services.map((service) => service._id),
+                  session,
+              )
+            : [];
+
+        return growTrees(services, slots);
     }
 
     /** Bookings are read only for viewers allowed to see them; everyone else gets markers from `booked_count`. */
-    private async presented(service: ServiceEntity, viewer?: AuthUser): Promise<ServiceEntity> {
+    private async presented(service: ServiceTreeEntity, viewer?: AuthUser): Promise<ServiceTreeEntity> {
         const [presented] = await this.present([service], viewer);
 
         if (!presented) throw ApiError.notFound('SERVICE_NOT_FOUND');
@@ -907,7 +1107,7 @@ export class ServicesService implements OnModuleInit {
         return presented;
     }
 
-    private async present<T extends ServiceEntity>(services: T[], viewer?: AuthUser): Promise<T[]> {
+    private async present<T extends ServiceTreeEntity>(services: T[], viewer?: AuthUser): Promise<T[]> {
         const privileged = services.filter((service) =>
             this.masker.canSeeDetails(viewer, service.organization_id.toHexString()),
         );
@@ -936,39 +1136,15 @@ export class ServicesService implements OnModuleInit {
         return this.services.findWithRecurrentOptions();
     }
 
-    findWithDatedSlots(): Promise<ServiceEntity[]> {
-        return this.services.findWithDatedSlots();
-    }
-
     findAllForDebtorReport(): Promise<ServiceEntity[]> {
         return this.services.findAllForDebtorReport();
     }
 
-    /** Image URLs used by services; one of the sources `unreferenced_images` counts as a reference. */
     imageReferences(): Promise<string[]> {
         return this.services.imageReferences();
     }
 
-    findAllSlotIds(): Promise<ServiceEntity[]> {
-        return this.services.findAllSlotIds();
-    }
-
     findManyByIds(ids: string[]): Promise<ServiceEntity[]> {
         return this.services.findManyByIds(ids);
-    }
-
-    applyRecurrentPlans(
-        plans: { id: string; option_id: string; plan: RecurrentSlotPlan }[],
-        session?: ClientSession,
-    ): Promise<number> {
-        return this.services.applyRecurrentPlans(plans, session);
-    }
-
-    findForUpdate(id: string, session?: ClientSession): Promise<ServiceEntity | null> {
-        return this.services.findById(id, session);
-    }
-
-    pullSlots(id: string, optionId: string, slotIds: string[], session?: ClientSession): Promise<boolean> {
-        return this.services.pullSlots(id, optionId, slotIds, session);
     }
 }
