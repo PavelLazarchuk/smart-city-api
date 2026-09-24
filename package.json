@@ -14,6 +14,7 @@
         "start": "node dist/main",
         "start:dev": "nest start --watch",
         "start:debug": "nest start --debug --watch",
+        "start:load": "node --env-file=load/load.env dist/main",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "format": "prettier --write .",
@@ -30,6 +31,10 @@
         "migrate:status": "migrate-mongo status",
         "migrate:verify": "ts-node -P tsconfig.scripts.json scripts/verify-migrations.ts",
         "seed": "ts-node -P tsconfig.scripts.json scripts/seed.ts",
+        "migrate:load": "node --env-file=load/load.env node_modules/.bin/migrate-mongo up",
+        "seed:load": "TS_NODE_PROJECT=tsconfig.scripts.json node --env-file=load/load.env -r ts-node/register scripts/seed-load.ts",
+        "load:smoke": "sh load/k6.sh run -e PROFILE=smoke load/mixed.js",
+        "load": "sh load/k6.sh run -e PROFILE=load load/mixed.js",
         "audit": "npm audit --audit-level=high",
         "prepare": "husky"
     },

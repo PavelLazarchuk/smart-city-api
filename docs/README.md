@@ -11,6 +11,7 @@ Operational entry point is the [README](../README.md). Everything else:
 | [jobs.md](jobs.md)                 | The eight scheduled jobs, the `job_locks` lease, timezones                                 |
 | [migrations.md](migrations.md)     | migrate-mongo workflow, why indexes live in migrations, TTL changes                        |
 | [deployment.md](deployment.md)     | Release steps, production-only switches, observability                                     |
+| [load-testing.md](load-testing.md) | The k6 stand: overrides, seed, scenarios, profiles, how to read the results                |
 
 The live API contract is the Swagger document generated from the zod schemas: `/api/docs` (UI) and
 `/api/docs-json`.

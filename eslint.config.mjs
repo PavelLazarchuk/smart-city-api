@@ -99,4 +99,10 @@ export default tseslint.config(
         files: ['**/*.mjs', '**/*.js'],
         ...tseslint.configs.disableTypeChecked,
     },
+    {
+        files: ['load/**/*.js'],
+        languageOptions: {
+            globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' },
+        },
+    },
 );
