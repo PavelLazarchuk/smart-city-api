@@ -8,6 +8,7 @@ import { JobRunner } from './job-runner';
 export const STALE_BOOKINGS_JOB = 'stale_bookings';
 
 const BATCH = 200;
+const RANGE = '*';
 
 /** Drops bookings whose slot is gone. Finished rows are statistics, not reservations, and wait for their TTL. */
 @Injectable()
@@ -33,7 +34,7 @@ export class StaleBookingsJob {
                 booking.service_id.toHexString(),
                 booking.option_id,
                 booking.slot_id,
-                booking.slot_time,
+                booking.child_type === 'time_range' ? RANGE : booking.slot_time,
             );
 
             if (live.has(key)) continue;
@@ -63,6 +64,11 @@ export class StaleBookingsJob {
         for await (const slot of this.slots.iterateKeys()) {
             const serviceId = slot.service_id.toHexString();
             const times = slot.value?.time ?? [];
+
+            if (slot.child_type === 'time_range') {
+                live.add(this.keyOf(serviceId, slot.option_id, slot.id, RANGE));
+                continue;
+            }
 
             if (times.length === 0) {
                 live.add(this.keyOf(serviceId, slot.option_id, slot.id, null));

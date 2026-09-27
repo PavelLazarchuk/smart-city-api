@@ -126,7 +126,9 @@ export class BookingCalendarService {
                 location: service?.address || organization?.address || undefined,
                 geo: lat !== undefined && lng !== undefined ? { lat, lng } : undefined,
                 starts_at: booking.starts_at,
-                ends_at: !date && duration ? new Date(booking.starts_at.getTime() + duration * 60_000) : null,
+                ends_at:
+                    booking.ends_at ??
+                    (!date && duration ? new Date(booking.starts_at.getTime() + duration * 60_000) : null),
                 date,
                 status: STATUS[booking.status],
                 sequence: booking.sequence ?? 0,

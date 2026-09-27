@@ -9,6 +9,7 @@ export const OUTBOX_EVENT_TYPES = [
     'booking.rescheduled',
     'booking.status_changed',
     'booking.reminder',
+    'booking.callback_due',
     'waitlist.slot_available',
     'webhook.test',
 ] as const;

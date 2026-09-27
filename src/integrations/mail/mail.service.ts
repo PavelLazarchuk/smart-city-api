@@ -62,6 +62,24 @@ export class MailService {
         });
     }
 
+    sendCallbackDue(
+        to: string,
+        data: {
+            service: string;
+            date?: string;
+            time?: string;
+            end_time?: string;
+            phone: string;
+            name: string;
+        },
+    ): Promise<void> {
+        return this.send({
+            to: [to],
+            subject: texts.mail.callbackSubject,
+            text: texts.mail.callbackBody(data),
+        });
+    }
+
     sendWaitlistNotification(
         to: string,
         data: { service: string; date?: string; time?: string; phone: string },

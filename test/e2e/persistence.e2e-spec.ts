@@ -17,6 +17,7 @@ interface Migration {
 const timezoneMigration =
     require('../../migrations/20260922000000-organization-timezone-and-booking-start.js') as Migration;
 const slotsMigration = require('../../migrations/20260922100000-slots-collection.js') as Migration;
+const subtypesMigration = require('../../migrations/20260927000000-slot-subtypes.js') as Migration;
 const migrations: Migration[] = [
     require('../../migrations/20260905000000-initial-indexes.js') as Migration,
     require('../../migrations/20260911000000-bookings-collection.js') as Migration,
@@ -27,6 +28,7 @@ const migrations: Migration[] = [
     timezoneMigration,
     slotsMigration,
     require('../../migrations/20260925000000-favorites-calendar-and-tracing.js') as Migration,
+    subtypesMigration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -334,6 +336,42 @@ describe('persistence (e2e)', () => {
             ]);
             expect(await db.listCollections({ name: 'slots' }).toArray()).toEqual([]);
             await Promise.all(Object.values(t.connection.models).map((model) => model.syncIndexes()));
+        });
+
+        it('turns every delivery slot into pickup and gives old bookings the interval and address fields', async () => {
+            const db = t.connection.db!;
+            await db.collection('slots').insertMany([
+                { id: 'd', child_type: 'delivery', value: { description: 'x' } },
+                { id: 'a', child_type: 'apply', value: { limit: null, booked_count: 0 } },
+            ]);
+            await db.collection('bookings').insertMany([
+                { id: 'old', slot_time: '09:00' },
+                { id: 'new', slot_time: '09:00', slot_end: '10:00', ends_at: null, address: 'x' },
+            ]);
+
+            await subtypesMigration.up(db);
+            await subtypesMigration.up(db);
+
+            const slots = await db.collection<{ id: string; child_type: string }>('slots').find({}).toArray();
+            expect(Object.fromEntries(slots.map((row) => [row.id, row.child_type]))).toEqual({
+                d: 'pickup',
+                a: 'apply',
+            });
+            const bookings = await db.collection<{ id: string }>('bookings').find({}).toArray();
+            expect(bookings.find((row) => row.id === 'old')).toMatchObject({
+                slot_end: null,
+                ends_at: null,
+                address: null,
+            });
+            expect(bookings.find((row) => row.id === 'new')).toMatchObject({
+                slot_end: '10:00',
+                address: 'x',
+            });
+
+            await subtypesMigration.down(db);
+
+            expect((await db.collection('slots').findOne({ id: 'd' }))!['child_type']).toBe('delivery');
+            expect(await db.collection('bookings').findOne({ id: 'old' })).not.toHaveProperty('slot_end');
         });
     });
 });

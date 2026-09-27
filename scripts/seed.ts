@@ -120,7 +120,7 @@ async function main(): Promise<void> {
                 options: [
                     {
                         service_type: 'service_delivery',
-                        slots: [{ child_type: 'delivery', value: { description: 'Same-day delivery' } }],
+                        slots: [{ child_type: 'courier', value: { description: 'Same-day delivery' } }],
                     },
                 ],
             });

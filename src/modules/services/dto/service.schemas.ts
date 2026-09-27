@@ -42,6 +42,9 @@ export const bookingResponseSchema = z.object({
     person: z.string().catch(''),
     phone: z.string().catch(''),
     info: z.string().catch(''),
+    time: z.string().nullable().optional().catch(null),
+    end_time: z.string().nullable().optional().catch(null),
+    address: z.string().nullable().optional().catch(null),
     status: z.string().catch('confirmed'),
     created_at: isoDateTimeSchema,
 });
@@ -60,6 +63,51 @@ const timeEntryOutput = (bookings: z.ZodType) =>
         booked_count: z.number().int().min(0).catch(0),
         bookings,
     });
+
+const minutesSchema = z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60);
+
+const callbackEntryInput = z
+    .object({ time: timeOfDaySchema, to: timeOfDaySchema, limit: limitSchema.optional() })
+    .refine((entry) => entry.time < entry.to, { message: 'time must be before to', path: ['to'] });
+
+const callbackEntryOutput = (bookings: z.ZodType) =>
+    z.object({
+        time: outputText,
+        to: outputText,
+        limit: limitSchema.catch(null),
+        booked_count: z.number().int().min(0).catch(0),
+        bookings,
+    });
+
+const rangeValueInput = z
+    .object({
+        date: dateOnlySchema,
+        from: timeOfDaySchema.optional(),
+        to: timeOfDaySchema.optional(),
+        step_minutes: minutesSchema.optional(),
+        min_minutes: minutesSchema.optional(),
+        max_minutes: minutesSchema.nullable().optional(),
+    })
+    .refine((value) => (value.from === undefined) === (value.to === undefined), {
+        message: 'from and to go together',
+        path: ['to'],
+    })
+    .refine((value) => value.from === undefined || value.to === undefined || value.from < value.to, {
+        message: 'from must be before to',
+        path: ['to'],
+    })
+    .refine(
+        (value) =>
+            value.min_minutes === undefined ||
+            value.max_minutes === undefined ||
+            value.max_minutes === null ||
+            value.min_minutes <= value.max_minutes,
+        { message: 'min_minutes must not exceed max_minutes', path: ['max_minutes'] },
+    );
 
 const infoValue = z.object({
     description: text.optional(),
@@ -96,7 +144,33 @@ export const slotInputSchema = z.discriminatedUnion('child_type', [
     z.object({
         id: uuidSchema.optional(),
         label: labelSchema.optional(),
-        child_type: z.literal('delivery'),
+        child_type: z.literal('time_range'),
+        value: rangeValueInput,
+    }),
+    z.object({
+        id: uuidSchema.optional(),
+        label: labelSchema.optional(),
+        child_type: z.literal('callback'),
+        value: z.object({
+            date: dateOnlySchema,
+            time: z
+                .array(callbackEntryInput)
+                .max(200)
+                .refine((entries) => new Set(entries.map((entry) => entry.time)).size === entries.length, {
+                    message: 'Times must be unique',
+                }),
+        }),
+    }),
+    z.object({
+        id: uuidSchema.optional(),
+        label: labelSchema.optional(),
+        child_type: z.literal('pickup'),
+        value: infoValue,
+    }),
+    z.object({
+        id: uuidSchema.optional(),
+        label: labelSchema.optional(),
+        child_type: z.literal('courier'),
         value: infoValue,
     }),
     z.object({
@@ -140,7 +214,35 @@ const slotResponseSchemaFor = (bookings: z.ZodType) =>
         z.object({
             id: z.string(),
             label: z.string(),
-            child_type: z.literal('delivery'),
+            child_type: z.literal('time_range'),
+            value: z.object({
+                date: outputText,
+                resource: outputText.optional(),
+                from: outputText,
+                to: outputText,
+                step_minutes: z.number().int(),
+                min_minutes: z.number().int(),
+                max_minutes: z.number().int().nullable().catch(null),
+                booked_count: z.number().int().min(0).catch(0),
+                bookings,
+            }),
+        }),
+        z.object({
+            id: z.string(),
+            label: z.string(),
+            child_type: z.literal('callback'),
+            value: z.object({ date: outputText, time: z.array(callbackEntryOutput(bookings)) }),
+        }),
+        z.object({
+            id: z.string(),
+            label: z.string(),
+            child_type: z.literal('pickup'),
+            value: infoValueOutput,
+        }),
+        z.object({
+            id: z.string(),
+            label: z.string(),
+            child_type: z.literal('courier'),
             value: infoValueOutput,
         }),
         z.object({
@@ -162,12 +264,60 @@ export const recurrentDateSchema = z.object({
     limit: limitSchema.optional(),
 });
 
+export const recurrentRangeSchema = z
+    .object({
+        day: z.enum(WEEKDAYS),
+        from: timeOfDaySchema.optional(),
+        to: timeOfDaySchema.optional(),
+        resources: z
+            .array(z.string().trim().min(1).max(100))
+            .min(1)
+            .max(50)
+            .refine((items) => new Set(items).size === items.length, { message: 'Resources must be unique' }),
+        step_minutes: minutesSchema.optional(),
+        min_minutes: minutesSchema.optional(),
+        max_minutes: minutesSchema.nullable().optional(),
+    })
+    .refine((value) => (value.from === undefined) === (value.to === undefined), {
+        message: 'from and to go together',
+        path: ['to'],
+    })
+    .refine((value) => value.from === undefined || value.to === undefined || value.from < value.to, {
+        message: 'from must be before to',
+        path: ['to'],
+    })
+    .refine(
+        (value) =>
+            value.min_minutes === undefined ||
+            value.max_minutes === undefined ||
+            value.max_minutes === null ||
+            value.min_minutes <= value.max_minutes,
+        { message: 'min_minutes must not exceed max_minutes', path: ['max_minutes'] },
+    );
+
+export type RecurrentRangeInput = z.infer<typeof recurrentRangeSchema>;
+
+const recurrentRangesSchema = z
+    .array(recurrentRangeSchema)
+    .max(50)
+    .refine(
+        (entries) => {
+            const keys = entries.flatMap((entry) =>
+                entry.resources.map((resource) => `${entry.day}|${resource}`),
+            );
+
+            return new Set(keys).size === keys.length;
+        },
+        { message: 'A resource can appear once per weekday' },
+    );
+
 export const serviceOptionInputSchema = z.object({
     id: uuidSchema.optional(),
     label: labelSchema.optional(),
     service_type: z.enum(SERVICE_TYPES).optional(),
     enabled: enabledSchema.optional(),
     recurrent_dates: z.array(recurrentDateSchema).max(7).nullable().optional(),
+    recurrent_ranges: recurrentRangesSchema.nullable().optional(),
     slots: z.array(slotInputSchema).max(500).optional(),
 });
 export type ServiceOptionInput = z.infer<typeof serviceOptionInputSchema>;
@@ -184,6 +334,19 @@ const serviceOptionResponseSchemaFor = (bookings: z.ZodType) =>
                     day: z.enum(WEEKDAYS),
                     time: z.array(z.object({ time: outputText, limit: limitSchema.catch(null) })),
                     limit: limitSchema.catch(null).optional(),
+                }),
+            )
+            .optional(),
+        recurrent_ranges: z
+            .array(
+                z.object({
+                    day: z.enum(WEEKDAYS),
+                    from: outputText.optional(),
+                    to: outputText.optional(),
+                    resources: z.array(z.string()),
+                    step_minutes: z.number().int().optional(),
+                    min_minutes: z.number().int().optional(),
+                    max_minutes: z.number().int().nullable().catch(null),
                 }),
             )
             .optional(),
@@ -593,7 +756,25 @@ export const updateSlotSchema = z
         label: labelSchema,
         date: dateOnlySchema,
         limit: limitSchema,
-        time: z.array(timeEntryInput).max(200),
+        time: z
+            .array(
+                z
+                    .object({
+                        time: timeOfDaySchema,
+                        to: timeOfDaySchema.optional(),
+                        limit: limitSchema.optional(),
+                    })
+                    .refine((entry) => entry.to === undefined || entry.time < entry.to, {
+                        message: 'time must be before to',
+                        path: ['to'],
+                    }),
+            )
+            .max(200),
+        from: timeOfDaySchema,
+        to: timeOfDaySchema,
+        step_minutes: minutesSchema,
+        min_minutes: minutesSchema,
+        max_minutes: minutesSchema.nullable(),
     })
     .partial();
 export type UpdateSlotInput = z.infer<typeof updateSlotSchema>;
@@ -647,9 +828,14 @@ export const moveSlotResponseSchema = z.object({
 export type MoveSlotResult = z.infer<typeof moveSlotResponseSchema>;
 export class MoveSlotResponseDto extends createZodDto(moveSlotResponseSchema) {}
 
-export const recurrenceSchema = z.object({
-    recurrent_dates: z.array(recurrentDateSchema).max(7).nullable(),
-});
+export const recurrenceSchema = z
+    .object({
+        recurrent_dates: z.array(recurrentDateSchema).max(7).nullable().optional(),
+        recurrent_ranges: recurrentRangesSchema.nullable().optional(),
+    })
+    .refine((value) => value.recurrent_dates !== undefined || value.recurrent_ranges !== undefined, {
+        message: 'Send recurrent_dates, recurrent_ranges or both',
+    });
 export type RecurrenceInput = z.infer<typeof recurrenceSchema>;
 export class RecurrenceDto extends createZodDto(recurrenceSchema) {}
 
@@ -675,7 +861,17 @@ const availabilitySlotSchema = z.object({
     limit: limitSchema,
     booked_count: z.number().int().min(0),
     available: z.number().int().min(0).nullable(),
-    time: z.array(availabilityTimeSchema).optional(),
+    time: z.array(availabilityTimeSchema.extend({ to: outputText.optional() })).optional(),
+    range: z
+        .object({
+            from: outputText,
+            to: outputText,
+            step_minutes: z.number().int(),
+            min_minutes: z.number().int(),
+            max_minutes: z.number().int().nullable(),
+            free: z.array(z.object({ from: outputText, to: outputText })),
+        })
+        .optional(),
 });
 
 export const availabilityResponseSchema = z.object({
@@ -722,6 +918,13 @@ export const slotCandidateSchema = z.object({
     limit: limitSchema,
     booked_count: z.number().int().min(0),
     available: z.number().int().min(0).nullable(),
+    range: z
+        .object({
+            step_minutes: minutesSchema,
+            min_minutes: minutesSchema,
+            max_minutes: minutesSchema.nullable(),
+        })
+        .optional(),
 });
 export type SlotCandidate = z.infer<typeof slotCandidateSchema>;
 
@@ -743,6 +946,8 @@ export const createBookingSchema = z.object({
     option_id: uuidSchema,
     slot_id: uuidSchema,
     time: timeOfDaySchema.optional(),
+    end_time: timeOfDaySchema.optional(),
+    address: z.string().trim().min(1).max(500).optional(),
     info: z.string().trim().max(1000).optional(),
     fields: bookingFieldsSchema.optional(),
     documents: z.array(fieldKeySchema).max(30).optional(),
@@ -761,6 +966,7 @@ export const bookingCreatedResponseSchema = z.object({
     status: z.string(),
     date: outputText.nullish(),
     time: outputText.nullish(),
+    end_time: outputText.nullish(),
     user_id: idOutputSchema.optional(),
     created_at: isoDateTimeSchema,
 });

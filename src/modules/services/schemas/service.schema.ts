@@ -4,12 +4,43 @@ import { type HydratedDocument, Types, SchemaTypes } from 'mongoose';
 import { SEARCH_DEFAULT_LANGUAGE } from '../../../common/config/constants';
 import { baseSchemaOptions, subSchemaOptions } from '../../../common/database/schema-options';
 
-export const SERVICE_TYPES = ['service_apply', 'service_payment', 'service_delivery'] as const;
+export const SERVICE_TYPES = [
+    'service_apply',
+    'service_payment',
+    'service_delivery',
+    'service_visit',
+] as const;
 export type ServiceType = (typeof SERVICE_TYPES)[number];
 
-export const SLOT_TYPES = ['date_time', 'date', 'apply', 'delivery', 'paycard'] as const;
+export const SLOT_TYPES = [
+    'date_time',
+    'date',
+    'apply',
+    'time_range',
+    'callback',
+    'pickup',
+    'courier',
+    'paycard',
+] as const;
 export type SlotType = (typeof SLOT_TYPES)[number];
-export const BOOKABLE_SLOT_TYPES: readonly SlotType[] = ['date_time', 'date', 'apply'];
+export const BOOKABLE_SLOT_TYPES: readonly SlotType[] = [
+    'date_time',
+    'date',
+    'apply',
+    'time_range',
+    'callback',
+];
+export const DATED_SLOT_TYPES: readonly SlotType[] = ['date_time', 'date', 'time_range', 'callback'];
+export const TIMED_SLOT_TYPES: readonly SlotType[] = ['date_time', 'callback'];
+
+export const ALLOWED_SLOT_TYPES: Record<ServiceType, readonly SlotType[]> = {
+    service_apply: ['date_time', 'date', 'apply', 'time_range', 'callback'],
+    service_payment: ['paycard'],
+    service_delivery: ['pickup', 'courier'],
+    service_visit: ['time_range', 'date_time'],
+};
+export const RECURRENT_SERVICE_TYPES: readonly ServiceType[] = ['service_apply', 'service_visit'];
+export const ADDRESS_SERVICE_TYPES: readonly ServiceType[] = ['service_visit'];
 
 export const SERVICE_STATUSES = ['draft', 'published', 'archived'] as const;
 export type ServiceStatus = (typeof SERVICE_STATUSES)[number];
@@ -51,6 +82,18 @@ export class RecurrentDate {
     @Prop({ type: Number, default: null }) limit?: number | null;
 }
 export const RecurrentDateSchema = SchemaFactory.createForClass(RecurrentDate);
+
+@Schema(subSchemaOptions)
+export class RecurrentRange {
+    @Prop({ type: String, enum: WEEKDAYS, required: true }) day!: Weekday;
+    @Prop({ type: String }) from?: string;
+    @Prop({ type: String }) to?: string;
+    @Prop({ type: [String], required: true }) resources!: string[];
+    @Prop({ type: Number }) step_minutes?: number;
+    @Prop({ type: Number }) min_minutes?: number;
+    @Prop({ type: Number, default: null }) max_minutes!: number | null;
+}
+export const RecurrentRangeSchema = SchemaFactory.createForClass(RecurrentRange);
 
 @Schema(subSchemaOptions)
 export class WorkingHours {
@@ -105,6 +148,7 @@ export class ServiceOption {
     service_type!: ServiceType;
     @Prop({ type: Boolean, required: true, default: true }) enabled!: boolean;
     @Prop({ type: [RecurrentDateSchema], default: undefined }) recurrent_dates?: RecurrentDate[];
+    @Prop({ type: [RecurrentRangeSchema], default: undefined }) recurrent_ranges?: RecurrentRange[];
 }
 export const ServiceOptionSchema = SchemaFactory.createForClass(ServiceOption);
 

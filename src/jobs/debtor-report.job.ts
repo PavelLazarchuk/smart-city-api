@@ -4,6 +4,7 @@ import { AppConfig } from '../common/config/app-config';
 import { texts } from '../common/i18n/messages';
 import { MailService } from '../integrations/mail/mail.service';
 import { OrganizationsService } from '../modules/organizations/organizations.service';
+import { RECURRENT_SERVICE_TYPES } from '../modules/services/schemas/service.schema';
 import { type ServiceEntity } from '../modules/services/services.repository';
 import { ServicesService } from '../modules/services/services.service';
 import { type OptionSlotStats, SlotsRepository } from '../modules/slots/slots.repository';
@@ -105,7 +106,12 @@ export class DebtorReportJob {
         today: string,
     ): boolean {
         for (const option of service.options) {
-            if (option.service_type !== 'service_apply' || !option.enabled || option.recurrent_dates?.length)
+            if (
+                !RECURRENT_SERVICE_TYPES.includes(option.service_type) ||
+                !option.enabled ||
+                option.recurrent_dates?.length ||
+                option.recurrent_ranges?.length
+            )
                 continue;
 
             const stats = statsOf(option.id);

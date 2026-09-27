@@ -87,6 +87,12 @@ so the previous version sees services without slots once it has run. Deploy it t
 start. `up` is safe to rerun after a partial run (the unique index refuses the copies already made), and
 `down` rebuilds each service's embedded slots in their stored order and drops the collection.
 
+[`20260927000000-slot-subtypes.js`](../migrations/20260927000000-slot-subtypes.js) renames every `delivery`
+slot to `pickup`, which the previous version does not know, so deploy it the stop-migrate-start way too. It
+also writes `slot_end`, `ends_at` and `address` as `null` on older bookings. `down` turns `pickup` and
+`courier` back into `delivery` (the old model had only the one kind) and unsets the booking fields;
+`time_range` and `callback` slots and `service_visit` options stay, since the old version cannot express them.
+
 [`20260912000000-idempotency-keys.js`](../migrations/20260912000000-idempotency-keys.js) is back to the
 ordinary kind: it only adds the `idempotency_keys` collection with its unique and TTL indexes, plus one
 booking index, so the running version neither notices it nor needs it.

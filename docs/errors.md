@@ -120,27 +120,31 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 
 ### Bookings
 
-| Code                                   | Status | Meaning                                                                                       |
-| -------------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
-| `SLOT_NOT_FOUND` / `BOOKING_NOT_FOUND` | 404    |                                                                                               |
-| `BOOKING_ALREADY_EXISTS`               | 409    | This client already booked this slot                                                          |
-| `SLOT_NOT_BOOKABLE`                    | 422    | The slot type does not accept bookings                                                        |
-| `OPTION_NOT_FOUND`                     | 404    | No option with this id on the service                                                         |
-| `OPTION_HAS_BOOKINGS`                  | 409    | The option still holds bookings and cannot be removed                                         |
-| `SLOT_HAS_BOOKINGS`                    | 409    | The slot still holds bookings and cannot be removed                                           |
-| `SLOT_TIME_BOOKED`                     | 409    | A time entry that already holds bookings cannot be renamed or removed                         |
-| `SLOT_DATE_TAKEN`                      | 409    | Another slot of the option already covers the date a day is moved to                          |
-| `SLOT_TIME_OUT_OF_RANGE`               | 422    | `shift_minutes` would push a time out of its day                                              |
-| `SLOT_BULK_TOO_LARGE`                  | 422    | The slot holds more bookings than one bulk operation may touch                                |
-| `SLOT_NOT_DATED`                       | 422    | This slot type has no date                                                                    |
-| `SLOT_NOT_LIMITED`                     | 422    | This slot type has no capacity limit                                                          |
-| `SLOT_NOT_TIMED`                       | 422    | This slot type has no time entries                                                            |
-| `SLOT_TIME_REQUIRED`                   | 422    | This slot needs a time, none was given                                                        |
-| `SLOT_FULL`                            | 422    | Capacity reached — decided by a conditional update inside the transaction, so it is race-free |
-| `SLOT_EXPIRED`                         | 422    | The slot date has passed                                                                      |
-| `OPTION_DISABLED`                      | 422    | The service option is switched off                                                            |
-| `IDEMPOTENCY_IN_PROGRESS`              | 409    | The first request with this `Idempotency-Key` is still running — retry shortly                |
-| `IDEMPOTENCY_KEY_REUSED`               | 422    | The same key was used for a different payload                                                 |
+| Code                                   | Status | Meaning                                                                                                                 |
+| -------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `SLOT_NOT_FOUND` / `BOOKING_NOT_FOUND` | 404    |                                                                                                                         |
+| `BOOKING_ALREADY_EXISTS`               | 409    | This client already booked this slot                                                                                    |
+| `SLOT_NOT_BOOKABLE`                    | 422    | The slot type does not accept bookings                                                                                  |
+| `OPTION_NOT_FOUND`                     | 404    | No option with this id on the service                                                                                   |
+| `OPTION_HAS_BOOKINGS`                  | 409    | The option still holds bookings and cannot be removed                                                                   |
+| `SLOT_HAS_BOOKINGS`                    | 409    | The slot still holds bookings and cannot be removed                                                                     |
+| `SLOT_TIME_BOOKED`                     | 409    | A time entry that already holds bookings cannot be renamed or removed                                                   |
+| `SLOT_DATE_TAKEN`                      | 409    | Another slot of the option already covers the date a day is moved to                                                    |
+| `SLOT_TIME_OUT_OF_RANGE`               | 422    | `shift_minutes` would push a time out of its day                                                                        |
+| `SLOT_BULK_TOO_LARGE`                  | 422    | The slot holds more bookings than one bulk operation may touch                                                          |
+| `SLOT_NOT_DATED`                       | 422    | This slot type has no date                                                                                              |
+| `SLOT_NOT_LIMITED`                     | 422    | This slot type has no capacity limit                                                                                    |
+| `SLOT_NOT_TIMED`                       | 422    | This slot type has no time entries                                                                                      |
+| `SLOT_NOT_RANGED`                      | 422    | `from`/`to`/`step_minutes`/… on a slot that is not a `time_range`                                                       |
+| `SLOT_TYPE_NOT_ALLOWED`                | 422    | The slot type does not belong to the option's `service_type`; `details[]` lists allowed ones                            |
+| `SLOT_RANGE_REQUIRED`                  | 422    | A `time_range` or a `recurrent_ranges` weekday without `from`/`to` or working hours, or a call-back window without `to` |
+| `SLOT_RANGE_INVALID`                   | 422    | The interval is off the step grid, outside the range, or shorter/longer than allowed                                    |
+| `SLOT_TIME_REQUIRED`                   | 422    | This slot needs a time, none was given                                                                                  |
+| `SLOT_FULL`                            | 422    | Capacity reached — decided by a conditional update inside the transaction, so it is race-free                           |
+| `SLOT_EXPIRED`                         | 422    | The slot date has passed                                                                                                |
+| `OPTION_DISABLED`                      | 422    | The service option is switched off                                                                                      |
+| `IDEMPOTENCY_IN_PROGRESS`              | 409    | The first request with this `Idempotency-Key` is still running — retry shortly                                          |
+| `IDEMPOTENCY_KEY_REUSED`               | 422    | The same key was used for a different payload                                                                           |
 
 ### Catalogue (P3)
 
@@ -169,6 +173,9 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `BOOKING_NOT_DATED`              | 422    | `GET /bookings/:id/calendar.ics` for a booking without a date                |
 | `WAITLIST_NOT_FOUND`             | 404    |                                                                              |
 | `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                 |
+| `WAITLIST_NOT_SUPPORTED`         | 422    | A `time_range` slot has no waitlist                                          |
+| `BOOKING_ADDRESS_REQUIRED`       | 422    | A `service_visit` booking without `address`                                  |
+| `BOOKING_PHONE_REQUIRED`         | 422    | A `callback` booking for an account without a phone                          |
 | `SLOT_NOT_FULL`                  | 422    | The waitlist is only for a full slot — book it instead                       |
 
 ### Favorites

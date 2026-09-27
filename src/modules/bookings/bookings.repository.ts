@@ -115,6 +115,51 @@ export class BookingsRepository extends BaseRepository<Booking> {
             .exec();
     }
 
+    findActiveIntervals(
+        serviceId: string,
+        slotIds: string[],
+        session?: ClientSession,
+    ): Promise<Pick<BookingEntity, 'option_id' | 'slot_id' | 'slot_time' | 'slot_end'>[]> {
+        if (slotIds.length === 0) return Promise.resolve([]);
+
+        return this.model
+            .find(
+                {
+                    service_id: new Types.ObjectId(serviceId),
+                    slot_id: { $in: slotIds },
+                    active: true,
+                    slot_end: { $type: 'string' },
+                },
+                { _id: 0, option_id: 1, slot_id: 1, slot_time: 1, slot_end: 1 },
+            )
+            .session(session ?? null)
+            .lean<Pick<BookingEntity, 'option_id' | 'slot_id' | 'slot_time' | 'slot_end'>[]>()
+            .exec();
+    }
+
+    findOverlapping(
+        serviceId: string,
+        optionId: string,
+        slotId: string,
+        from: string,
+        to: string,
+        excludeId: string,
+        session?: ClientSession,
+    ): Promise<BookingEntity | null> {
+        return this.findOne(
+            {
+                service_id: new Types.ObjectId(serviceId),
+                option_id: optionId,
+                slot_id: slotId,
+                active: true,
+                slot_time: { $lt: to },
+                slot_end: { $gt: from },
+                id: { $ne: excludeId },
+            },
+            session,
+        );
+    }
+
     async cancelMany(ids: string[], by: Types.ObjectId, now: Date, session?: ClientSession): Promise<number> {
         if (ids.length === 0) return 0;
 
@@ -138,22 +183,24 @@ export class BookingsRepository extends BaseRepository<Booking> {
     }
 
     async moveMany(
-        moves: { id: string; slot_date: string; slot_time: string | null; starts_at: Date | null }[],
+        moves: {
+            id: string;
+            slot_date: string;
+            slot_time: string | null;
+            starts_at: Date | null;
+            slot_end?: string | null;
+            ends_at?: Date | null;
+        }[],
         session?: ClientSession,
     ): Promise<number> {
         if (moves.length === 0) return 0;
 
         const result = await this.model.bulkWrite(
-            moves.map(({ id, slot_date: slotDate, slot_time: slotTime, starts_at: startsAt }) => ({
+            moves.map(({ id, ...target }) => ({
                 updateOne: {
                     filter: { id, active: true },
                     update: {
-                        $set: {
-                            slot_date: slotDate,
-                            slot_time: slotTime,
-                            starts_at: startsAt,
-                            reminder_sent_at: null,
-                        },
+                        $set: { ...target, reminder_sent_at: null },
                         $inc: { sequence: 1 },
                     },
                 },
@@ -244,7 +291,10 @@ export class BookingsRepository extends BaseRepository<Booking> {
             child_type: string;
             slot_date: string | null;
             slot_time: string | null;
+            slot_end: string | null;
             starts_at: Date | null;
+            ends_at: Date | null;
+            address: string | null;
         },
         session?: ClientSession,
     ): Promise<BookingEntity | null> {
@@ -270,7 +320,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
         const result = await this.model
             .updateMany(
                 { user_id: new Types.ObjectId(userId), active: false },
-                { $set: { person: '', phone: '', info: '', fields: {}, documents: [] } },
+                { $set: { person: '', phone: '', info: '', address: null, fields: {}, documents: [] } },
             )
             .session(session ?? null)
             .exec();
@@ -314,7 +364,10 @@ export class BookingsRepository extends BaseRepository<Booking> {
 
     iterateActive(): AsyncIterable<BookingEntity> {
         return this.model
-            .find({ active: true }, { id: 1, service_id: 1, option_id: 1, slot_id: 1, slot_time: 1 })
+            .find(
+                { active: true },
+                { id: 1, service_id: 1, option_id: 1, slot_id: 1, child_type: 1, slot_time: 1 },
+            )
             .lean<BookingEntity>()
             .cursor({ batchSize: 200 });
     }

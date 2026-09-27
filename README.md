@@ -53,16 +53,17 @@ the `mongo-data` volume (`docker compose --profile local-db down -v` wipes it).
 
 ## Scripts
 
-| Script                                                 | Purpose                                                        |
-| ------------------------------------------------------ | -------------------------------------------------------------- |
-| `npm run start:dev` / `npm start`                      | watch mode / run `dist/main`                                   |
-| `npm run build`                                        | `nest build` into `dist/`                                      |
-| `npm run lint`, `npm run format`                       | ESLint 9 flat config, Prettier                                 |
-| `npm run typecheck`                                    | `tsc --noEmit` over `src`, `test` and `scripts`                |
-| `npm test`, `npm run test:cov`                         | Jest (unit + e2e projects); e2e boots an in-memory replica set |
-| `npm run migrate:up` / `:down` / `:status` / `:create` | migrate-mongo against `MONGO_URI`                              |
-| `npm run migrate:verify`                               | CI guard: `up` → `status` → `down` on an in-memory replica set |
-| `npm run seed`                                         | development seed (idempotent; refuses `NODE_ENV=production`)   |
+| Script                                                 | Purpose                                                                                                                                                                                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run start:dev` / `npm start`                      | watch mode / run `dist/main`                                                                                                                                                                                         |
+| `npm run build`                                        | `nest build` into `dist/`                                                                                                                                                                                            |
+| `npm run lint`, `npm run format`                       | ESLint 9 flat config, Prettier                                                                                                                                                                                       |
+| `npm run typecheck`                                    | `tsc --noEmit` over `src`, `test` and `scripts`                                                                                                                                                                      |
+| `npm test`, `npm run test:cov`                         | Jest (unit + e2e projects); e2e boots an in-memory replica set                                                                                                                                                       |
+| `npm run migrate:up` / `:down` / `:status` / `:create` | migrate-mongo against `MONGO_URI`                                                                                                                                                                                    |
+| `npm run migrate:verify`                               | CI guard: `up` → `status` → `down` on an in-memory replica set                                                                                                                                                       |
+| `npm run seed`                                         | development seed (idempotent; refuses `NODE_ENV=production`)                                                                                                                                                         |
+| `npm run seed:smoke`                                   | seeds a service with every slot type through the HTTP API of a running instance (`SMOKE_API_URL`, `SMOKE_ADMIN_LOGIN`/`SMOKE_ADMIN_PASSWORD`, `SMOKE_ORGANIZATION_ID`) and checks the answers; exits 1 on a mismatch |
 
 ## Configuration
 
@@ -136,7 +137,13 @@ migration that creates the index, because changing one needs a `collMod` migrati
   `available: false` and comes back on restore; deleting the service, the organization or the account removes
   the entries. One account keeps up to 100.
 - `GET /services/:id/availability?from=&to=` is the cacheable, personal-data-free view of free capacity —
-  no need to download the whole service to render a booking form.
+  no need to download the whole service to render a booking form. A `time_range` slot carries
+  `range.free[]`, its free intervals already snapped to the step grid and kept clear of the buffer.
+- Booking a `time_range` slot takes `time` and `end_time`; a `callback` slot takes the window's `time`; a
+  `service_visit` option needs `address`, which only the client and the organization's admins see. A
+  reschedule keeps the booking's address unless the body sends a new one. In `GET /services/:id/slots` a
+  `time_range` slot is one row per free interval: `time`–`ends_at` is the window to choose from, and
+  `range` carries the step and length limits a booking inside it has to meet.
 - `GET /services/:id/slots` is the same capacity flattened to one row per bookable moment, each carrying
   `starts_at`/`ends_at` as ISO instants with the organization's offset, so a caller never rebuilds one from
   `date` + `time`. It filters server side (`after=`, `before=`, `option_id=`, `only_available=true`), drops
@@ -144,6 +151,8 @@ migration that creates the index, because changing one needs a `collMod` migrati
 - Options and slots are sub-resources: `POST/PATCH/DELETE /services/:id/options[/:option_id]`,
   `POST/PATCH/DELETE /services/:id/options/:option_id/slots[/:slot_id]` and
   `PUT /services/:id/options/:option_id/recurrence` change one of them without resending the whole array.
+  The recurrence body takes `recurrent_dates` (times per weekday, `date_time` slots), `recurrent_ranges`
+  (named resources per weekday, one `time_range` slot each) or both; a field left out is kept, `null` clears it.
   They are the only way to edit them: `PATCH /services/:id` answers `400 VALIDATION_ERROR` on `options`.
   `POST /services` still accepts the whole tree on creation.
 - A slot also has two bulk admin operations, both in one transaction:

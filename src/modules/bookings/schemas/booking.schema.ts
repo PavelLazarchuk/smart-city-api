@@ -39,8 +39,14 @@ export class Booking {
     @Prop({ type: String, default: null })
     slot_time!: string | null;
 
+    @Prop({ type: String, default: null })
+    slot_end!: string | null;
+
     @Prop({ type: Date, default: null })
     starts_at!: Date | null;
+
+    @Prop({ type: Date, default: null })
+    ends_at!: Date | null;
 
     @Prop({ type: String, default: '' })
     service_label!: string;
@@ -56,6 +62,9 @@ export class Booking {
 
     @Prop({ type: String, default: '' })
     info!: string;
+
+    @Prop({ type: String, default: null })
+    address!: string | null;
 
     @Prop({ type: SchemaTypes.Mixed, default: () => ({}) })
     fields!: Record<string, unknown>;

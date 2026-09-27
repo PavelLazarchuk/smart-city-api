@@ -1,14 +1,19 @@
 import { Injectable } from '@nestjs/common';
 
 import { AppConfig } from '../common/config/app-config';
-import { dateOnlyIn } from '../common/time/zone';
+import { dateOnlyIn, shiftDateOnly } from '../common/time/zone';
 import { OrganizationsService } from '../modules/organizations/organizations.service';
+import { RECURRENT_SERVICE_TYPES } from '../modules/services/schemas/service.schema';
 import { ServicesService } from '../modules/services/services.service';
 import {
     generateRecurrentDays,
+    generateRecurrentRanges,
     growTrees,
     isEmptyPlan,
+    isEmptyRangePlan,
     planRecurrentDays,
+    planRecurrentRanges,
+    type RecurrentRangePlan,
     type RecurrentSlotPlan,
 } from '../modules/services/slot.logic';
 import { type SlotOwner, SlotsRepository } from '../modules/slots/slots.repository';
@@ -40,9 +45,9 @@ export class RecurrentSlotsJob {
         ]);
         const trees = growTrees(
             services,
-            await this.slots.findTimedByServices(services.map((service) => service._id)),
+            await this.slots.findRecurringByServices(services.map((service) => service._id)),
         );
-        const plans: (SlotOwner & { plan: RecurrentSlotPlan })[] = [];
+        const plans: (SlotOwner & { plan: RecurrentSlotPlan; ranges: RecurrentRangePlan })[] = [];
 
         for (const service of trees) {
             const organizationId = service.organization_id.toHexString();
@@ -52,24 +57,39 @@ export class RecurrentSlotsJob {
             ];
             const today = dateOnlyIn(now, timezones.get(organizationId) ?? this.config.jobs.timezone);
 
+            const context = {
+                working_hours: service.working_hours,
+                duration_minutes: service.duration_minutes,
+                buffer_minutes: service.buffer_minutes,
+                holidays,
+                blackout_dates: service.blackout_dates,
+            };
+            const window = { from: today, to: shiftDateOnly(today, horizon) };
+
             for (const option of service.options) {
-                if (option.service_type !== 'service_apply' || !option.recurrent_dates?.length) continue;
+                if (!RECURRENT_SERVICE_TYPES.includes(option.service_type)) continue;
 
-                const days = generateRecurrentDays(option.recurrent_dates, today, horizon, {
-                    working_hours: service.working_hours,
-                    duration_minutes: service.duration_minutes,
-                    buffer_minutes: service.buffer_minutes,
-                    holidays,
-                    blackout_dates: service.blackout_dates,
-                });
-                const plan = planRecurrentDays(option.slots, days);
+                const plan = planRecurrentDays(
+                    option.slots,
+                    option.recurrent_dates?.length
+                        ? generateRecurrentDays(option.recurrent_dates, today, horizon, context)
+                        : [],
+                );
+                const ranges = option.recurrent_ranges?.length
+                    ? planRecurrentRanges(
+                          option.slots,
+                          generateRecurrentRanges(option.recurrent_ranges, today, horizon, context),
+                          window,
+                      )
+                    : { add_slots: [], update_ranges: [], remove_slots: [] };
 
-                if (!isEmptyPlan(plan))
+                if (!isEmptyPlan(plan) || !isEmptyRangePlan(ranges))
                     plans.push({
                         service_id: service._id,
                         organization_id: service.organization_id,
                         option_id: option.id,
                         plan,
+                        ranges,
                     });
             }
         }

@@ -47,7 +47,7 @@ jobs are ordered relative to each other, so a per-deployment override would be a
 
 ### `recurrent_slots` — [recurrent-slots.job.ts](../src/jobs/recurrent-slots.job.ts)
 
-For every `service_apply` option that has `recurrent_dates` (a weekday → times schedule), the job projects
+For every `service_apply` or `service_visit` option that has `recurrent_dates` (a weekday → times schedule), the job projects
 those weekdays over the next `RECURRENT_HORIZON_DAYS` days, starting tomorrow, and compares the result with
 the option's existing slots. It then applies the difference:
 
@@ -59,6 +59,13 @@ A weekday whose `time` list is empty takes its times from the service's `working
 into `duration_minutes + buffer_minutes` steps as long as a whole appointment fits, each with the weekday's
 `limit`. Dates in the service's `blackout_dates`, in its `holidays` (`MM-DD`, every year) or in the
 organization's `holidays` produce nothing. A service in the trash or archived is left alone.
+
+`recurrent_ranges` work the same way for `time_range` slots, one per resource and date. A missing slot is
+created; a slot whose resource left the schedule is deleted, and a slot whose range no longer matches is
+updated, but only while it holds no active booking (the write itself is conditional on `booked_count`, so a
+booking made during the run wins). A slot someone edited or deleted by hand is brought back to the schedule
+on the next run as long as it is free. A weekday with neither `from`/`to` nor working hours, or whose hours
+are shorter than `min_minutes`, produces nothing.
 
 All differences travel as one `bulkWrite`. The job is idempotent: a second run over the same data produces no
 changes and reports `services_updated: 0`.
@@ -135,7 +142,7 @@ is untouchable by construction. Reports `scanned`, `orphans` and `bytes_freed`.
 ### `debtor_report` — [debtor-report.job.ts](../src/jobs/debtor-report.job.ts)
 
 Builds the "services without upcoming booking slots" report — an enabled, non-recurrent `service_apply`
-option that has no slots at all, or only dated slots that are all in the past — as an `.xlsx` workbook
+or `service_visit` option that has no slots at all, or only dated slots that are all in the past — as an `.xlsx` workbook
 (`exceljs`) and e-mails it to `REPORT_RECIPIENTS`. With no recipients configured the job still collects the
 rows and sends nothing; under `NODE_ENV=production` with `JOBS_ENABLED=true` the environment schema requires
 at least one recipient. Reports `rows` and `recipients`.
@@ -168,7 +175,9 @@ Hourly. Finds the active bookings whose `slot_date` is `BOOKING_REMINDER_HOURS` 
 `reminder_sent_at`, resolves the client's `users.email` in one query per batch, emits one `booking.reminder`
 outbox event each with that address next to the booking phone (the message to the client and any webhook
 delivery are the outbox's business, with its retries and the SMS budget), and marks the rows so the next run
-does not repeat them. An account with an e-mail is reminded by e-mail, one without it by SMS. Reports `date`
+does not repeat them. An account with an e-mail is reminded by e-mail, one without it by SMS. A `callback`
+booking is not a reminder to the client but a task for the organization: it is emitted as
+`booking.callback_due` with the client's name and phone and mailed to the service's `subscribe` address. Reports `date`
 and `reminders`.
 
 ### `trash_purge` — [trash-purge.job.ts](../src/jobs/trash-purge.job.ts)

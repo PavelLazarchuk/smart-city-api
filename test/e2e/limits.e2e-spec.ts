@@ -117,7 +117,7 @@ describe('public read limits (e2e)', () => {
                             {
                                 id: randomUUID(),
                                 label: 'i',
-                                child_type: 'delivery',
+                                child_type: 'pickup',
                                 value: { link: 'javascript-ish' },
                             },
                         ],

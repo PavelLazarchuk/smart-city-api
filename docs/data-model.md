@@ -46,20 +46,51 @@ A service document carries its options; slots and bookings are collections of th
 
 ```
 services
-└─ options[]                 id, label, service_type, enabled, recurrent_dates[]
+└─ options[]                 id, label, service_type, enabled, recurrent_dates[], recurrent_ranges[]
 
 slots                        one document per slot
   service_id, organization_id, option_id, id, label, child_type,
   value
   ├─ date, description, link, price
   ├─ limit, booked_count                         (slot booked as a whole)
-  └─ time[]                                      (slot booked per time)
-     └─ time, limit, booked_count
+  ├─ from, to, step_minutes, min_minutes,        (time_range: any interval on the grid)
+  │  max_minutes, booked_count
+  └─ time[]                                      (date_time and callback: booked per time)
+     └─ time, to, limit, booked_count             (`to` only on a callback window)
 
 bookings                     one document per booking
   id, service_id, organization_id, option_id, slot_id, slot_date, slot_time,
-  user_id, person, phone, info, created_at
+  slot_end, starts_at, ends_at, user_id, person, phone, info, address, created_at
 ```
+
+Each option's `service_type` decides which `child_type`s its slots may have; anything else is refused with
+`422 SLOT_TYPE_NOT_ALLOWED` on create, on adding a slot and on changing the option's type:
+
+| `service_type`     | Slot types                                             | Meaning                                                            |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `service_apply`    | `date_time`, `date`, `apply`, `time_range`, `callback` | Appointments, applications, rentals and call-back requests         |
+| `service_payment`  | `paycard`                                              | Payment details (description, link, price); not bookable           |
+| `service_delivery` | `pickup`, `courier`                                    | How the result is handed over; information only, not bookable      |
+| `service_visit`    | `time_range`, `date_time`                              | A specialist comes to the client; every booking needs an `address` |
+
+A `time_range` slot is one resource (a court, a hall, a specialist): four courts are four slots. A booking picks
+`time`–`end_time` on the `step_minutes` grid from `from`, between `min_minutes` and `max_minutes` long, and is
+refused with `SLOT_FULL` when it comes closer than the service's `buffer_minutes` to another active booking of
+the slot. There is no limit to compare against, so the guard is a query, and two concurrent requests would
+both see a free interval; each one therefore also bumps the slot's `booked_count`, which makes the second
+transaction hit a write conflict, retry, and then see the first booking. The overlap query runs on the partial
+`unique_booking_per_slot` index. Without `from`/`to` the slot takes the day's span from `working_hours`; the
+step defaults to `duration_minutes`, then 30. The waitlist is not offered for it.
+
+An option whose type allows `time_range` can also carry `recurrent_ranges`: per weekday, the named
+`resources` (courts, halls, specialists), an optional `from`/`to` (otherwise the weekday's span from
+`working_hours`) and the step and duration limits. The `recurrent_slots` job keeps one `time_range` slot per
+resource and date over the horizon; such a slot carries `value.resource` and is labelled with it. A slot
+without `resource` was made by hand and the job never touches it. The same `resource` may appear only once per
+weekday.
+
+A `callback` slot is a list of windows (`time`–`to`) with a limit each; its booking needs a phone, and the
+reminder goes to the service's `subscribe` address as `booking.callback_due` instead of to the client.
 
 Responses still show the tree as `options[].slots[]`: the slots of a page of services are read in one query
 and grafted in by `option_id`, in insertion (`_id`) order. A `fields=` list without `options` skips that

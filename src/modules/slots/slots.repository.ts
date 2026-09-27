@@ -3,7 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { type AnyBulkWriteOperation, type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
 
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
-import { type RecurrentSlotPlan } from '../services/slot.logic';
+import { DATED_SLOT_TYPES } from '../services/schemas/service.schema';
+import { type RecurrentRangePlan, type RecurrentSlotPlan } from '../services/slot.logic';
 import { Slot, type SlotBody, type TimeEntry } from './schemas/slot.schema';
 
 export type SlotEntity = Lean<Slot>;
@@ -133,6 +134,22 @@ export class SlotsRepository extends BaseRepository<Slot> {
         return this.matched(
             this.key(serviceId, optionId, slotId),
             { $set: { 'value.time.$[entry].limit': limit } },
+            [{ 'entry.time': time }],
+            session,
+        );
+    }
+
+    setTimeEnd(
+        serviceId: string,
+        optionId: string,
+        slotId: string,
+        time: string,
+        to: string,
+        session?: ClientSession,
+    ): Promise<boolean> {
+        return this.matched(
+            this.key(serviceId, optionId, slotId),
+            { $set: { 'value.time.$[entry].to': to } },
             [{ 'entry.time': time }],
             session,
         );
@@ -280,18 +297,18 @@ export class SlotsRepository extends BaseRepository<Slot> {
     findDatedBefore(date: string): Promise<SlotEntity[]> {
         return this.model
             .find(
-                { child_type: { $in: ['date_time', 'date'] }, 'value.date': { $type: 'string', $lt: date } },
+                { child_type: { $in: DATED_SLOT_TYPES }, 'value.date': { $type: 'string', $lt: date } },
                 { service_id: 1, organization_id: 1, option_id: 1, child_type: 1, 'value.date': 1 },
             )
             .lean<SlotEntity[]>()
             .exec();
     }
 
-    findTimedByServices(serviceIds: Types.ObjectId[]): Promise<SlotEntity[]> {
+    findRecurringByServices(serviceIds: Types.ObjectId[]): Promise<SlotEntity[]> {
         if (serviceIds.length === 0) return Promise.resolve([]);
 
         return this.model
-            .find({ service_id: { $in: serviceIds }, child_type: 'date_time' })
+            .find({ service_id: { $in: serviceIds }, child_type: { $in: ['date_time', 'time_range'] } })
             .sort({ _id: 1 })
             .lean<SlotEntity[]>()
             .exec();
@@ -304,11 +321,11 @@ export class SlotsRepository extends BaseRepository<Slot> {
                     _id: { service_id: '$service_id', option_id: '$option_id' },
                     total: { $sum: 1 },
                     dated: {
-                        $sum: { $cond: [{ $in: ['$child_type', ['date_time', 'date']] }, 1, 0] },
+                        $sum: { $cond: [{ $in: ['$child_type', DATED_SLOT_TYPES] }, 1, 0] },
                     },
                     last_date: {
                         $max: {
-                            $cond: [{ $in: ['$child_type', ['date_time', 'date']] }, '$value.date', null],
+                            $cond: [{ $in: ['$child_type', DATED_SLOT_TYPES] }, '$value.date', null],
                         },
                     },
                 },
@@ -326,21 +343,58 @@ export class SlotsRepository extends BaseRepository<Slot> {
         ]);
     }
 
-    iterateKeys(): AsyncIterable<Pick<SlotEntity, 'service_id' | 'option_id' | 'id' | 'value'>> {
+    iterateKeys(): AsyncIterable<
+        Pick<SlotEntity, 'service_id' | 'option_id' | 'id' | 'child_type' | 'value'>
+    > {
         return this.model
-            .find({}, { service_id: 1, option_id: 1, id: 1, 'value.time.time': 1 })
-            .lean<Pick<SlotEntity, 'service_id' | 'option_id' | 'id' | 'value'>[]>()
+            .find({}, { service_id: 1, option_id: 1, id: 1, child_type: 1, 'value.time.time': 1 })
+            .lean<Pick<SlotEntity, 'service_id' | 'option_id' | 'id' | 'child_type' | 'value'>[]>()
             .cursor();
     }
 
     async applyRecurrentPlans(
-        plans: (SlotOwner & { plan: RecurrentSlotPlan })[],
+        plans: (SlotOwner & { plan: RecurrentSlotPlan; ranges?: RecurrentRangePlan })[],
         session?: ClientSession,
     ): Promise<number> {
         const operations: AnyBulkWriteOperation<Slot>[] = [];
 
-        for (const { plan, ...owner } of plans) {
+        for (const { plan, ranges, ...owner } of plans) {
             const serviceId = owner.service_id.toHexString();
+
+            for (const slot of ranges?.add_slots ?? [])
+                operations.push({ insertOne: { document: { ...owner, ...slot } } });
+
+            for (const { slot_id: slotId, range } of ranges?.update_ranges ?? []) {
+                operations.push({
+                    updateOne: {
+                        filter: {
+                            ...this.key(serviceId, owner.option_id, slotId),
+                            'value.booked_count': { $lte: 0 },
+                        },
+                        update: {
+                            $set: {
+                                'value.from': range.from,
+                                'value.to': range.to,
+                                'value.step_minutes': range.step_minutes,
+                                'value.min_minutes': range.min_minutes,
+                                'value.max_minutes': range.max_minutes,
+                            },
+                        },
+                    },
+                });
+            }
+
+            if (ranges?.remove_slots.length)
+                operations.push({
+                    deleteMany: {
+                        filter: {
+                            service_id: owner.service_id,
+                            option_id: owner.option_id,
+                            id: { $in: ranges.remove_slots },
+                            'value.booked_count': { $lte: 0 },
+                        },
+                    },
+                });
 
             for (const slot of plan.add_slots)
                 operations.push({ insertOne: { document: { ...owner, ...slot } } });
@@ -370,7 +424,7 @@ export class SlotsRepository extends BaseRepository<Slot> {
 
         const result = await this.model.bulkWrite(operations, { session, ordered: false });
 
-        return result.insertedCount + result.modifiedCount;
+        return result.insertedCount + result.modifiedCount + result.deletedCount;
     }
 
     private key(serviceId: string, optionId: string, slotId: string): FilterQuery<Slot> {

@@ -7,6 +7,7 @@ import { SLOT_TYPES, type SlotType } from '../../services/schemas/service.schema
 @Schema(subSchemaOptions)
 export class TimeEntry {
     @Prop({ type: String, required: true }) time!: string;
+    @Prop({ type: String }) to?: string;
     @Prop({ type: Number, default: null }) limit!: number | null;
     @Prop({ type: Number, required: true, default: 0 }) booked_count!: number;
 }
@@ -18,6 +19,12 @@ export class SlotValue {
     @Prop({ type: [TimeEntrySchema], default: undefined }) time?: TimeEntry[];
     @Prop({ type: Number, default: undefined }) limit?: number | null;
     @Prop({ type: Number }) booked_count?: number;
+    @Prop({ type: String }) from?: string;
+    @Prop({ type: String }) to?: string;
+    @Prop({ type: Number }) step_minutes?: number;
+    @Prop({ type: Number }) min_minutes?: number;
+    @Prop({ type: Number, default: undefined }) max_minutes?: number | null;
+    @Prop({ type: String }) resource?: string;
     @Prop({ type: String }) description?: string;
     @Prop({ type: String }) link?: string;
     @Prop({ type: String }) price?: string;

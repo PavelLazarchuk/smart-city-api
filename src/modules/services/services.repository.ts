@@ -14,7 +14,12 @@ import { SEARCH_FACET_LIMIT } from '../../common/config/constants';
 import { nextPosition, reorderSiblings } from '../../common/database/reorder';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { type ResolvedPagination } from '../../common/pagination/pagination.service';
-import { type RecurrentDate, Service, type ServiceOption } from './schemas/service.schema';
+import {
+    type RecurrentDate,
+    type RecurrentRange,
+    Service,
+    type ServiceOption,
+} from './schemas/service.schema';
 
 export interface FacetBucket {
     value: string;
@@ -311,17 +316,26 @@ export class ServicesRepository extends BaseRepository<Service> {
     async setRecurrence(
         id: string,
         optionId: string,
-        dates: RecurrentDate[] | null,
+        recurrence: { dates?: RecurrentDate[] | null; ranges?: RecurrentRange[] | null },
         session?: ClientSession,
     ): Promise<boolean> {
-        const update =
-            dates === null
-                ? { $unset: { 'options.$[option].recurrent_dates': 1 } }
-                : { $set: { 'options.$[option].recurrent_dates': dates } };
+        const set: Record<string, unknown> = {};
+        const unset: Record<string, 1> = {};
+
+        for (const [field, value] of [
+            ['recurrent_dates', recurrence.dates],
+            ['recurrent_ranges', recurrence.ranges],
+        ] as const) {
+            if (value === null) unset[`options.$[option].${field}`] = 1;
+            else if (value !== undefined) set[`options.$[option].${field}`] = value;
+        }
 
         return this.matched(
             { _id: new Types.ObjectId(id), 'options.id': optionId },
-            update,
+            {
+                ...(Object.keys(set).length ? { $set: set } : {}),
+                ...(Object.keys(unset).length ? { $unset: unset } : {}),
+            },
             [{ 'option.id': optionId }],
             session,
         );
@@ -329,7 +343,14 @@ export class ServicesRepository extends BaseRepository<Service> {
 
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
         return this.findMany(
-            { 'options.recurrent_dates.0': { $exists: true }, deleted_at: null, status: { $ne: 'archived' } },
+            {
+                $or: [
+                    { 'options.recurrent_dates.0': { $exists: true } },
+                    { 'options.recurrent_ranges.0': { $exists: true } },
+                ],
+                deleted_at: null,
+                status: { $ne: 'archived' },
+            },
             { _id: 1 },
         );
     }
@@ -345,6 +366,7 @@ export class ServicesRepository extends BaseRepository<Service> {
             'options.service_type': 1,
             'options.enabled': 1,
             'options.recurrent_dates': 1,
+            'options.recurrent_ranges': 1,
         });
     }
 

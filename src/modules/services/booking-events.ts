@@ -23,6 +23,7 @@ export function eventPayload(
         child_type: booking.child_type,
         date: booking.slot_date,
         time: booking.slot_time,
+        end_time: booking.slot_end ?? null,
         user_id: booking.user_id.toHexString(),
         status: booking.status,
         service_label: booking.service_label,

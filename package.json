@@ -32,6 +32,7 @@
         "migrate:verify": "ts-node -P tsconfig.scripts.json scripts/verify-migrations.ts",
         "seed": "ts-node -P tsconfig.scripts.json scripts/seed.ts",
         "migrate:load": "node --env-file=load/load.env node_modules/.bin/migrate-mongo up",
+        "seed:smoke": "ts-node -P tsconfig.scripts.json scripts/seed-smoke.ts",
         "seed:load": "TS_NODE_PROJECT=tsconfig.scripts.json node --env-file=load/load.env -r ts-node/register scripts/seed-load.ts",
         "load:smoke": "sh load/k6.sh run -e PROFILE=smoke load/mixed.js",
         "load": "sh load/k6.sh run -e PROFILE=load load/mixed.js",

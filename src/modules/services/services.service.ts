@@ -12,7 +12,7 @@ import { texts } from '../../common/i18n/messages';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { slugify, uniqueSlug } from '../../common/slug';
-import { dateOnlyIn, instantIn, isoAtIn, shiftDateOnly } from '../../common/time/zone';
+import { dateOnlyIn, instantIn, isoAtIn, isoIn, shiftDateOnly, timeOfDayIn } from '../../common/time/zone';
 import { BookingsRepository } from '../bookings/bookings.repository';
 import { CategoriesService } from '../categories/categories.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -40,6 +40,8 @@ import { type RevisionAction } from './schemas/service-revision.schema';
 import {
     BOOKABLE_SLOT_TYPES,
     type BookingPolicy,
+    DATED_SLOT_TYPES,
+    TIMED_SLOT_TYPES,
     type RecurrentDate,
     type Service,
     type ServiceStatus,
@@ -48,10 +50,18 @@ import { type ServiceRevisionEntity, ServiceRevisionsRepository } from './servic
 import { ServicesMasker } from './services.masker';
 import { type ServiceEntity, ServicesRepository } from './services.repository';
 import {
+    assertRange,
+    assertRecurrenceAllowed,
+    assertSlotTypesAllowed,
     attachBookings,
+    freeRanges,
     growTrees,
+    type Interval,
     optionFromInput,
     optionOf,
+    type Range,
+    rangeOf,
+    recurrentRangesFromInput,
     type ServiceTree,
     slotFromInput,
     slotOf,
@@ -72,6 +82,7 @@ function byStart(left: SlotCandidate, right: SlotCandidate): number {
         left.option_label.localeCompare(right.option_label) || left.option_id.localeCompare(right.option_id)
     );
 }
+const RANGE_FIELDS = ['from', 'to', 'step_minutes', 'min_minutes', 'max_minutes'] as const;
 const REVISION_IGNORED = new Set(['updated_at', 'created_at', '_id']);
 const DUPLICATE_KEY = 11000;
 
@@ -323,6 +334,7 @@ export class ServicesService implements OnModuleInit {
         const { from, to } = this.horizon(query, timeZone);
         const free = (limit: number | null | undefined, booked: number): number | null =>
             limit === null || limit === undefined ? null : Math.max(0, limit - booked);
+        const openings = await this.openings(service, timeZone);
         const options = service.options
             .filter((option) => option.enabled)
             .map((option) => ({
@@ -352,10 +364,19 @@ export class ServicesService implements OnModuleInit {
                                 ? {
                                       time: slot.value.time.map((entry) => ({
                                           time: entry.time,
+                                          ...(entry.to ? { to: entry.to } : {}),
                                           limit: entry.limit,
                                           booked_count: entry.booked_count,
                                           available: free(entry.limit, entry.booked_count),
                                       })),
+                                  }
+                                : {}),
+                            ...(slot.child_type === 'time_range'
+                                ? {
+                                      range: {
+                                          ...rangeOf(slot),
+                                          free: openings.get(`${option.id}|${slot.id}`) ?? [],
+                                      },
                                   }
                                 : {}),
                         };
@@ -402,6 +423,7 @@ export class ServicesService implements OnModuleInit {
         const before = query.before ? new Date(query.before) : undefined;
         const windowed = after !== undefined || before !== undefined;
         const candidates: SlotCandidate[] = [];
+        const openings = await this.openings(service, timeZone);
 
         for (const option of service.options) {
             if (!option.enabled) continue;
@@ -427,7 +449,9 @@ export class ServicesService implements OnModuleInit {
                     date,
                 };
 
-                for (const entry of this.momentsOf(slot)) {
+                const limits = slot.child_type === 'time_range' ? rangeOf(slot) : null;
+
+                for (const entry of this.momentsOf(slot, openings.get(`${option.id}|${slot.id}`) ?? [])) {
                     const startsAt = date ? instantIn(date, entry.time, timeZone) : null;
 
                     if (startsAt && entry.time !== null && startsAt.getTime() <= now.getTime()) continue;
@@ -449,10 +473,22 @@ export class ServicesService implements OnModuleInit {
                         ...base,
                         time: entry.time,
                         starts_at: startsAt ? isoAtIn(startsAt, timeZone) : null,
-                        ends_at: this.endsAt(startsAt, service.duration_minutes, timeZone),
+                        ends_at:
+                            date && entry.to
+                                ? isoIn(date, entry.to, timeZone)
+                                : this.endsAt(startsAt, service.duration_minutes, timeZone),
                         limit: entry.limit ?? null,
                         booked_count: entry.booked_count,
                         available,
+                        ...(limits
+                            ? {
+                                  range: {
+                                      step_minutes: limits.step_minutes,
+                                      min_minutes: limits.min_minutes,
+                                      max_minutes: limits.max_minutes,
+                                  },
+                              }
+                            : {}),
                     });
                 }
             }
@@ -471,12 +507,24 @@ export class ServicesService implements OnModuleInit {
         };
     }
 
-    private momentsOf(slot: SlotBody): { time: string | null; limit: number | null; booked_count: number }[] {
-        if (slot.child_type === 'date_time')
+    private momentsOf(
+        slot: SlotBody,
+        openings: Interval[],
+    ): { time: string | null; to?: string; limit: number | null; booked_count: number }[] {
+        if (TIMED_SLOT_TYPES.includes(slot.child_type))
             return (slot.value.time ?? []).map((entry) => ({
                 time: entry.time,
+                to: entry.to,
                 limit: entry.limit ?? null,
                 booked_count: entry.booked_count,
+            }));
+
+        if (slot.child_type === 'time_range')
+            return openings.map((opening) => ({
+                time: opening.from,
+                to: opening.to,
+                limit: 1,
+                booked_count: 0,
             }));
 
         return [
@@ -486,6 +534,39 @@ export class ServicesService implements OnModuleInit {
                 booked_count: slot.value.booked_count ?? 0,
             },
         ];
+    }
+
+    private async openings(service: ServiceTreeEntity, timeZone: string): Promise<Map<string, Interval[]>> {
+        const ranged = service.options.flatMap((option) =>
+            option.slots.filter((slot) => slot.child_type === 'time_range').map((slot) => ({ option, slot })),
+        );
+        const openings = new Map<string, Interval[]>();
+
+        if (ranged.length === 0) return openings;
+
+        const booked = await this.bookings.findActiveIntervals(
+            service._id.toHexString(),
+            ranged.map(({ slot }) => slot.id),
+        );
+        const now = new Date();
+        const today = dateOnlyIn(now, timeZone);
+
+        for (const { option, slot } of ranged) {
+            const busy = booked
+                .filter((booking) => booking.option_id === option.id && booking.slot_id === slot.id)
+                .map((booking) => ({ from: booking.slot_time ?? '', to: booking.slot_end ?? '' }));
+            openings.set(
+                `${option.id}|${slot.id}`,
+                freeRanges(
+                    rangeOf(slot),
+                    busy,
+                    service.buffer_minutes ?? 0,
+                    slot.value.date === today ? timeOfDayIn(now, timeZone) : undefined,
+                ),
+            );
+        }
+
+        return openings;
     }
 
     private endsAt(
@@ -516,7 +597,8 @@ export class ServicesService implements OnModuleInit {
                     !(value === null && (key === 'location' || key === 'address' || key === 'description')),
             ),
         );
-        const options = (input.options ?? []).map(optionFromInput);
+        const context = { working_hours: input.working_hours, duration_minutes: input.duration_minutes };
+        const options = (input.options ?? []).map((option) => optionFromInput(option, context));
         this.assertUniqueOptions(options.map(({ option }) => option.id));
         const created = await this.tx.run(async (ctx) => {
             const service = await this.services.create(
@@ -845,7 +927,7 @@ export class ServicesService implements OnModuleInit {
     async addOption(id: string, input: ServiceOptionInput, viewer?: AuthUser): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            const { option, slots } = optionFromInput(input);
+            const { option, slots } = optionFromInput(input, before);
             this.assertUniqueOptions([...before.options.map((item) => item.id), option.id]);
             await this.services.pushOption(id, option, ctx.session);
             await this.insertSlots(before, option.id, slots, ctx.session);
@@ -866,12 +948,19 @@ export class ServicesService implements OnModuleInit {
     ): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            optionOf(before, optionId);
+            const option = optionOf(before, optionId);
             const fields: Record<string, unknown> = {};
 
             if (input.label !== undefined) fields['label'] = input.label;
 
-            if (input.service_type !== undefined) fields['service_type'] = input.service_type;
+            if (input.service_type !== undefined) {
+                assertSlotTypesAllowed(input.service_type, option.slots);
+                assertRecurrenceAllowed(input.service_type, {
+                    dates: option.recurrent_dates,
+                    ranges: option.recurrent_ranges,
+                });
+                fields['service_type'] = input.service_type;
+            }
 
             if (input.enabled !== undefined) fields['enabled'] = input.enabled;
 
@@ -910,16 +999,24 @@ export class ServicesService implements OnModuleInit {
     ): Promise<ServiceTreeEntity> {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
-            optionOf(before, optionId);
-            const dates: RecurrentDate[] | null =
-                input.recurrent_dates === null
-                    ? null
+            const option = optionOf(before, optionId);
+            assertRecurrenceAllowed(option.service_type, {
+                dates: input.recurrent_dates,
+                ranges: input.recurrent_ranges,
+            });
+            const dates: RecurrentDate[] | null | undefined =
+                input.recurrent_dates === undefined || input.recurrent_dates === null
+                    ? input.recurrent_dates
                     : input.recurrent_dates.map((entry) => ({
                           day: entry.day,
                           time: entry.time.map((time) => ({ time: time.time, limit: time.limit ?? null })),
                           limit: entry.limit ?? null,
                       }));
-            await this.services.setRecurrence(id, optionId, dates, ctx.session);
+            const ranges =
+                input.recurrent_ranges === undefined || input.recurrent_ranges === null
+                    ? input.recurrent_ranges
+                    : (recurrentRangesFromInput(input.recurrent_ranges, before) ?? null);
+            await this.services.setRecurrence(id, optionId, { dates, ranges }, ctx.session);
             const after = await this.load(id, ctx.session);
             await this.record(after, 'option.recurrence', before, after, viewer, ctx.session);
 
@@ -938,7 +1035,8 @@ export class ServicesService implements OnModuleInit {
         const service = await this.tx.run(async (ctx) => {
             const before = await this.load(id, ctx.session);
             const option = optionOf(before, optionId);
-            const slot = slotFromInput(input);
+            const slot = slotFromInput(input, before);
+            assertSlotTypesAllowed(option.service_type, [slot]);
 
             if (option.slots.some((item) => item.id === slot.id)) throw ApiError.conflict('CONFLICT');
 
@@ -969,10 +1067,16 @@ export class ServicesService implements OnModuleInit {
             if (input.label !== undefined) fields['label'] = input.label;
 
             if (input.date !== undefined) {
-                if (slot.child_type !== 'date_time' && slot.child_type !== 'date')
+                if (!DATED_SLOT_TYPES.includes(slot.child_type))
                     throw ApiError.unprocessable('SLOT_NOT_DATED');
 
                 fields['value.date'] = input.date;
+            }
+
+            if (RANGE_FIELDS.some((key) => input[key] !== undefined)) {
+                if (slot.child_type !== 'time_range') throw ApiError.unprocessable('SLOT_NOT_RANGED');
+
+                Object.assign(fields, await this.rangeFields(id, optionId, slot, input, ctx.session));
             }
 
             if (input.limit !== undefined) {
@@ -986,7 +1090,8 @@ export class ServicesService implements OnModuleInit {
                 await this.slots.setFields(id, optionId, slotId, fields, ctx.session);
 
             if (input.time !== undefined) {
-                if (slot.child_type !== 'date_time') throw ApiError.unprocessable('SLOT_NOT_TIMED');
+                if (!TIMED_SLOT_TYPES.includes(slot.child_type))
+                    throw ApiError.unprocessable('SLOT_NOT_TIMED');
 
                 await this.applyTimes(id, optionId, slot, input.time, ctx.session);
             }
@@ -1016,13 +1121,65 @@ export class ServicesService implements OnModuleInit {
         });
     }
 
+    private async rangeFields(
+        id: string,
+        optionId: string,
+        slot: SlotBody,
+        input: UpdateSlotInput,
+        session: ClientSession,
+    ): Promise<Record<string, unknown>> {
+        const current = rangeOf(slot);
+        const range: Range = {
+            from: input.from ?? current.from,
+            to: input.to ?? current.to,
+            step_minutes: input.step_minutes ?? current.step_minutes,
+            min_minutes: input.min_minutes ?? current.min_minutes,
+            max_minutes: input.max_minutes === undefined ? current.max_minutes : input.max_minutes,
+        };
+        assertRange(range);
+        const booked = await this.bookings.findActiveIntervals(id, [slot.id], session);
+
+        if (
+            booked.some(
+                (booking) =>
+                    booking.option_id === optionId &&
+                    ((booking.slot_time ?? '') < range.from || (booking.slot_end ?? '') > range.to),
+            )
+        )
+            throw ApiError.conflict('SLOT_TIME_BOOKED');
+
+        return {
+            'value.from': range.from,
+            'value.to': range.to,
+            'value.step_minutes': range.step_minutes,
+            'value.min_minutes': range.min_minutes,
+            'value.max_minutes': range.max_minutes,
+        };
+    }
+
     private async applyTimes(
         id: string,
         optionId: string,
         slot: SlotBody,
-        input: { time: string; limit?: number | null }[],
+        input: { time: string; to?: string; limit?: number | null }[],
         session: ClientSession,
     ): Promise<void> {
+        const callback = slot.child_type === 'callback';
+
+        const unbounded = input.filter(
+            (entry) =>
+                entry.to === undefined && !(slot.value.time ?? []).some((item) => item.time === entry.time),
+        );
+
+        if (callback && unbounded.length > 0)
+            throw ApiError.unprocessable(
+                'SLOT_RANGE_REQUIRED',
+                unbounded.map((entry) => ({
+                    path: 'time',
+                    message: `${entry.time} needs an end time in to`,
+                })),
+            );
+
         const existing = slot.value.time ?? [];
         const requested = new Set(input.map((entry) => entry.time));
         const removed = existing.filter((entry) => !requested.has(entry.time)).map((entry) => entry.time);
@@ -1037,16 +1194,28 @@ export class ServicesService implements OnModuleInit {
 
         const added = input
             .filter((entry) => !existing.some((item) => item.time === entry.time))
-            .map((entry): TimeEntry => ({ time: entry.time, limit: entry.limit ?? null, booked_count: 0 }));
+            .map((entry): TimeEntry => ({
+                time: entry.time,
+                ...(callback ? { to: entry.to } : {}),
+                limit: entry.limit ?? null,
+                booked_count: 0,
+            }));
 
         if (added.length > 0) await this.slots.pushTimes(id, optionId, slot.id, added, session);
 
         for (const entry of input) {
             const previous = existing.find((item) => item.time === entry.time);
 
-            if (!previous || entry.limit === undefined || previous.limit === entry.limit) continue;
+            if (!previous) continue;
 
-            await this.slots.setTimeLimit(id, optionId, slot.id, entry.time, entry.limit, session);
+            if (entry.limit !== undefined && previous.limit !== entry.limit)
+                await this.slots.setTimeLimit(id, optionId, slot.id, entry.time, entry.limit, session);
+
+            if (callback && entry.to !== undefined && previous.to !== entry.to) {
+                if (previous.booked_count > 0) throw ApiError.conflict('SLOT_TIME_BOOKED');
+
+                await this.slots.setTimeEnd(id, optionId, slot.id, entry.time, entry.to, session);
+            }
         }
     }
 

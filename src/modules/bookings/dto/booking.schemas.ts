@@ -24,12 +24,15 @@ export const bookingResourceSchema = z.object({
     service_label: z.string().catch(''),
     date: z.string().nullable().catch(null),
     time: z.string().nullable().catch(null),
+    end_time: z.string().nullable().catch(null),
     starts_at: isoDateTimeSchema.nullable().catch(null),
+    ends_at: isoDateTimeSchema.nullable().catch(null),
     cancel_deadline_at: isoDateTimeSchema.nullable().catch(null),
     user_id: idOutputSchema,
     person: z.string().catch(''),
     phone: z.string().catch(''),
     info: z.string().catch(''),
+    address: z.string().nullable().catch(null),
     fields: z.record(z.string(), z.unknown()).catch({}),
     documents: z.array(z.string()).catch([]),
     status: z.enum(BOOKING_STATUSES).catch('confirmed'),
@@ -87,6 +90,8 @@ export const rescheduleBookingSchema = z.object({
     option_id: uuidSchema.optional(),
     slot_id: uuidSchema,
     time: timeOfDaySchema.optional(),
+    end_time: timeOfDaySchema.optional(),
+    address: z.string().trim().min(1).max(500).optional(),
 });
 export type RescheduleBookingInput = z.infer<typeof rescheduleBookingSchema>;
 export class RescheduleBookingDto extends createZodDto(rescheduleBookingSchema) {}

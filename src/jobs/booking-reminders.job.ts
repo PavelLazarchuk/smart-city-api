@@ -38,8 +38,9 @@ export class BookingRemindersJob {
             );
 
             for (const booking of due) {
+                const callback = booking.child_type === 'callback';
                 await this.outbox.enqueue(
-                    'booking.reminder',
+                    callback ? 'booking.callback_due' : 'booking.reminder',
                     {
                         booking_id: booking.id,
                         service_id: booking.service_id.toHexString(),
@@ -48,16 +49,19 @@ export class BookingRemindersJob {
                         slot_id: booking.slot_id,
                         date: booking.slot_date,
                         time: booking.slot_time,
+                        end_time: booking.slot_end ?? null,
                         user_id: booking.user_id.toHexString(),
                         status: booking.status,
                         service_label: booking.service_label,
                     },
                     {
                         organizationId: booking.organization_id,
-                        internal: {
-                            phone: booking.phone,
-                            email: emails.get(booking.user_id.toHexString()) ?? null,
-                        },
+                        internal: callback
+                            ? { phone: booking.phone, person: booking.person }
+                            : {
+                                  phone: booking.phone,
+                                  email: emails.get(booking.user_id.toHexString()) ?? null,
+                              },
                     },
                 );
             }

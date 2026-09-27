@@ -203,6 +203,8 @@ export class BookingsController {
         'BOOKING_LEAD_TIME',
         'BOOKING_TOO_FAR_AHEAD',
         'BOOKING_ALREADY_EXISTS',
+        'BOOKING_ADDRESS_REQUIRED',
+        'SLOT_RANGE_INVALID',
     )
     @Serialize(bookingResourceSchema)
     reschedule(

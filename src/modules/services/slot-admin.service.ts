@@ -26,7 +26,7 @@ import {
     type MoveSlotInput,
     type MoveSlotResult,
 } from './dto/service.schemas';
-import { BOOKABLE_SLOT_TYPES } from './schemas/service.schema';
+import { BOOKABLE_SLOT_TYPES, DATED_SLOT_TYPES, TIMED_SLOT_TYPES } from './schemas/service.schema';
 import { ServicesRepository } from './services.repository';
 import { ServicesService, type ServiceTreeEntity } from './services.service';
 import { minutesOf, optionOf, slotOf, timeOf } from './slot.logic';
@@ -204,14 +204,21 @@ export class SlotAdminService implements OnModuleInit {
             const option = optionOf(before, optionId);
             const slot = slotOf(option, slotId);
 
-            if (slot.child_type !== 'date_time' && slot.child_type !== 'date')
-                throw ApiError.unprocessable('SLOT_NOT_DATED');
+            if (!DATED_SLOT_TYPES.includes(slot.child_type)) throw ApiError.unprocessable('SLOT_NOT_DATED');
 
             const timeZone = await this.timeZoneOf(before);
 
             if (input.date < dateOnlyIn(new Date(), timeZone)) throw ApiError.unprocessable('SLOT_EXPIRED');
 
-            if (option.slots.some((item) => item.id !== slotId && item.value.date === input.date))
+            if (
+                slot.child_type !== 'time_range' &&
+                option.slots.some(
+                    (item) =>
+                        item.id !== slotId &&
+                        item.child_type !== 'time_range' &&
+                        item.value.date === input.date,
+                )
+            )
                 throw ApiError.conflict('SLOT_DATE_TAKEN');
 
             const previousDate = slot.value.date ?? '';
@@ -225,7 +232,7 @@ export class SlotAdminService implements OnModuleInit {
                 previous_date: previousDate,
             };
 
-            if (previousDate === input.date && shifted.size === 0)
+            if (previousDate === input.date && minutes === 0)
                 return { ...summary, moved: 0, notifications_queued: 0 };
 
             const bookings = await this.affectedBookings(serviceId, optionId, slotId, undefined, ctx.session);
@@ -247,12 +254,13 @@ export class SlotAdminService implements OnModuleInit {
                 this.renameOrder(shifted, minutes),
                 ctx.session,
             );
+            await this.shiftEnds(serviceId, optionId, slot, minutes, ctx.session);
             const moved = await this.bookings.moveMany(
-                this.destinations(bookings, input.date, shifted, minutes, timeZone),
+                this.destinations(bookings, input.date, minutes, timeZone),
                 ctx.session,
             );
             await this.waitlist.moveMany(
-                this.destinations(waiting, input.date, shifted, minutes, timeZone),
+                this.destinations(waiting, input.date, minutes, timeZone),
                 ctx.session,
             );
 
@@ -260,7 +268,8 @@ export class SlotAdminService implements OnModuleInit {
                 type: 'booking.rescheduled',
                 payload: eventPayload(booking, {
                     date: input.date,
-                    time: this.movedTime(booking.slot_time, shifted),
+                    time: this.movedTime(booking.slot_time, minutes),
+                    end_time: this.movedTime(booking.slot_end ?? null, minutes),
                     bulk: true,
                     reason: input.reason ?? null,
                     previous: {
@@ -268,6 +277,7 @@ export class SlotAdminService implements OnModuleInit {
                         slot_id: booking.slot_id,
                         date: booking.slot_date,
                         time: booking.slot_time,
+                        end_time: booking.slot_end ?? null,
                     },
                 }),
             }));
@@ -363,7 +373,7 @@ export class SlotAdminService implements OnModuleInit {
         time: string | undefined,
         session: ClientSession,
     ): Promise<void> {
-        if (slot.child_type === 'date_time')
+        if (TIMED_SLOT_TYPES.includes(slot.child_type))
             await this.slots.clearTimeCounts(serviceId, optionId, slot.id, time, session);
         else await this.slots.clearSlotCount(serviceId, optionId, slot.id, session);
     }
@@ -390,20 +400,68 @@ export class SlotAdminService implements OnModuleInit {
 
         if (minutes === 0) return moves;
 
-        if (slot.child_type !== 'date_time') throw ApiError.unprocessable('SLOT_NOT_TIMED');
+        if (slot.child_type === 'date') throw ApiError.unprocessable('SLOT_NOT_TIMED');
 
-        for (const entry of slot.value.time ?? []) {
-            const shifted = minutesOf(entry.time) + minutes;
+        const bounds =
+            slot.child_type === 'time_range'
+                ? [slot.value.from ?? '', slot.value.to ?? '']
+                : (slot.value.time ?? []).flatMap((entry) => (entry.to ? [entry.to] : []));
 
-            if (shifted < 0 || shifted >= DAY_MINUTES)
-                throw ApiError.unprocessable('SLOT_TIME_OUT_OF_RANGE', [
-                    { path: 'shift_minutes', message: `${entry.time} would leave the day` },
-                ]);
+        for (const time of bounds) this.shiftedTime(time, minutes);
 
-            moves.set(entry.time, timeOf(shifted));
-        }
+        for (const entry of slot.value.time ?? [])
+            moves.set(entry.time, this.shiftedTime(entry.time, minutes));
 
         return moves;
+    }
+
+    private shiftedTime(time: string, minutes: number): string {
+        const shifted = minutesOf(time) + minutes;
+
+        if (shifted < 0 || shifted >= DAY_MINUTES)
+            throw ApiError.unprocessable('SLOT_TIME_OUT_OF_RANGE', [
+                { path: 'shift_minutes', message: `${time} would leave the day` },
+            ]);
+
+        return timeOf(shifted);
+    }
+
+    private async shiftEnds(
+        serviceId: string,
+        optionId: string,
+        slot: SlotBody,
+        minutes: number,
+        session: ClientSession,
+    ): Promise<void> {
+        if (minutes === 0) return;
+
+        if (slot.child_type === 'time_range') {
+            await this.slots.setFields(
+                serviceId,
+                optionId,
+                slot.id,
+                {
+                    'value.from': this.shiftedTime(slot.value.from ?? '', minutes),
+                    'value.to': this.shiftedTime(slot.value.to ?? '', minutes),
+                },
+                session,
+            );
+
+            return;
+        }
+
+        for (const entry of slot.value.time ?? []) {
+            if (!entry.to) continue;
+
+            await this.slots.setTimeEnd(
+                serviceId,
+                optionId,
+                slot.id,
+                this.shiftedTime(entry.time, minutes),
+                this.shiftedTime(entry.to, minutes),
+                session,
+            );
+        }
     }
 
     private renameOrder(moves: Map<string, string>, minutes: number): [string, string][] {
@@ -412,27 +470,35 @@ export class SlotAdminService implements OnModuleInit {
         );
     }
 
-    private movedTime(time: string | null, moves: Map<string, string>): string | null {
+    private movedTime(time: string | null, minutes: number): string | null {
         if (time === null) return null;
 
-        return moves.get(time) ?? time;
+        return timeOf(minutesOf(time) + minutes);
     }
 
-    private destinations<T extends Timed & { id: string }>(
+    private destinations<T extends Timed & { id: string; slot_end?: string | null }>(
         rows: T[],
         date: string,
-        moves: Map<string, string>,
         minutes: number,
         timeZone: string,
-    ): { id: string; slot_date: string; slot_time: string | null; starts_at: Date | null }[] {
+    ): {
+        id: string;
+        slot_date: string;
+        slot_time: string | null;
+        starts_at: Date | null;
+        slot_end?: string | null;
+        ends_at?: Date | null;
+    }[] {
         return [...rows].sort(byShift(minutes)).map((row) => {
-            const time = this.movedTime(row.slot_time, moves);
+            const time = this.movedTime(row.slot_time, minutes);
+            const end = this.movedTime(row.slot_end ?? null, minutes);
 
             return {
                 id: row.id,
                 slot_date: date,
                 slot_time: time,
                 starts_at: instantIn(date, time, timeZone),
+                ...(end === null ? {} : { slot_end: end, ends_at: instantIn(date, end, timeZone) }),
             };
         });
     }
@@ -471,7 +537,7 @@ export class SlotAdminService implements OnModuleInit {
     private resolveTime(slot: SlotBody, time: string | undefined): string | undefined {
         if (time === undefined) return undefined;
 
-        if (slot.child_type !== 'date_time') throw ApiError.unprocessable('SLOT_NOT_TIMED');
+        if (!TIMED_SLOT_TYPES.includes(slot.child_type)) throw ApiError.unprocessable('SLOT_NOT_TIMED');
 
         if (!(slot.value.time ?? []).some((entry) => entry.time === time))
             throw ApiError.notFound('SLOT_NOT_FOUND');

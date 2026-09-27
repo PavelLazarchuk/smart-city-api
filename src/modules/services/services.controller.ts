@@ -115,6 +115,9 @@ const BOOKING_ERRORS = [
     'BOOKING_FIELDS_INVALID',
     'BOOKING_DOCUMENTS_REQUIRED',
     'BOOKING_ALREADY_EXISTS',
+    'BOOKING_ADDRESS_REQUIRED',
+    'BOOKING_PHONE_REQUIRED',
+    'SLOT_RANGE_INVALID',
     'FORBIDDEN',
     'PHONE_COUNTRY_NOT_SUPPORTED',
     'CLIENT_ACCOUNT_REQUIRED',
@@ -225,6 +228,9 @@ export class ServicesController {
         'CATEGORY_NOT_FOUND',
         'CATEGORY_ORGANIZATION_MISMATCH',
         'SERVICE_SLUG_TAKEN',
+        'SLOT_TYPE_NOT_ALLOWED',
+        'SLOT_RANGE_REQUIRED',
+        'SLOT_RANGE_INVALID',
         'CONFLICT',
     )
     @Serialize(serviceResponseSchema)
@@ -307,7 +313,13 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiCreatedResponse({ type: ServiceResponseDto })
-    @ApiErrors('SERVICE_NOT_FOUND', 'CONFLICT')
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'SLOT_TYPE_NOT_ALLOWED',
+        'SLOT_RANGE_REQUIRED',
+        'SLOT_RANGE_INVALID',
+        'CONFLICT',
+    )
     @Serialize(serviceResponseSchema)
     addOption(
         @Param('id') id: string,
@@ -322,7 +334,7 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiData(ServiceResponseDto)
-    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND')
+    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND', 'SLOT_TYPE_NOT_ALLOWED')
     @Serialize(serviceResponseSchema)
     updateOption(
         @Param('id') id: string,
@@ -352,7 +364,13 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiData(ServiceResponseDto)
-    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND')
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'OPTION_NOT_FOUND',
+        'SLOT_TYPE_NOT_ALLOWED',
+        'SLOT_RANGE_REQUIRED',
+        'SLOT_RANGE_INVALID',
+    )
     @Serialize(serviceResponseSchema)
     setRecurrence(
         @Param('id') id: string,
@@ -374,7 +392,14 @@ export class ServicesController {
         },
     })
     @ApiCreatedResponse({ type: ServiceResponseDto })
-    @ApiErrors('SERVICE_NOT_FOUND', 'OPTION_NOT_FOUND', 'CONFLICT')
+    @ApiErrors(
+        'SERVICE_NOT_FOUND',
+        'OPTION_NOT_FOUND',
+        'SLOT_TYPE_NOT_ALLOWED',
+        'SLOT_RANGE_REQUIRED',
+        'SLOT_RANGE_INVALID',
+        'CONFLICT',
+    )
     @Serialize(serviceResponseSchema)
     addSlot(
         @Param('id') id: string,
@@ -397,6 +422,9 @@ export class ServicesController {
         'SLOT_NOT_DATED',
         'SLOT_NOT_LIMITED',
         'SLOT_NOT_TIMED',
+        'SLOT_NOT_RANGED',
+        'SLOT_RANGE_REQUIRED',
+        'SLOT_RANGE_INVALID',
         'SLOT_TIME_BOOKED',
     )
     @Serialize(serviceResponseSchema)
@@ -565,6 +593,7 @@ export class ServicesController {
         'SLOT_EXPIRED',
         'SLOT_TIME_REQUIRED',
         'SLOT_NOT_FULL',
+        'WAITLIST_NOT_SUPPORTED',
         'SERVICE_NOT_PUBLISHED',
         'ORGANIZATION_CLOSED',
         'WAITLIST_ALREADY_JOINED',

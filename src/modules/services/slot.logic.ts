@@ -5,11 +5,19 @@ import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
 import { shiftDateOnly, weekdayOfDateOnly } from '../../common/time/zone';
 import { type BookingEntity } from '../bookings/bookings.repository';
-import { type ServiceOptionInput, type SlotInput } from './dto/service.schemas';
+import { type RecurrentRangeInput, type ServiceOptionInput, type SlotInput } from './dto/service.schemas';
 import { type SlotBody, type SlotValue, type TimeEntry } from '../slots/schemas/slot.schema';
 import {
+    ALLOWED_SLOT_TYPES,
+    BOOKABLE_SLOT_TYPES,
+    DATED_SLOT_TYPES,
     type RecurrentDate,
+    type RecurrentRange,
     type ServiceOption,
+    type ServiceType,
+    type SlotType,
+    TIMED_SLOT_TYPES,
+    type Weekday,
     WEEKDAYS,
     type WorkingHours,
 } from './schemas/service.schema';
@@ -65,7 +73,88 @@ export function slotOf(option: { slots: SlotBody[] }, slotId: string): SlotBody 
     return slot;
 }
 
-export function slotFromInput(input: SlotInput): SlotBody {
+export const DEFAULT_RANGE_STEP_MINUTES = 30;
+
+export interface SlotContext {
+    working_hours?: WorkingHours[];
+    duration_minutes?: number | null;
+}
+
+type RangeInput = Extract<SlotInput, { child_type: 'time_range' }>['value'];
+
+export interface Range {
+    from: string;
+    to: string;
+    step_minutes: number;
+    min_minutes: number;
+    max_minutes: number | null;
+}
+
+function isValidRange(range: Range): boolean {
+    const span = minutesOf(range.to) - minutesOf(range.from);
+
+    return (
+        span > 0 &&
+        range.min_minutes <= span &&
+        (range.max_minutes === null || range.max_minutes >= range.min_minutes)
+    );
+}
+
+export function assertRange(range: Range): void {
+    if (!isValidRange(range)) throw ApiError.unprocessable('SLOT_RANGE_INVALID');
+}
+
+interface RangeSpec {
+    from?: string;
+    to?: string;
+    step_minutes?: number;
+    min_minutes?: number;
+    max_minutes?: number | null;
+}
+
+function rangeFor(spec: RangeSpec, day: Weekday, context: SlotContext): Range | null {
+    let { from, to } = spec;
+
+    if (from === undefined || to === undefined) {
+        const hours = (context.working_hours ?? []).filter((entry) => entry.day === day);
+
+        if (hours.length === 0) return null;
+
+        from = hours.map((entry) => entry.from).sort()[0]!;
+        to = hours
+            .map((entry) => entry.to)
+            .sort()
+            .at(-1)!;
+    }
+
+    const step = spec.step_minutes ?? context.duration_minutes ?? DEFAULT_RANGE_STEP_MINUTES;
+
+    return {
+        from,
+        to,
+        step_minutes: step,
+        min_minutes: spec.min_minutes ?? step,
+        max_minutes: spec.max_minutes ?? null,
+    };
+}
+
+function rangeFromInput(value: RangeInput, context: SlotContext): Range {
+    const range = rangeFor(value, WEEKDAYS[weekdayOfDateOnly(value.date)]!, context);
+
+    if (!range) throw ApiError.unprocessable('SLOT_RANGE_REQUIRED');
+
+    assertRange(range);
+
+    return range;
+}
+
+const INFO_LABELS: Record<'pickup' | 'courier' | 'paycard', string> = {
+    pickup: texts.defaults.pickupSlotLabel,
+    courier: texts.defaults.courierSlotLabel,
+    paycard: texts.defaults.slotLabel,
+};
+
+export function slotFromInput(input: SlotInput, context: SlotContext = {}): SlotBody {
     const id = input.id ?? randomUUID();
     switch (input.child_type) {
         case 'date_time':
@@ -96,10 +185,32 @@ export function slotFromInput(input: SlotInput): SlotBody {
                 child_type: 'apply',
                 value: { limit: input.value.limit ?? null, booked_count: 0 },
             };
+        case 'time_range':
+            return {
+                id,
+                label: input.label ?? texts.defaults.rangeSlotLabel,
+                child_type: 'time_range',
+                value: { date: input.value.date, ...rangeFromInput(input.value, context), booked_count: 0 },
+            };
+        case 'callback':
+            return {
+                id,
+                label: input.label ?? texts.defaults.callbackSlotLabel,
+                child_type: 'callback',
+                value: {
+                    date: input.value.date,
+                    time: input.value.time.map((entry): TimeEntry => ({
+                        time: entry.time,
+                        to: entry.to,
+                        limit: entry.limit ?? null,
+                        booked_count: 0,
+                    })),
+                },
+            };
         default:
             return {
                 id,
-                label: input.label ?? texts.defaults.slotLabel,
+                label: input.label ?? INFO_LABELS[input.child_type],
                 child_type: input.child_type,
                 value: {
                     description: input.value.description,
@@ -110,12 +221,81 @@ export function slotFromInput(input: SlotInput): SlotBody {
     }
 }
 
-export function optionFromInput(input: ServiceOptionInput): { option: ServiceOption; slots: SlotBody[] } {
+export function assertSlotTypesAllowed(
+    serviceType: ServiceType,
+    slots: Pick<SlotBody, 'child_type'>[],
+): void {
+    const allowed = ALLOWED_SLOT_TYPES[serviceType];
+    const refused = [...new Set(slots.map((slot) => slot.child_type))].filter(
+        (type) => !allowed.includes(type),
+    );
+
+    if (refused.length > 0)
+        throw ApiError.unprocessable(
+            'SLOT_TYPE_NOT_ALLOWED',
+            refused.map((type) => ({
+                path: 'child_type',
+                message: `${type} is not allowed for ${serviceType}; use one of ${allowed.join(', ')}`,
+            })),
+        );
+}
+
+export function assertRecurrenceAllowed(
+    serviceType: ServiceType,
+    recurrence: { dates?: unknown[] | null; ranges?: unknown[] | null },
+): void {
+    const wanted: SlotType[] = [
+        ...(recurrence.dates?.length ? (['date_time'] as const) : []),
+        ...(recurrence.ranges?.length ? (['time_range'] as const) : []),
+    ];
+
+    assertSlotTypesAllowed(
+        serviceType,
+        wanted.map((type) => ({ child_type: type })),
+    );
+}
+
+export function recurrentRangesFromInput(
+    entries: RecurrentRangeInput[] | null | undefined,
+    context: SlotContext,
+): RecurrentRange[] | undefined {
+    if (entries === null || entries === undefined) return undefined;
+
+    return entries.map((entry) => {
+        const range = rangeFor(entry, entry.day, context);
+
+        if (!range)
+            throw ApiError.unprocessable('SLOT_RANGE_REQUIRED', [
+                { path: 'recurrent_ranges', message: `${entry.day} has neither from/to nor working hours` },
+            ]);
+
+        assertRange(range);
+
+        return {
+            day: entry.day,
+            ...(entry.from === undefined ? {} : { from: entry.from, to: entry.to }),
+            resources: entry.resources,
+            ...(entry.step_minutes === undefined ? {} : { step_minutes: entry.step_minutes }),
+            ...(entry.min_minutes === undefined ? {} : { min_minutes: entry.min_minutes }),
+            max_minutes: entry.max_minutes ?? null,
+        };
+    });
+}
+
+export function optionFromInput(
+    input: ServiceOptionInput,
+    context: SlotContext = {},
+): { option: ServiceOption; slots: SlotBody[] } {
+    const serviceType = input.service_type ?? 'service_apply';
+    const slots = (input.slots ?? []).map((slot) => slotFromInput(slot, context));
+    assertSlotTypesAllowed(serviceType, slots);
+    assertRecurrenceAllowed(serviceType, { dates: input.recurrent_dates, ranges: input.recurrent_ranges });
+
     return {
         option: {
             id: input.id ?? randomUUID(),
             label: input.label ?? texts.defaults.optionLabel,
-            service_type: input.service_type ?? 'service_apply',
+            service_type: serviceType,
             enabled: input.enabled ?? true,
             recurrent_dates:
                 input.recurrent_dates === null || input.recurrent_dates === undefined
@@ -125,8 +305,9 @@ export function optionFromInput(input: ServiceOptionInput): { option: ServiceOpt
                           time: entry.time.map((time) => ({ time: time.time, limit: time.limit ?? null })),
                           limit: entry.limit ?? null,
                       })),
+            recurrent_ranges: recurrentRangesFromInput(input.recurrent_ranges, context),
         },
-        slots: (input.slots ?? []).map(slotFromInput),
+        slots,
     };
 }
 
@@ -136,6 +317,9 @@ export interface BookingView {
     person: string;
     phone: string;
     info: string;
+    time: string | null;
+    end_time: string | null;
+    address: string | null;
     status: string;
     created_at: Date;
 }
@@ -151,48 +335,133 @@ export function attachBookings<T extends { id: string; slots: SlotBody[] }>(
     options: T[],
     bookings: BookingEntity[],
 ): (Omit<T, 'slots'> & { slots: SlotWithBookings[] })[] {
+    const byTime = new Map<string, BookingView[]>();
     const bySlot = new Map<string, BookingView[]>();
 
     for (const booking of bookings) {
-        const key = `${booking.option_id}|${booking.slot_id}|${booking.slot_time ?? ''}`;
+        const slotKey = `${booking.option_id}|${booking.slot_id}`;
+        const timeKey = `${slotKey}|${booking.slot_time ?? ''}`;
         const view: BookingView = {
             id: booking.id,
             user_id: booking.user_id,
             person: booking.person,
             phone: booking.phone,
             info: booking.info,
+            time: booking.slot_time ?? null,
+            end_time: booking.slot_end ?? null,
+            address: booking.address ?? null,
             status: booking.status,
             created_at: booking.created_at,
         };
-        bySlot.set(key, [...(bySlot.get(key) ?? []), view]);
+        byTime.set(timeKey, [...(byTime.get(timeKey) ?? []), view]);
+        bySlot.set(slotKey, [...(bySlot.get(slotKey) ?? []), view]);
     }
 
     return options.map((option) => ({
         ...option,
         slots: option.slots.map((slot): SlotWithBookings => {
-            if (slot.child_type === 'date_time') {
+            if (TIMED_SLOT_TYPES.includes(slot.child_type)) {
                 return {
                     ...slot,
                     value: {
                         ...slot.value,
                         time: (slot.value.time ?? []).map((entry) => ({
                             ...entry,
-                            bookings: bySlot.get(`${option.id}|${slot.id}|${entry.time}`) ?? [],
+                            bookings: byTime.get(`${option.id}|${slot.id}|${entry.time}`) ?? [],
                         })),
                     },
                 };
             }
 
-            if (slot.child_type === 'date' || slot.child_type === 'apply') {
+            if (BOOKABLE_SLOT_TYPES.includes(slot.child_type)) {
                 return {
                     ...slot,
-                    value: { ...slot.value, bookings: bySlot.get(`${option.id}|${slot.id}|`) ?? [] },
+                    value: { ...slot.value, bookings: bySlot.get(`${option.id}|${slot.id}`) ?? [] },
                 };
             }
 
             return slot;
         }),
     }));
+}
+
+export interface Interval {
+    from: string;
+    to: string;
+}
+
+function clampMinutes(minutes: number): number {
+    return Math.min(24 * 60, Math.max(0, minutes));
+}
+
+export function overlaps(left: Interval, right: Interval, bufferMinutes = 0): boolean {
+    return (
+        minutesOf(left.from) < clampMinutes(minutesOf(right.to) + bufferMinutes) &&
+        clampMinutes(minutesOf(left.to) + bufferMinutes) > minutesOf(right.from)
+    );
+}
+
+export function assertFitsRange(range: Range, wanted: Interval): void {
+    const start = minutesOf(wanted.from);
+    const end = minutesOf(wanted.to);
+    const open = minutesOf(range.from);
+    const length = end - start;
+
+    if (
+        start < open ||
+        end > minutesOf(range.to) ||
+        length < range.min_minutes ||
+        (range.max_minutes !== null && length > range.max_minutes) ||
+        (start - open) % range.step_minutes !== 0 ||
+        (end - open) % range.step_minutes !== 0
+    )
+        throw ApiError.unprocessable('SLOT_RANGE_INVALID');
+}
+
+export function freeRanges(
+    range: Range,
+    busy: Interval[],
+    bufferMinutes = 0,
+    notBefore?: string,
+): Interval[] {
+    const open = minutesOf(range.from);
+    const close = minutesOf(range.to);
+    const step = range.step_minutes;
+    const blocked = busy
+        .map((entry) => [
+            clampMinutes(minutesOf(entry.from) - bufferMinutes),
+            clampMinutes(minutesOf(entry.to) + bufferMinutes),
+        ])
+        .sort(([left], [right]) => left! - right!);
+    const gaps: [number, number][] = [];
+    let cursor = notBefore === undefined ? open : Math.max(open, minutesOf(notBefore));
+
+    for (const [start, end] of blocked) {
+        if (start! > cursor) gaps.push([cursor, Math.min(start!, close)]);
+
+        cursor = Math.max(cursor, end!);
+    }
+
+    if (cursor < close) gaps.push([cursor, close]);
+
+    return gaps.flatMap(([start, end]) => {
+        const alignedStart = open + Math.ceil((start - open) / step) * step;
+        const alignedEnd = open + Math.floor((end - open) / step) * step;
+
+        return alignedEnd - alignedStart >= range.min_minutes
+            ? [{ from: timeOf(alignedStart), to: timeOf(alignedEnd) }]
+            : [];
+    });
+}
+
+export function rangeOf(slot: Pick<SlotBody, 'value'>): Range {
+    return {
+        from: slot.value.from ?? '00:00',
+        to: slot.value.to ?? '00:00',
+        step_minutes: slot.value.step_minutes ?? DEFAULT_RANGE_STEP_MINUTES,
+        min_minutes: slot.value.min_minutes ?? slot.value.step_minutes ?? DEFAULT_RANGE_STEP_MINUTES,
+        max_minutes: slot.value.max_minutes ?? null,
+    };
 }
 
 export interface GeneratedDay {
@@ -240,6 +509,20 @@ export function timesFromWorkingHours(
     return [...starts].sort((a, b) => a - b).map((start) => ({ time: timeOf(start), limit }));
 }
 
+function recurringDates(from: string, horizonDays: number, context: RecurrenceContext): string[] {
+    const holidays = new Set(context.holidays ?? []);
+    const blackouts = new Set(context.blackout_dates ?? []);
+    const dates: string[] = [];
+
+    for (let i = 1; i <= horizonDays; i += 1) {
+        const date = shiftDateOnly(from, i);
+
+        if (!blackouts.has(date) && !holidays.has(date.slice(5))) dates.push(date);
+    }
+
+    return dates;
+}
+
 export function generateRecurrentDays(
     recurrent: RecurrentDate[],
     from: string,
@@ -250,17 +533,12 @@ export function generateRecurrentDays(
 
     for (const entry of recurrent) byWeekday.set(WEEKDAYS.indexOf(entry.day), entry);
 
-    const holidays = new Set(context.holidays ?? []);
-    const blackouts = new Set(context.blackout_dates ?? []);
     const result: GeneratedDay[] = [];
 
-    for (let i = 1; i <= horizonDays; i += 1) {
-        const date = shiftDateOnly(from, i);
+    for (const date of recurringDates(from, horizonDays, context)) {
         const config = byWeekday.get(weekdayOfDateOnly(date));
 
         if (!config) continue;
-
-        if (blackouts.has(date) || holidays.has(date.slice(5))) continue;
 
         const explicit = config.time.map((time) => ({ time: time.time, limit: time.limit }));
         const generated =
@@ -280,6 +558,102 @@ export function generateRecurrentDays(
     }
 
     return result;
+}
+
+export interface GeneratedRange {
+    date: string;
+    resource: string;
+    range: Range;
+}
+
+export function generateRecurrentRanges(
+    recurrent: RecurrentRange[],
+    from: string,
+    horizonDays: number,
+    context: RecurrenceContext = {},
+): GeneratedRange[] {
+    const result: GeneratedRange[] = [];
+
+    for (const date of recurringDates(from, horizonDays, context)) {
+        const day = WEEKDAYS[weekdayOfDateOnly(date)]!;
+
+        for (const entry of recurrent) {
+            if (entry.day !== day) continue;
+
+            const range = rangeFor(entry, day, context);
+
+            if (!range || !isValidRange(range)) continue;
+
+            for (const resource of entry.resources) result.push({ date, resource, range });
+        }
+    }
+
+    return result;
+}
+
+export interface RecurrentRangePlan {
+    add_slots: SlotBody[];
+    update_ranges: { slot_id: string; range: Range }[];
+    remove_slots: string[];
+}
+
+export function isEmptyRangePlan(plan: RecurrentRangePlan): boolean {
+    return plan.add_slots.length === 0 && plan.update_ranges.length === 0 && plan.remove_slots.length === 0;
+}
+
+function sameRange(left: Range, right: Range): boolean {
+    return (
+        left.from === right.from &&
+        left.to === right.to &&
+        left.step_minutes === right.step_minutes &&
+        left.min_minutes === right.min_minutes &&
+        left.max_minutes === right.max_minutes
+    );
+}
+
+export function planRecurrentRanges(
+    slots: SlotBody[],
+    generated: GeneratedRange[],
+    window: { from: string; to: string },
+): RecurrentRangePlan {
+    const plan: RecurrentRangePlan = { add_slots: [], update_ranges: [], remove_slots: [] };
+    const managed = slots.filter(
+        (slot) =>
+            slot.child_type === 'time_range' &&
+            typeof slot.value.resource === 'string' &&
+            typeof slot.value.date === 'string' &&
+            slot.value.date > window.from &&
+            slot.value.date <= window.to,
+    );
+    const byKey = new Map(managed.map((slot) => [`${slot.value.date}|${slot.value.resource}`, slot]));
+    const wanted = new Set<string>();
+
+    for (const { date, resource, range } of generated) {
+        const key = `${date}|${resource}`;
+        wanted.add(key);
+        const slot = byKey.get(key);
+
+        if (!slot) {
+            plan.add_slots.push({
+                id: randomUUID(),
+                label: resource,
+                child_type: 'time_range',
+                value: { date, resource, ...range, booked_count: 0 },
+            });
+            continue;
+        }
+
+        if ((slot.value.booked_count ?? 0) === 0 && !sameRange(rangeOf(slot), range))
+            plan.update_ranges.push({ slot_id: slot.id, range });
+    }
+
+    for (const slot of managed) {
+        const key = `${slot.value.date}|${slot.value.resource}`;
+
+        if (!wanted.has(key) && (slot.value.booked_count ?? 0) === 0) plan.remove_slots.push(slot.id);
+    }
+
+    return plan;
 }
 
 export interface RecurrentSlotPlan {
@@ -335,7 +709,7 @@ export function planRecurrentDays(slots: SlotBody[], days: GeneratedDay[]): Recu
 }
 
 export function isSlotExpired(slot: Pick<SlotBody, 'child_type' | 'value'>, today: string): boolean {
-    if (slot.child_type !== 'date_time' && slot.child_type !== 'date') return false;
+    if (!DATED_SLOT_TYPES.includes(slot.child_type)) return false;
 
     return typeof slot.value.date === 'string' && slot.value.date < today;
 }

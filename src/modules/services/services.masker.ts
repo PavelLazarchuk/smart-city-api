@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ROLES } from '../../common/decorators/roles.decorator';
 import { texts } from '../../common/i18n/messages';
+import { type SlotType, TIMED_SLOT_TYPES } from './schemas/service.schema';
 
 export interface ServiceView {
     _id: unknown;
@@ -55,7 +56,7 @@ export class ServicesMasker {
                     value: slot.value
                         ? {
                               ...slot.value,
-                              ...(slot.child_type === 'date_time'
+                              ...(slot.child_type && TIMED_SLOT_TYPES.includes(slot.child_type as SlotType)
                                   ? {
                                         time: (slot.value.time ?? []).map((entry) => ({
                                             ...entry,

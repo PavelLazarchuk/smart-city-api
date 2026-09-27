@@ -168,7 +168,7 @@ describe('bookings (e2e)', () => {
                             child_type: 'date',
                             value: { date: '2000-01-01', limit: 1, booked_count: 0 },
                         },
-                        { id: infoId, label: 'i', child_type: 'delivery', value: { description: 'x' } },
+                        { id: infoId, label: 'i', child_type: 'pickup', value: { description: 'x' } },
                     ],
                 },
                 {

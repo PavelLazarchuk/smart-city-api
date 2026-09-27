@@ -74,6 +74,10 @@ export const ERROR_CODES = {
     SLOT_DATE_TAKEN: 'SLOT_DATE_TAKEN',
     SLOT_TIME_OUT_OF_RANGE: 'SLOT_TIME_OUT_OF_RANGE',
     SLOT_BULK_TOO_LARGE: 'SLOT_BULK_TOO_LARGE',
+    SLOT_TYPE_NOT_ALLOWED: 'SLOT_TYPE_NOT_ALLOWED',
+    SLOT_NOT_RANGED: 'SLOT_NOT_RANGED',
+    SLOT_RANGE_REQUIRED: 'SLOT_RANGE_REQUIRED',
+    SLOT_RANGE_INVALID: 'SLOT_RANGE_INVALID',
 
     SERVICE_SLUG_TAKEN: 'SERVICE_SLUG_TAKEN',
     SERVICE_NOT_DELETED: 'SERVICE_NOT_DELETED',
@@ -88,8 +92,11 @@ export const ERROR_CODES = {
     BOOKING_STATUS_TRANSITION: 'BOOKING_STATUS_TRANSITION',
     BOOKING_NOT_ACTIVE: 'BOOKING_NOT_ACTIVE',
     BOOKING_NOT_DATED: 'BOOKING_NOT_DATED',
+    BOOKING_ADDRESS_REQUIRED: 'BOOKING_ADDRESS_REQUIRED',
+    BOOKING_PHONE_REQUIRED: 'BOOKING_PHONE_REQUIRED',
     WAITLIST_NOT_FOUND: 'WAITLIST_NOT_FOUND',
     WAITLIST_ALREADY_JOINED: 'WAITLIST_ALREADY_JOINED',
+    WAITLIST_NOT_SUPPORTED: 'WAITLIST_NOT_SUPPORTED',
     SLOT_NOT_FULL: 'SLOT_NOT_FULL',
     NEWS_SLUG_TAKEN: 'NEWS_SLUG_TAKEN',
     WEBHOOK_NOT_FOUND: 'WEBHOOK_NOT_FOUND',
@@ -186,6 +193,10 @@ export const errorMessages: Record<ErrorCode, string> = {
     SLOT_DATE_TAKEN: 'Another slot of this option already covers that date.',
     SLOT_TIME_OUT_OF_RANGE: 'The shift moves a time out of the day.',
     SLOT_BULK_TOO_LARGE: 'The slot holds more bookings than one bulk operation may touch.',
+    SLOT_TYPE_NOT_ALLOWED: 'This slot type is not allowed for the option service type.',
+    SLOT_NOT_RANGED: 'This slot type has no bookable interval.',
+    SLOT_RANGE_REQUIRED: 'The interval needs from and to, or working hours for its weekday.',
+    SLOT_RANGE_INVALID: 'The requested interval does not fit the slot range, step or duration limits.',
 
     SERVICE_SLUG_TAKEN: 'This slug is already used by another service of the organization.',
     SERVICE_NOT_DELETED: 'The service is not in the trash.',
@@ -200,8 +211,11 @@ export const errorMessages: Record<ErrorCode, string> = {
     BOOKING_STATUS_TRANSITION: 'The booking cannot move to this status from its current one.',
     BOOKING_NOT_ACTIVE: 'The booking is no longer active.',
     BOOKING_NOT_DATED: 'The booking has no date, so it cannot be added to a calendar.',
+    BOOKING_ADDRESS_REQUIRED: 'An address is required for this booking.',
+    BOOKING_PHONE_REQUIRED: 'A phone number is required for a call-back request.',
     WAITLIST_NOT_FOUND: 'Waitlist entry not found.',
     WAITLIST_ALREADY_JOINED: 'You are already on the waitlist for this slot.',
+    WAITLIST_NOT_SUPPORTED: 'This slot type has no waitlist.',
     SLOT_NOT_FULL: 'The slot still has free capacity. Book it instead of joining the waitlist.',
     NEWS_SLUG_TAKEN: 'This slug is already used by another news item of the organization.',
     WEBHOOK_NOT_FOUND: 'Webhook not found.',
@@ -296,6 +310,21 @@ export const texts = {
                 ...(data.reason ? [`Reason: ${data.reason}`] : []),
                 `Booked with phone ${data.phone || 'not specified'}.`,
             ].join('\n'),
+        callbackSubject: 'Smart City: call-back due',
+        callbackBody: (data: {
+            service: string;
+            date?: string;
+            time?: string;
+            end_time?: string;
+            phone: string;
+            name: string;
+        }): string =>
+            [
+                `Call back for ${data.service}.`,
+                `When: ${data.date ?? 'not specified'}${data.time ? `, ${data.time}` : ''}${data.end_time ? `-${data.end_time}` : ''}`,
+                `Phone: ${data.phone || 'not specified'}`,
+                `Name: ${data.name || 'not specified'}`,
+            ].join('\n'),
         reportSubject: 'Smart City: services without upcoming slots',
         reportBody: (count: number): string =>
             `The attached report lists ${count} service(s) that currently have no upcoming booking slots.`,
@@ -329,6 +358,10 @@ export const texts = {
         optionLabel: 'Online booking',
         slotLabel: 'Booking',
         dateSlotLabel: 'Booking by date',
+        rangeSlotLabel: 'Booking by interval',
+        callbackSlotLabel: 'Call back',
+        pickupSlotLabel: 'Pickup',
+        courierSlotLabel: 'Courier delivery',
     },
     bookings: {
         reservedStatus: 'reserved',
