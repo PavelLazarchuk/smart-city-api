@@ -1,3 +1,4 @@
+import './tracing';
 import 'source-map-support/register';
 import { NestFactory } from '@nestjs/core';
 import { type NestExpressApplication } from '@nestjs/platform-express';

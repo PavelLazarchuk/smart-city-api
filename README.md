@@ -14,6 +14,7 @@ The rest of the documentation is indexed in [docs/README.md](docs/README.md).
 | Validation / serialization | zod 4 — request **and** response schemas (`nestjs-zod` for pipes, DTOs and OpenAPI)                        |
 | Auth                       | argon2id passwords, access + refresh JWT pair with rotation and reuse detection, hashed one-time SMS codes |
 | Logging                    | pino (`nestjs-pino`), request id on every line and in every error response                                 |
+| Tracing                    | OpenTelemetry spans for HTTP, Mongo, Redis, jobs and outbox deliveries, OTLP/HTTP, off by default          |
 | Jobs                       | `@nestjs/schedule` with a `job_locks` distributed lease                                                    |
 | Migrations                 | `migrate-mongo` (indexes live in migrations; `autoIndex` is off in production)                             |
 | Docs                       | Swagger UI at `/api/docs`, JSON at `/api/docs-json`                                                        |
@@ -86,6 +87,8 @@ Notable switches:
 - `WEBHOOK_ALLOW_PRIVATE_HOSTS` — off by default: webhook targets on loopback or private networks are refused
   and production demands `https`.
 - `SERVICE_TRASH_RETENTION_DAYS` — how long soft-deleted services are kept before `trash_purge` removes them.
+- `TRACING_ENABLED` — starts the OpenTelemetry SDK; `OTEL_EXPORTER_OTLP_ENDPOINT` and the other standard `OTEL_*`
+  variables (sampler, headers) configure the exporter — see [docs/deployment.md](docs/deployment.md#tracing).
 
 Values that are part of the API contract or of how the service is built rather than of a deployment —
 pagination limits, job schedules, outbox and upload ceilings, argon2 parameters, the Mongo write concern —
@@ -116,6 +119,22 @@ migration that creates the index, because changing one needs a `collMod` migrati
   `DELETE /bookings/:id`, which needs no `service_id`.
 - `POST /services/:id/bookings` accepts an `Idempotency-Key` header: a retry replays the original `201`
   (with `Idempotency-Replayed: true`) instead of answering `409 BOOKING_ALREADY_EXISTS`.
+- The organization's admins (and super-admins) may book for someone who came in person:
+  `POST /services/:id/bookings` with `on_behalf: { phone, name }` finds the client account by phone or creates
+  it, and books in that account's name. Capacity is enforced as for everyone; the client-facing
+  `booking_policy` rules (lead time, horizon, active limit, `requires_confirmation`) are not, so the booking is
+  `confirmed` at once. The row records the admin in `created_by`, and `Location` points at `/bookings/:id`.
+  A phone that belongs to a staff account is refused with `422 CLIENT_ACCOUNT_REQUIRED`.
+- A dated booking is available as a calendar file: `GET /bookings/:id/calendar.ics` (owner and the
+  organization's admins, `422 BOOKING_NOT_DATED` for an `apply` slot), and the reminder e-mail carries it as
+  `booking.ics`. `POST /me/calendar-token` issues a read-only token for a personal subscription,
+  `GET /me/bookings.ics?token=…`, which a phone calendar polls on its own: bookings from 30 days back onwards,
+  a moved booking keeps its `UID` with the new time, a cancelled one turns `STATUS:CANCELLED`. Issuing a token
+  again replaces the previous one, `DELETE /me/calendar-token` revokes it; only its hash is stored.
+- Favorites: `PUT` / `DELETE /me/favorites/:type/:id` (`type` is `service` or `organization`, both idempotent)
+  and `GET /me/favorites?type=`. A service in the trash or no longer published stays in the list with
+  `available: false` and comes back on restore; deleting the service, the organization or the account removes
+  the entries. One account keeps up to 100.
 - `GET /services/:id/availability?from=&to=` is the cacheable, personal-data-free view of free capacity —
   no need to download the whole service to render a booking form.
 - `GET /services/:id/slots` is the same capacity flattened to one row per bookable moment, each carrying
@@ -143,6 +162,10 @@ migration that creates the index, because changing one needs a `collMod` migrati
   bookings; the full document comes from `GET /services/:id` or `GET /organizations/:id/services/:slug`,
   free capacity from `GET /services/:id/availability`, and the booking lists from `GET /services/:id` and
   `GET /organizations/:id/services`. `?fields=` trims the tree itself to the branches a screen renders.
+  For an anonymous caller the tree carries a weak `ETag` built from the organization's `version`, which every
+  write to the organization or to anything shown in the tree raises, so `If-None-Match` is answered `304`
+  without running the aggregation. Every other response gets Express's own weak `ETag` over the body and the
+  same `304`.
 - Services are a catalogue: `slug` (`GET /organizations/:id/services/:slug`), `status` draft/published/archived
   (`PUT /services/:id/status`; the public sees published only), `description`, `tags`, numeric `price` +
   `currency`, `address` + `location` (`GET /services/nearby?lat=&lng=&radius_m=`), `working_hours`, `holidays`,

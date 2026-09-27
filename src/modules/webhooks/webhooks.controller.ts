@@ -19,7 +19,6 @@ import { type AuthUser, CurrentUser } from '../../common/decorators/current-user
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
-import { type OutboxEventEntity } from '../../common/outbox/outbox.repository';
 import { type WebhookEntity } from '../../common/outbox/webhooks.repository';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import {
@@ -36,7 +35,7 @@ import {
     WebhookTestResponseDto,
     webhookTestResponseSchema,
 } from './dto/webhook.schemas';
-import { WebhooksService } from './webhooks.service';
+import { type OutboxEventView, WebhooksService } from './webhooks.service';
 
 @ApiTags('webhooks')
 @ApiBearerAuth()
@@ -124,7 +123,7 @@ export class WebhooksController {
     events(
         @Query() query: ListOutboxQueryDto,
         @CurrentUser() user: AuthUser,
-    ): Promise<PaginatedResult<OutboxEventEntity>> {
+    ): Promise<PaginatedResult<OutboxEventView>> {
         return this.webhooks.listEvents(query, user);
     }
 
@@ -133,7 +132,7 @@ export class WebhooksController {
     @ApiData(OutboxEventResponseDto)
     @ApiErrors('NOT_FOUND', 'CONFLICT')
     @Serialize(outboxEventResponseSchema)
-    replay(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<OutboxEventEntity> {
+    replay(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<OutboxEventView> {
         return this.webhooks.replayEvent(id, user);
     }
 }

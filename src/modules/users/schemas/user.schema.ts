@@ -42,6 +42,9 @@ export class User {
     /** Set once the failure budget is spent; password login is refused until it passes. */
     @Prop({ type: Date })
     locked_until?: Date;
+
+    @Prop({ type: String, select: false })
+    calendar_token_hash?: string;
 }
 
 export type UserDocument = HydratedDocument<User>;
@@ -50,3 +53,7 @@ export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ login: 1 }, { unique: true, partialFilterExpression: { login: { $type: 'string' } } });
 UserSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { phone: { $type: 'string' } } });
 UserSchema.index({ organization_ids: 1 });
+UserSchema.index(
+    { calendar_token_hash: 1 },
+    { unique: true, partialFilterExpression: { calendar_token_hash: { $type: 'string' } } },
+);

@@ -40,6 +40,7 @@ import { type SlotBody } from '../slots/schemas/slot.schema';
 import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
+import { BookingCalendarService } from './booking-calendar.service';
 import { eventPayload, notice, recipientEmail, text } from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
@@ -79,6 +80,12 @@ interface Bookable {
     timeZone: string;
 }
 
+interface Booker {
+    id: Types.ObjectId;
+    name: string;
+    phone: string;
+}
+
 interface Cancelled {
     user_id: string;
     date?: string;
@@ -114,6 +121,7 @@ function toResource(booking: BookingEntity, cancelDeadlineMinutes?: number | nul
         status: booking.status,
         confirmed_at: booking.confirmed_at ? booking.confirmed_at.toISOString() : null,
         finished_at: booking.finished_at ? booking.finished_at.toISOString() : null,
+        created_by: booking.created_by ? booking.created_by.toHexString() : null,
         created_at: booking.created_at.toISOString(),
     };
 }
@@ -158,6 +166,7 @@ export class BookingsService implements OnModuleInit {
         private readonly sms: SmsService,
         private readonly outbox: OutboxService,
         private readonly masker: ServicesMasker,
+        private readonly calendar: BookingCalendarService,
         private readonly pagination: PaginationService,
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
@@ -206,7 +215,11 @@ export class BookingsService implements OnModuleInit {
 
             if (!email) return;
 
-            await this.mail.sendBookingReminder(email, notice(event));
+            await this.mail.sendBookingReminder(
+                email,
+                notice(event),
+                await this.calendar.attachment(text(event.payload['booking_id'])),
+            );
         });
         this.outbox.registerHandler('booking.reminder', 'sms', async (event) => {
             const { phone, ...data } = notice(event);
@@ -251,12 +264,17 @@ export class BookingsService implements OnModuleInit {
     }
 
     async create(serviceId: string, input: CreateBookingInput, actor: AuthUser): Promise<BookingCreated> {
+        if (input.on_behalf && actor.role === ROLES.COMMON_USER) throw ApiError.forbidden('FORBIDDEN');
+
         const bookingId = randomUUID();
         const createdAt = new Date();
 
         return this.tx.run(async (ctx) => {
             const bookable = await this.loadBookable(serviceId, actor, ctx.session);
             const { service, timeZone } = bookable;
+
+            if (input.on_behalf && !this.isAdminOf(service, actor)) throw ApiError.forbidden('FORBIDDEN');
+
             const target = await this.resolveTarget(
                 bookable,
                 input.option_id,
@@ -265,12 +283,16 @@ export class BookingsService implements OnModuleInit {
                 createdAt,
                 ctx.session,
             );
-            this.assertPolicy(bookable, target, actor, createdAt);
-            await this.assertActiveLimit(service, actor, ctx.session);
+            const booker = await this.bookerOf(input, actor, ctx.session);
+
+            if (!input.on_behalf) {
+                this.assertPolicy(bookable, target, actor, createdAt);
+                await this.assertActiveLimit(service, actor, ctx.session);
+            }
+
             const { fields, documents } = this.validateForm(service, input);
-            const status: BookingStatus = service.booking_policy?.requires_confirmation
-                ? 'pending'
-                : 'confirmed';
+            const status: BookingStatus =
+                !input.on_behalf && service.booking_policy?.requires_confirmation ? 'pending' : 'confirmed';
             const booking: Booking = {
                 id: bookingId,
                 service_id: service._id,
@@ -282,9 +304,9 @@ export class BookingsService implements OnModuleInit {
                 slot_time: target.time ?? null,
                 starts_at: slotStart(target.slot.value.date, target.time, timeZone),
                 service_label: service.value.heading_value ?? service.label,
-                user_id: new Types.ObjectId(actor.id),
-                person: actor.name ?? '',
-                phone: actor.phone ?? '',
+                user_id: booker.id,
+                person: booker.name,
+                phone: booker.phone,
                 info: input.info ?? '',
                 fields,
                 documents,
@@ -293,6 +315,7 @@ export class BookingsService implements OnModuleInit {
                 confirmed_at: status === 'confirmed' ? createdAt : null,
                 finished_at: null,
                 status_changed_by: null,
+                created_by: new Types.ObjectId(actor.id),
                 reminder_sent_at: null,
             };
 
@@ -322,9 +345,24 @@ export class BookingsService implements OnModuleInit {
                 status,
                 date: target.slot.value.date,
                 time: target.time,
+                user_id: booker.id.toHexString(),
                 created_at: createdAt.toISOString(),
             };
         });
+    }
+
+    private async bookerOf(
+        input: CreateBookingInput,
+        actor: AuthUser,
+        session: ClientSession,
+    ): Promise<Booker> {
+        if (!input.on_behalf) {
+            return { id: new Types.ObjectId(actor.id), name: actor.name ?? '', phone: actor.phone ?? '' };
+        }
+
+        const client = await this.users.findOrCreateClient(input.on_behalf, session);
+
+        return { id: client._id, name: input.on_behalf.name, phone: client.phone ?? input.on_behalf.phone };
     }
 
     list(query: ListBookingsQuery, actor: AuthUser): Promise<PaginatedResult<BookingResource>> {

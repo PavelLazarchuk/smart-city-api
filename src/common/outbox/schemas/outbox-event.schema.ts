@@ -67,6 +67,12 @@ export class OutboxEvent {
 
     @Prop({ type: String })
     last_error?: string;
+
+    @Prop({ type: String, default: null })
+    request_id!: string | null;
+
+    @Prop({ type: SchemaTypes.Mixed, default: null })
+    trace!: Record<string, string> | null;
 }
 
 export type OutboxEventDocument = HydratedDocument<OutboxEvent>;
@@ -74,3 +80,4 @@ export const OutboxEventSchema = SchemaFactory.createForClass(OutboxEvent);
 OutboxEventSchema.index({ id: 1 }, { unique: true });
 OutboxEventSchema.index({ status: 1, next_attempt_at: 1 });
 OutboxEventSchema.index({ organization_id: 1, created_at: -1 });
+OutboxEventSchema.index({ request_id: 1 }, { partialFilterExpression: { request_id: { $type: 'string' } } });

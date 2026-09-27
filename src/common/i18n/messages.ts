@@ -35,6 +35,7 @@ export const ERROR_CODES = {
     PHONE_TAKEN: 'PHONE_TAKEN',
     ADMIN_IDENTIFIER_REQUIRED: 'ADMIN_IDENTIFIER_REQUIRED',
     CLIENT_PHONE_REQUIRED: 'CLIENT_PHONE_REQUIRED',
+    CLIENT_ACCOUNT_REQUIRED: 'CLIENT_ACCOUNT_REQUIRED',
     ADMIN_PASSWORD_REQUIRED: 'ADMIN_PASSWORD_REQUIRED',
     ADMIN_PHONE_REQUIRED: 'ADMIN_PHONE_REQUIRED',
     LAST_SUPER_ADMIN: 'LAST_SUPER_ADMIN',
@@ -86,12 +87,14 @@ export const ERROR_CODES = {
     BOOKING_DOCUMENTS_REQUIRED: 'BOOKING_DOCUMENTS_REQUIRED',
     BOOKING_STATUS_TRANSITION: 'BOOKING_STATUS_TRANSITION',
     BOOKING_NOT_ACTIVE: 'BOOKING_NOT_ACTIVE',
+    BOOKING_NOT_DATED: 'BOOKING_NOT_DATED',
     WAITLIST_NOT_FOUND: 'WAITLIST_NOT_FOUND',
     WAITLIST_ALREADY_JOINED: 'WAITLIST_ALREADY_JOINED',
     SLOT_NOT_FULL: 'SLOT_NOT_FULL',
     NEWS_SLUG_TAKEN: 'NEWS_SLUG_TAKEN',
     WEBHOOK_NOT_FOUND: 'WEBHOOK_NOT_FOUND',
     FIELDS_NOT_ALLOWED: 'FIELDS_NOT_ALLOWED',
+    FAVORITES_LIMIT_REACHED: 'FAVORITES_LIMIT_REACHED',
 
     FILE_REQUIRED: 'FILE_REQUIRED',
     FILE_TYPE_NOT_ALLOWED: 'FILE_TYPE_NOT_ALLOWED',
@@ -144,6 +147,7 @@ export const errorMessages: Record<ErrorCode, string> = {
     PHONE_TAKEN: 'This phone number is already registered.',
     ADMIN_IDENTIFIER_REQUIRED: 'An admin account needs a login with a password or a phone number.',
     CLIENT_PHONE_REQUIRED: 'A client account needs a phone number.',
+    CLIENT_ACCOUNT_REQUIRED: 'This phone number belongs to a staff account. Book on behalf of clients only.',
     ADMIN_PASSWORD_REQUIRED: 'Admins sign in with a password, so the account needs a login and a password.',
     ADMIN_PHONE_REQUIRED: 'Admins sign in with a one-time code, so the account needs a phone number.',
     LAST_SUPER_ADMIN: 'The last super-admin account cannot be removed or demoted.',
@@ -195,12 +199,14 @@ export const errorMessages: Record<ErrorCode, string> = {
     BOOKING_DOCUMENTS_REQUIRED: 'Required documents were not confirmed.',
     BOOKING_STATUS_TRANSITION: 'The booking cannot move to this status from its current one.',
     BOOKING_NOT_ACTIVE: 'The booking is no longer active.',
+    BOOKING_NOT_DATED: 'The booking has no date, so it cannot be added to a calendar.',
     WAITLIST_NOT_FOUND: 'Waitlist entry not found.',
     WAITLIST_ALREADY_JOINED: 'You are already on the waitlist for this slot.',
     SLOT_NOT_FULL: 'The slot still has free capacity. Book it instead of joining the waitlist.',
     NEWS_SLUG_TAKEN: 'This slug is already used by another news item of the organization.',
     WEBHOOK_NOT_FOUND: 'Webhook not found.',
     FIELDS_NOT_ALLOWED: 'One of the requested fields is not part of this response.',
+    FAVORITES_LIMIT_REACHED: 'You already have the maximum number of favorites.',
 
     FILE_REQUIRED: 'A file is required.',
     FILE_TYPE_NOT_ALLOWED: 'The file type is not allowed.',
@@ -243,10 +249,17 @@ export const texts = {
             ].join('\n'),
         bookingConfirmedSubject: 'Smart City: booking confirmed',
         reminderSubject: 'Smart City: booking reminder',
-        reminderBody: (data: { service: string; date?: string; time?: string; phone: string }): string =>
+        reminderBody: (data: {
+            service: string;
+            date?: string;
+            time?: string;
+            phone: string;
+            calendar?: boolean;
+        }): string =>
             [
                 `Reminder: ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}.`,
                 `Booked with phone ${data.phone || 'not specified'}.`,
+                ...(data.calendar ? ['Open the attached booking.ics to add it to your calendar.'] : []),
             ].join('\n'),
         waitlistSubject: 'Smart City: a place is free',
         waitlistBody: (data: { service: string; date?: string; time?: string; phone: string }): string =>
@@ -319,5 +332,11 @@ export const texts = {
     },
     bookings: {
         reservedStatus: 'reserved',
+    },
+    calendar: {
+        feedName: 'Smart City bookings',
+        untitledEvent: 'Booking',
+        fileName: 'booking.ics',
+        contentType: 'text/calendar; charset=utf-8',
     },
 } as const;

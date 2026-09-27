@@ -78,6 +78,12 @@ exponential backoff up to `OUTBOX.maxAttempts`; an event is `failed` only once t
 `POST /outbox/events/:id/replay` puts it back. The `outbox_dispatch` job is the safety net for retries and for
 a replica that died between commit and poke.
 
+Each event also remembers where it came from: the `request_id` of the request that queued it and the W3C
+`traceparent` (`trace`) that was active at the time — nothing else: baggage is neither propagated nor stored, so a
+client cannot push arbitrary headers into the outbox and on to third-party webhooks. `GET /outbox/events?request_id=` finds everything one request
+queued, the listing shows the `trace_id`, and a delivery attempt — whenever it runs — is traced as a child of
+that original span, so the webhook call or the SMS sits in the same trace as the booking that caused it.
+
 What a subscriber receives is the `payload` — coordinates, status, ids — never the person: names, phone numbers
 and the notification address travel in the event's `internal` field, which only handlers read. A webhook call
 is `POST` with `X-Webhook-Id`, `X-Webhook-Event`, `X-Webhook-Timestamp` and
@@ -85,6 +91,34 @@ is `POST` with `X-Webhook-Id`, `X-Webhook-Event`, `X-Webhook-Timestamp` and
 rotation. Because the platform makes these requests on an admin's behalf, the URL is checked against loopback,
 link-local and private ranges when it is saved and again — after DNS resolution — when it is called, redirects
 are not followed, and production demands `https` (`WEBHOOK_ALLOW_PRIVATE_HOSTS` lifts both for development).
+
+## Conditional reads
+
+Express gives every response a weak `ETag` over its body and answers a matching `If-None-Match` with `304`, so a
+client never downloads an unchanged page twice. That still builds the page. The organization tree is the one read
+worth skipping entirely: it is an aggregation over five collections, and it changes rarely. The organization
+therefore carries a `version` that grows on every write that can change the tree — the organization itself and
+any news item, info section, category, service (including its options and slots, through the revision log) or
+image under it — in the same transaction as the write where there is one. A news item with a future `publish_at`
+stays out of the tree (and out of `?include=news` and `counts.news`) for everyone but the organization's admins,
+so the tree also changes when that moment passes, with no write at all; the tag therefore also covers the latest
+`publish_at` of the organization's news that has already passed. `GET /organizations/:id` answers an anonymous
+caller with `W/"<hash of build, id, version, that instant and ?fields=>"`, read with one indexed lookup, and
+returns `304` before the aggregation runs; a `304` is not counted as an `organization.viewed` event. Signed-in callers get a
+private, uncached response as before. A write that bypasses the services (a shell session, a data migration)
+must raise `version` itself, or anonymous clients keep their copy until the next write.
+
+## Tracing
+
+`src/tracing.ts` is the first import of `main.ts`: with `TRACING_ENABLED=true` it registers the OpenTelemetry
+tracer provider and the HTTP, Express, Nest, MongoDB, ioredis, fetch (undici) and pino instrumentations before
+any of those modules load. The HTTP server span carries the `request_id`, pino adds `trace_id` and `span_id` to
+every log line written inside a span, `JobRunner` opens a `job <name>` span per run, and the outbox opens
+`outbox <type>` with one `outbox deliver <handler|webhook>` child per target, parented on the context stored with
+the event (see above); SMS and mail sends are client spans of their own. Health and metrics probes are not
+traced, the calendar feed `token` is redacted from span URLs and access logs, Mongo statements are recorded with
+their values replaced by `?`, and Redis spans carry the command name only, because throttler keys hold IP
+addresses and phone numbers. Without the flag nothing is registered and the spans the code opens are no-ops.
 
 ## Validation and serialization
 

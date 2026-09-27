@@ -4,6 +4,7 @@ import { ZodSerializationException, ZodValidationException } from 'nestjs-zod';
 import { PinoLogger } from 'nestjs-pino';
 
 import { type ErrorCode, errorMessages } from '../i18n/messages';
+import { redactUrl } from '../logging/redact-url';
 import { ApiError, type ApiErrorDetail } from './api-error';
 
 interface ErrorEnvelope {
@@ -70,7 +71,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
             status,
             code: body.error.code,
             method: request.method,
-            url: request.originalUrl,
+            url: redactUrl(request.originalUrl),
         };
 
         if (status >= 500) {

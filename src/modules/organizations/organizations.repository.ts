@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { type FilterQuery, Model, type PipelineStage, Types } from 'mongoose';
+import { type ClientSession, type FilterQuery, Model, type PipelineStage, Types } from 'mongoose';
 
-import { publishedClause } from '../../common/content/visibility';
+import { publishedClause, releasedClause } from '../../common/content/visibility';
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -51,6 +51,10 @@ function childVisibility(include: OrganizationInclude, viewer?: AuthUser): Recor
     const published = publishedClause(viewer);
 
     if (published) clauses.push(published);
+
+    const released = include === 'news' ? releasedClause(viewer, new Date()) : undefined;
+
+    if (released) clauses.push(released);
 
     return clauses;
 }
@@ -227,6 +231,41 @@ export class OrganizationsRepository extends BaseRepository<Organization> {
             },
             { $limit: limit },
         ]);
+    }
+
+    async bumpVersion(id: Types.ObjectId, session?: ClientSession): Promise<void> {
+        await this.model
+            .updateOne({ _id: id }, { $inc: { version: 1 } }, { session, timestamps: false })
+            .exec();
+    }
+
+    async treeStateOf(id: string, now: Date): Promise<{ version: number; released_at: Date | null } | null> {
+        if (!Types.ObjectId.isValid(id)) return null;
+
+        const [row] = await this.aggregate<{ version?: number; released: { publish_at: Date }[] }>([
+            { $match: { _id: new Types.ObjectId(id) } },
+            { $project: { version: 1 } },
+            {
+                $lookup: {
+                    from: CHILD_COLLECTIONS.news.from,
+                    let: { organization_id: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: ['$organization_id', '$$organization_id'] },
+                                publish_at: { $ne: null, $lte: now },
+                            },
+                        },
+                        { $sort: { publish_at: -1 } },
+                        { $limit: 1 },
+                        { $project: { _id: 0, publish_at: 1 } },
+                    ],
+                    as: 'released',
+                },
+            },
+        ]);
+
+        return row ? { version: row.version ?? 0, released_at: row.released[0]?.publish_at ?? null } : null;
     }
 
     async timezones(): Promise<Map<string, string>> {

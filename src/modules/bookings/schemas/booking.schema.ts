@@ -79,6 +79,12 @@ export class Booking {
     @Prop({ type: SchemaTypes.ObjectId, default: null })
     status_changed_by!: Types.ObjectId | null;
 
+    @Prop({ type: SchemaTypes.ObjectId, default: null })
+    created_by!: Types.ObjectId | null;
+
+    @Prop({ type: Number, default: 0 })
+    sequence?: number;
+
     @Prop({ type: Date, default: null })
     reminder_sent_at!: Date | null;
 }
@@ -93,6 +99,7 @@ BookingSchema.index(
     { unique: true, name: 'unique_booking_per_slot', partialFilterExpression: { active: true } },
 );
 BookingSchema.index({ user_id: 1, created_at: -1 });
+BookingSchema.index({ user_id: 1, starts_at: 1 });
 BookingSchema.index({ service_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, created_at: -1 });
 BookingSchema.index({ organization_id: 1, slot_date: 1 });

@@ -56,6 +56,20 @@ const keyListSchema = z
         return keys;
     });
 
+export const tracingEnvShape = {
+    TRACING_ENABLED: z.stringbool().default(false),
+    OTEL_SERVICE_NAME: z.string().min(1).default('smart-city-api'),
+    OTEL_EXPORTER_OTLP_ENDPOINT: optionalString.pipe(z.url().optional()),
+};
+
+export const tracingEnvSchema = z.object({
+    ...tracingEnvShape,
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    API_PREFIX: z.string().default('api/v1'),
+    BUILD_VERSION: optionalString,
+});
+export type TracingEnv = z.infer<typeof tracingEnvSchema>;
+
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 export const LOGIN_METHODS = ['password', 'sms'] as const;
 
@@ -80,6 +94,8 @@ export const envSchema = z
 
         BUILD_VERSION: optionalString,
         BUILD_SHA: optionalString,
+
+        ...tracingEnvShape,
 
         JWT_ACCESS_SECRET: z.string().min(32),
         JWT_REFRESH_SECRET: z.string().min(32),

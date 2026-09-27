@@ -1,5 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { type FilterQuery, Types } from 'mongoose';
+import { createHash, randomBytes } from 'node:crypto';
+import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
@@ -24,6 +25,11 @@ import { type UserEntity, UsersRepository } from './users.repository';
 import { type User } from './schemas/user.schema';
 
 const LOGIN_MIN_LENGTH = 6;
+const CALENDAR_TOKEN_BYTES = 32;
+
+function calendarTokenHash(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+}
 
 const USER_SORTABLE = ['created_at', 'name', 'login', 'role'] as const;
 
@@ -148,6 +154,42 @@ export class UsersService implements OnModuleInit {
             role: ROLES.COMMON_USER,
             organization_ids: [],
         });
+    }
+
+    async findOrCreateClient(
+        input: { phone: string; name: string },
+        session?: ClientSession,
+    ): Promise<UserEntity> {
+        const existing = await this.users.findByPhone(input.phone, session);
+
+        if (existing && existing.role !== ROLES.COMMON_USER)
+            throw ApiError.unprocessable('CLIENT_ACCOUNT_REQUIRED');
+
+        if (existing) return existing;
+
+        this.phonePolicy.assertSupported(input.phone);
+
+        return this.users.create(
+            { phone: input.phone, name: input.name, role: ROLES.COMMON_USER, organization_ids: [] },
+            session,
+        );
+    }
+
+    async issueCalendarToken(id: string): Promise<string> {
+        const token = randomBytes(CALENDAR_TOKEN_BYTES).toString('base64url');
+        const updated = await this.users.updateFields(id, { calendar_token_hash: calendarTokenHash(token) });
+
+        if (!updated) throw ApiError.notFound('USER_NOT_FOUND');
+
+        return token;
+    }
+
+    async revokeCalendarToken(id: string): Promise<void> {
+        await this.users.updateFields(id, {}, ['calendar_token_hash']);
+    }
+
+    findByCalendarToken(token: string): Promise<UserEntity | null> {
+        return this.users.findOne({ calendar_token_hash: calendarTokenHash(token) });
     }
 
     async updateSelf(id: string, input: UpdateSelfInput): Promise<UserEntity> {

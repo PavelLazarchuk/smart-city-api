@@ -9,17 +9,22 @@ import {
     Patch,
     Post,
     Query,
+    Res,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiProduces, ApiTags } from '@nestjs/swagger';
+import { type Response } from 'express';
 
 import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
+import { texts } from '../../common/i18n/messages';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
+import { BookingCalendarService, type CalendarToken } from '../services/booking-calendar.service';
 import { BookingsService } from '../services/bookings.service';
 import {
     type BookingResource,
@@ -29,6 +34,9 @@ import {
     BookingStatsQueryDto,
     BookingStatsResponseDto,
     bookingStatsResponseSchema,
+    CalendarFeedQueryDto,
+    CalendarTokenResponseDto,
+    calendarTokenResponseSchema,
     ListBookingsQueryDto,
     ListOwnBookingsQueryDto,
     ListServiceBookingsQueryDto,
@@ -44,7 +52,10 @@ import {
 @ApiBearerAuth()
 @Controller()
 export class BookingsController {
-    constructor(private readonly bookings: BookingsService) {}
+    constructor(
+        private readonly bookings: BookingsService,
+        private readonly calendar: BookingCalendarService,
+    ) {}
 
     @Get('bookings')
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
@@ -73,6 +84,32 @@ export class BookingsController {
         @CurrentUser() user: AuthUser,
     ): Promise<PaginatedResult<BookingResource>> {
         return this.bookings.listOwn(query, user);
+    }
+
+    @Get('me/bookings.ics')
+    @Public()
+    @ApiProduces('text/calendar')
+    @ApiOkResponse({ schema: { type: 'string' } })
+    @ApiErrors('TOKEN_INVALID')
+    async feed(@Query() query: CalendarFeedQueryDto, @Res() res: Response): Promise<void> {
+        const body = await this.calendar.feed(query.token);
+        res.setHeader('Content-Type', texts.calendar.contentType);
+        res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        res.send(body);
+    }
+
+    @Post('me/calendar-token')
+    @ApiCreatedResponse({ type: CalendarTokenResponseDto })
+    @Serialize(calendarTokenResponseSchema)
+    issueCalendarToken(@CurrentUser() user: AuthUser): Promise<CalendarToken> {
+        return this.calendar.issueToken(user);
+    }
+
+    @Delete('me/calendar-token')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async revokeCalendarToken(@CurrentUser() user: AuthUser): Promise<void> {
+        await this.calendar.revokeToken(user);
     }
 
     @Get('me/waitlist')
@@ -111,6 +148,21 @@ export class BookingsController {
     @Serialize(bookingResourceSchema)
     getOne(@Param('booking_id') bookingId: string, @CurrentUser() user: AuthUser): Promise<BookingResource> {
         return this.bookings.getById(bookingId, user);
+    }
+
+    @Get('bookings/:booking_id/calendar.ics')
+    @ApiProduces('text/calendar')
+    @ApiOkResponse({ schema: { type: 'string' } })
+    @ApiErrors('BOOKING_NOT_FOUND', 'BOOKING_NOT_DATED')
+    async calendarOf(
+        @Param('booking_id') bookingId: string,
+        @CurrentUser() user: AuthUser,
+        @Res() res: Response,
+    ): Promise<void> {
+        const body = await this.calendar.forBooking(bookingId, user);
+        res.setHeader('Content-Type', texts.calendar.contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${texts.calendar.fileName}"`);
+        res.send(body);
     }
 
     @Patch('bookings/:booking_id/status')

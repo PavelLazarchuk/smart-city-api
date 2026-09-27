@@ -1,5 +1,12 @@
-import { type CallHandler, type ExecutionContext, Injectable, type NestInterceptor } from '@nestjs/common';
+import {
+    type CallHandler,
+    type ExecutionContext,
+    HttpStatus,
+    Injectable,
+    type NestInterceptor,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { type Response } from 'express';
 import { type Observable, tap } from 'rxjs';
 
 import { type RequestWithUser } from '../../common/decorators/current-user.decorator';
@@ -22,9 +29,12 @@ export class TrackEventInterceptor implements NestInterceptor {
         if (!options) return next.handle();
 
         const request = context.switchToHttp().getRequest<RequestWithUser & { body?: unknown }>();
+        const response = context.switchToHttp().getResponse<Response>();
 
         return next.handle().pipe(
             tap((result) => {
+                if (response.statusCode === Number(HttpStatus.NOT_MODIFIED)) return;
+
                 const fields = (options.extract ? options.extract(result, request.body) : {}) as EventFields;
                 this.analytics.record(options.type, fields, request.user);
             }),

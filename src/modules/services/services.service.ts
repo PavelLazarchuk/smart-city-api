@@ -657,8 +657,11 @@ export class ServicesService implements OnModuleInit {
 
     async purge(id: string): Promise<void> {
         await this.tx.run(async (ctx) => {
+            const service = await this.services.findById(id, ctx.session, { organization_id: 1 });
             await this.cascade.run('service', id, ctx);
             await this.services.deleteById(id, ctx.session);
+
+            if (service) await this.organizations.touch(service.organization_id, ctx.session);
         });
     }
 
@@ -691,12 +694,18 @@ export class ServicesService implements OnModuleInit {
     }
 
     async reorderDirect(organizationId: string, ids: string[]): Promise<void> {
-        await this.tx.run(({ session }) => this.services.reorderDirect(organizationId, ids, session));
+        await this.tx.run(async ({ session }) => {
+            await this.services.reorderDirect(organizationId, ids, session);
+            await this.organizations.touch(organizationId, session);
+        });
     }
 
     async reorderInCategory(categoryId: string, ids: string[]): Promise<void> {
-        await this.categories.getById(categoryId);
-        await this.tx.run(({ session }) => this.services.reorderInCategory(categoryId, ids, session));
+        const category = await this.categories.getById(categoryId);
+        await this.tx.run(async ({ session }) => {
+            await this.services.reorderInCategory(categoryId, ids, session);
+            await this.organizations.touch(category.organization_id, session);
+        });
     }
 
     private statusOf(
@@ -810,6 +819,7 @@ export class ServicesService implements OnModuleInit {
 
         if (action === 'update' && Object.keys(changes).length === 0) return;
 
+        await this.organizations.touch(service.organization_id, session);
         await this.revisions.create(
             {
                 service_id: service._id,

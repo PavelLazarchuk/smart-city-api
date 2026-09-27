@@ -104,7 +104,20 @@ phone; that migration flow (set password by OTP / verify phone) is out of scope.
 ## Observability
 
 Logs are JSON (pino). Every line and every error response carries `request_id`; pass `X-Request-Id` from the
-proxy to correlate. Secrets, tokens, codes and phone numbers are redacted.
+proxy to correlate. Secrets, tokens, codes and phone numbers are redacted, and so is the `token` query parameter
+of the calendar feed in the logged URL.
+
+### Tracing
+
+`TRACING_ENABLED=true` starts the OpenTelemetry SDK before the application loads and exports spans over
+OTLP/HTTP (JSON) to `OTEL_EXPORTER_OTLP_ENDPOINT` (the collector's base URL; `/v1/traces` is appended).
+`OTEL_SERVICE_NAME` names the service; the rest is the SDK's standard environment —
+`OTEL_TRACES_SAMPLER=parentbased_traceidratio` with `OTEL_TRACES_SAMPLER_ARG=0.1` samples a tenth of the
+traces, `OTEL_EXPORTER_OTLP_HEADERS` carries the collector's credentials. The variables are read from the
+environment, and in development from `.env`, before the configuration module runs. Buffered spans are flushed on
+shutdown. With tracing on, log lines written inside a span carry `trace_id` and `span_id`, and an outbox event
+stores the trace it was queued in, so the trace of a booking also shows its webhook calls and SMS, however much
+later they run. Outgoing webhook requests carry a `traceparent` header.
 
 `GET /api/v1/metrics` serves the Prometheus text format and is excluded from the OpenAPI document. It is
 authorised by `METRICS_TOKEN` as a bearer (a super-admin access token works too) and refuses the scrape

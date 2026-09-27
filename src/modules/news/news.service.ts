@@ -144,8 +144,7 @@ export class NewsService implements OnModuleInit {
         const organizationId = new Types.ObjectId(input.organization_id);
         const position = await this.news.nextPosition(input.organization_id);
         const slug = await this.resolveSlug(organizationId, input.slug, input.label);
-
-        return this.news.create({
+        const created = await this.news.create({
             organization_id: organizationId,
             position,
             label: input.label,
@@ -159,6 +158,9 @@ export class NewsService implements OnModuleInit {
             expires_at: input.expires_at ? new Date(input.expires_at) : undefined,
             value: input.value ?? {},
         });
+        await this.organizations.touch(organizationId);
+
+        return created;
     }
 
     private async resolveSlug(organizationId: Types.ObjectId, requested: string | undefined, label: string) {
@@ -227,16 +229,22 @@ export class NewsService implements OnModuleInit {
 
         if (!updated) throw ApiError.notFound('NEWS_NOT_FOUND');
 
+        if (Object.keys(update).length) await this.organizations.touch(existing.organization_id);
+
         return updated;
     }
 
     async delete(id: string): Promise<void> {
-        await this.loadForAdmin(id);
+        const item = await this.loadForAdmin(id);
         await this.news.deleteById(id);
+        await this.organizations.touch(item.organization_id);
     }
 
     async reorder(organizationId: string, ids: string[]): Promise<void> {
-        await this.tx.run(({ session }) => this.news.reorder(organizationId, ids, session));
+        await this.tx.run(async ({ session }) => {
+            await this.news.reorder(organizationId, ids, session);
+            await this.organizations.touch(organizationId, session);
+        });
     }
 
     /** Image URLs used by news items; one of the sources `unreferenced_images` counts as a reference. */
@@ -248,7 +256,14 @@ export class NewsService implements OnModuleInit {
         return this.news.findExpired(now, limit);
     }
 
-    deleteExpired(id: string, ctx: { session: ClientSession }): Promise<boolean> {
-        return this.news.deleteById(id, ctx.session);
+    async deleteExpired(
+        item: Pick<NewsEntity, '_id' | 'organization_id'>,
+        ctx: { session: ClientSession },
+    ): Promise<boolean> {
+        const deleted = await this.news.deleteById(item._id.toHexString(), ctx.session);
+
+        if (deleted) await this.organizations.touch(item.organization_id, ctx.session);
+
+        return deleted;
     }
 }

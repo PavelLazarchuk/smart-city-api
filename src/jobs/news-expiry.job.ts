@@ -26,7 +26,7 @@ export class NewsExpiryJob {
 
         for (const item of expired) {
             await this.tx.run(async (ctx) => {
-                const deleted = await this.news.deleteExpired(item._id.toHexString(), ctx);
+                const deleted = await this.news.deleteExpired(item, ctx);
 
                 if (!deleted) return;
 

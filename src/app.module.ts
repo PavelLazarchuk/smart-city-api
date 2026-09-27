@@ -27,6 +27,7 @@ import { ThrottleModule } from './modules/auth/throttle.module';
 import { BookingsHttpModule } from './modules/bookings/bookings-http.module';
 import { CategoriesHttpModule } from './modules/categories/categories-http.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { FavoritesModule } from './modules/favorites/favorites.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImagesModule } from './modules/images/images.module';
 import { InfoSectionsModule } from './modules/infosections/infosections.module';
@@ -60,6 +61,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
         CategoriesHttpModule,
         ServicesModule,
         BookingsHttpModule,
+        FavoritesModule,
         NewsModule,
         InfoSectionsModule,
         ImagesModule,

@@ -375,6 +375,20 @@ export class ServicesRepository extends BaseRepository<Service> {
         );
     }
 
+    findCalendarDetails(
+        ids: string[],
+    ): Promise<Pick<ServiceEntity, '_id' | 'duration_minutes' | 'address' | 'location'>[]> {
+        if (ids.length === 0) return Promise.resolve([]);
+
+        return this.model
+            .find(
+                { _id: { $in: ids.map((id) => new Types.ObjectId(id)) } },
+                { duration_minutes: 1, address: 1, location: 1 },
+            )
+            .lean<Pick<ServiceEntity, '_id' | 'duration_minutes' | 'address' | 'location'>[]>()
+            .exec();
+    }
+
     private projected(projection: Record<string, 0 | 1>): Promise<ServiceEntity[]> {
         return this.model.find({}, projection).lean<ServiceEntity[]>().exec();
     }

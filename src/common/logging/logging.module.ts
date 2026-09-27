@@ -4,6 +4,7 @@ import { type IncomingMessage, type ServerResponse } from 'node:http';
 
 import { AppConfig } from '../config/app-config';
 import { resolveRequestId } from '../context/request-id';
+import { redactUrl } from './redact-url';
 
 @Module({
     imports: [
@@ -36,15 +37,15 @@ import { resolveRequestId } from '../context/request-id';
                         return 'info';
                     },
                     customSuccessMessage: (req: IncomingMessage, res: ServerResponse) =>
-                        `${req.method ?? ''} ${req.url ?? ''} ${res.statusCode}`,
+                        `${req.method ?? ''} ${redactUrl(req.url)} ${res.statusCode}`,
                     customErrorMessage: (req: IncomingMessage, res: ServerResponse) =>
-                        `${req.method ?? ''} ${req.url ?? ''} ${res.statusCode}`,
+                        `${req.method ?? ''} ${redactUrl(req.url)} ${res.statusCode}`,
                     autoLogging: !config.isTest,
                     serializers: {
                         req: (req: { id: string; method: string; url: string; remoteAddress?: string }) => ({
                             id: req.id,
                             method: req.method,
-                            url: req.url,
+                            url: redactUrl(req.url),
                             remote_address: req.remoteAddress,
                         }),
                         res: (res: { statusCode: number }) => ({ status: res.statusCode }),

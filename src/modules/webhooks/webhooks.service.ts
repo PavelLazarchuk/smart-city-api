@@ -14,6 +14,7 @@ import { WebhookDeliveryService } from '../../common/outbox/webhook-delivery.ser
 import { type WebhookEntity, WebhooksRepository } from '../../common/outbox/webhooks.repository';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
+import { traceIdOf } from '../../common/tracing/spans';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
     type CreateWebhookInput,
@@ -21,6 +22,12 @@ import {
     type ListWebhooksQuery,
     type UpdateWebhookInput,
 } from './dto/webhook.schemas';
+
+export type OutboxEventView = OutboxEventEntity & { trace_id: string | null };
+
+function eventView(event: OutboxEventEntity): OutboxEventView {
+    return { ...event, trace_id: traceIdOf(event.trace) };
+}
 
 @Injectable()
 export class WebhooksService implements OnModuleInit {
@@ -147,7 +154,7 @@ export class WebhooksService implements OnModuleInit {
         return { event_id: eventId, queued: true };
     }
 
-    listEvents(query: ListOutboxQuery, actor: AuthUser): Promise<PaginatedResult<OutboxEventEntity>> {
+    async listEvents(query: ListOutboxQuery, actor: AuthUser): Promise<PaginatedResult<OutboxEventView>> {
         const pagination = this.pagination.resolve(query, {
             sortable: ['created_at', 'status', 'type'],
             defaultSort: 'created_at',
@@ -158,10 +165,14 @@ export class WebhooksService implements OnModuleInit {
 
         if (query.status) filter['status'] = query.status;
 
-        return this.events.list(filter, pagination);
+        if (query.request_id) filter['request_id'] = query.request_id;
+
+        const result = await this.events.list(filter, pagination);
+
+        return { ...result, items: result.items.map(eventView) };
     }
 
-    async replayEvent(id: string, actor: AuthUser): Promise<OutboxEventEntity> {
+    async replayEvent(id: string, actor: AuthUser): Promise<OutboxEventView> {
         const event = await this.events.findOne({ id });
 
         if (!event || !this.ownsEvent(event, actor)) throw ApiError.notFound('NOT_FOUND');
@@ -182,7 +193,7 @@ export class WebhooksService implements OnModuleInit {
 
         if (!replayed) throw ApiError.notFound('NOT_FOUND');
 
-        return replayed;
+        return eventView(replayed);
     }
 
     private scope<T>(organizationId: string | undefined, actor: AuthUser): FilterQuery<T> {

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { SpanKind } from '@opentelemetry/api';
 import { endOfMonth, startOfMonth, subMonths } from 'date-fns';
 import { type FilterQuery } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
@@ -8,6 +9,7 @@ import { MetricsService } from '../../common/metrics/metrics.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { usesCursorMode } from '../../common/pagination/pagination.schema';
 import { PaginationService } from '../../common/pagination/pagination.service';
+import { inSpan } from '../../common/tracing/spans';
 import { SMS_PROVIDER, type SmsProvider } from '../../integrations/sms/sms.provider';
 import { type ListSmsQuery } from './dto/sms.schemas';
 import { type Sms, type SmsPurpose, type SmsStatus } from './schemas/sms.schema';
@@ -37,7 +39,14 @@ export class SmsService {
         }
 
         try {
-            await this.provider.send(phone, text);
+            await inSpan(
+                'sms send',
+                {
+                    kind: SpanKind.CLIENT,
+                    attributes: { 'sms.provider': this.provider.name, 'sms.purpose': purpose },
+                },
+                () => this.provider.send(phone, text),
+            );
             await this.record(phone, purpose, 'sent');
 
             return 'sent';

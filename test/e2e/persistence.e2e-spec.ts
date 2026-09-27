@@ -26,6 +26,7 @@ const migrations: Migration[] = [
     require('../../migrations/20260916000000-images-src-index.js') as Migration,
     timezoneMigration,
     slotsMigration,
+    require('../../migrations/20260925000000-favorites-calendar-and-tracing.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -58,6 +59,7 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     bookings: 'Booking',
     sms_counters: 'SmsCounter',
     idempotency_keys: 'IdempotencyKey',
+    favorites: 'Favorite',
     waitlist: 'WaitlistEntry',
     outbox_events: 'OutboxEvent',
     webhooks: 'Webhook',

@@ -80,8 +80,7 @@ export class InfoSectionsService implements OnModuleInit {
     async create(input: CreateInfoSectionInput): Promise<InfoSectionEntity> {
         await this.organizations.assertExists(input.organization_id);
         const position = await this.infosections.nextPosition(input.organization_id);
-
-        return this.infosections.create({
+        const created = await this.infosections.create({
             organization_id: new Types.ObjectId(input.organization_id),
             position,
             label: input.label,
@@ -89,10 +88,13 @@ export class InfoSectionsService implements OnModuleInit {
             control: input.control,
             value: input.value,
         });
+        await this.organizations.touch(created.organization_id);
+
+        return created;
     }
 
     async update(id: string, input: UpdateInfoSectionInput): Promise<InfoSectionEntity> {
-        await this.loadForAdmin(id);
+        const existing = await this.loadForAdmin(id);
         const set: Record<string, unknown> = {};
 
         if (input.label !== undefined) set['label'] = input.label;
@@ -110,15 +112,21 @@ export class InfoSectionsService implements OnModuleInit {
 
         if (!updated) throw ApiError.notFound('INFOSECTION_NOT_FOUND');
 
+        if (Object.keys(set).length) await this.organizations.touch(existing.organization_id);
+
         return updated;
     }
 
     async delete(id: string): Promise<void> {
-        await this.loadForAdmin(id);
+        const existing = await this.loadForAdmin(id);
         await this.infosections.deleteById(id);
+        await this.organizations.touch(existing.organization_id);
     }
 
     async reorder(organizationId: string, ids: string[]): Promise<void> {
-        await this.tx.run(({ session }) => this.infosections.reorder(organizationId, ids, session));
+        await this.tx.run(async ({ session }) => {
+            await this.infosections.reorder(organizationId, ids, session);
+            await this.organizations.touch(organizationId, session);
+        });
     }
 }

@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { SpanKind } from '@opentelemetry/api';
 import { PinoLogger } from 'nestjs-pino';
 
 import { texts } from '../../common/i18n/messages';
-import { MAIL_PROVIDER, type MailMessage, type MailProvider } from './mail.provider';
+import { inSpan } from '../../common/tracing/spans';
+import { MAIL_PROVIDER, type MailAttachment, type MailMessage, type MailProvider } from './mail.provider';
 
 @Injectable()
 export class MailService {
@@ -19,7 +21,17 @@ export class MailService {
 
     async send(message: MailMessage): Promise<void> {
         try {
-            await this.provider.send(message);
+            await inSpan(
+                'mail send',
+                {
+                    kind: SpanKind.CLIENT,
+                    attributes: {
+                        'mail.recipients': message.to.length,
+                        'mail.attachments': message.attachments?.length ?? 0,
+                    },
+                },
+                () => this.provider.send(message),
+            );
         } catch (error) {
             this.logger.error({ err: error, subject: message.subject }, 'mail delivery failed');
             throw error;
@@ -40,11 +52,13 @@ export class MailService {
     sendBookingReminder(
         to: string,
         data: { service: string; date?: string; time?: string; phone: string },
+        calendar?: MailAttachment | null,
     ): Promise<void> {
         return this.send({
             to: [to],
             subject: texts.mail.reminderSubject,
-            text: texts.mail.reminderBody(data),
+            text: texts.mail.reminderBody({ ...data, calendar: Boolean(calendar) }),
+            ...(calendar ? { attachments: [calendar] } : {}),
         });
     }
 

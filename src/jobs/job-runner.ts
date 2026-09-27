@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { type Span } from '@opentelemetry/api';
 import { PinoLogger } from 'nestjs-pino';
 
 import { MetricsService } from '../common/metrics/metrics.service';
+import { inSpan } from '../common/tracing/spans';
 import { JobLockService, type JobRunOutcome } from './job-lock.service';
 
 export interface JobOutcome {
@@ -21,7 +23,13 @@ export class JobRunner {
         this.logger.setContext(JobRunner.name);
     }
 
-    async run(job: string, work: () => Promise<unknown>): Promise<JobOutcome> {
+    run(job: string, work: () => Promise<unknown>): Promise<JobOutcome> {
+        return inSpan(`job ${job}`, { attributes: { 'job.name': job } }, (span) =>
+            this.runLeased(job, work, span),
+        );
+    }
+
+    private async runLeased(job: string, work: () => Promise<unknown>, span: Span): Promise<JobOutcome> {
         const started = Date.now();
         const lease = await this.locks.acquire(job);
 
@@ -29,6 +37,7 @@ export class JobRunner {
             const duration = Date.now() - started;
             this.logger.info({ job }, 'job skipped: lock held elsewhere');
             this.metrics.observeJob(job, 'skipped', duration);
+            span.setAttribute('job.result', 'skipped');
 
             return { ran: false, duration_ms: duration };
         }
@@ -45,6 +54,7 @@ export class JobRunner {
             const duration = Date.now() - started;
             this.logger.info({ job, duration_ms: duration, result }, 'job finished');
             this.metrics.observeJob(job, 'ok', duration);
+            span.setAttribute('job.result', 'ok');
             await this.record(job, { status: 'ok', durationMs: duration });
 
             return { ran: true, duration_ms: duration, result };
@@ -52,6 +62,7 @@ export class JobRunner {
             const duration = Date.now() - started;
             this.logger.error({ err: error, job, duration_ms: duration }, 'job failed');
             this.metrics.observeJob(job, 'failed', duration);
+            span.setAttribute('job.result', 'failed');
             await this.record(job, {
                 status: 'failed',
                 durationMs: duration,
@@ -66,7 +77,6 @@ export class JobRunner {
         }
     }
 
-    /** Bookkeeping must never become the reason a job reports failure, so its own error only logs. */
     private async record(job: string, outcome: JobRunOutcome): Promise<void> {
         try {
             await this.locks.markFinished(job, outcome);

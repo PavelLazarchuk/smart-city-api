@@ -81,18 +81,20 @@ export class CategoriesService implements OnModuleInit {
     async create(input: CreateCategoryInput): Promise<CategoryEntity> {
         await this.organizations.assertExists(input.organization_id);
         const position = await this.categories.nextPosition(input.organization_id);
-
-        return this.categories.create({
+        const created = await this.categories.create({
             organization_id: new Types.ObjectId(input.organization_id),
             position,
             label: input.label,
             description: input.description,
             enabled: input.enabled ?? false,
         });
+        await this.organizations.touch(created.organization_id);
+
+        return created;
     }
 
     async update(id: string, input: UpdateCategoryInput): Promise<CategoryEntity> {
-        await this.loadForAdmin(id);
+        const existing = await this.loadForAdmin(id);
         const set: Record<string, unknown> = {};
         const unset: Record<string, 1> = {};
 
@@ -117,19 +119,25 @@ export class CategoriesService implements OnModuleInit {
 
         if (!updated) throw ApiError.notFound('CATEGORY_NOT_FOUND');
 
+        if (Object.keys(update).length) await this.organizations.touch(existing.organization_id);
+
         return updated;
     }
 
     async delete(id: string): Promise<void> {
-        await this.loadForAdmin(id);
+        const existing = await this.loadForAdmin(id);
         await this.tx.run(async (ctx) => {
             await this.cascade.run('category', id, ctx);
             await this.categories.deleteById(id, ctx.session);
+            await this.organizations.touch(existing.organization_id, ctx.session);
         });
     }
 
     async reorder(organizationId: string, ids: string[]): Promise<void> {
-        await this.tx.run(({ session }) => this.categories.reorder(organizationId, ids, session));
+        await this.tx.run(async ({ session }) => {
+            await this.categories.reorder(organizationId, ids, session);
+            await this.organizations.touch(organizationId, session);
+        });
     }
 
     findManyByIds(ids: string[]): Promise<CategoryEntity[]> {

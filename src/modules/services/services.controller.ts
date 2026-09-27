@@ -115,6 +115,10 @@ const BOOKING_ERRORS = [
     'BOOKING_FIELDS_INVALID',
     'BOOKING_DOCUMENTS_REQUIRED',
     'BOOKING_ALREADY_EXISTS',
+    'FORBIDDEN',
+    'PHONE_COUNTRY_NOT_SUPPORTED',
+    'CLIENT_ACCOUNT_REQUIRED',
+    'CONFLICT',
     'IDEMPOTENCY_IN_PROGRESS',
     'IDEMPOTENCY_KEY_REUSED',
 ] as const;
@@ -496,7 +500,7 @@ export class ServicesController {
         return result;
     }
 
-    /** Authenticated, any role: a booking always belongs to the calling user. */
+    /** Authenticated, any role: a booking belongs to the calling user unless an admin books `on_behalf` of a client. */
     @Post(':id/bookings')
     @ApiBearerAuth()
     @ApiCreatedResponse({ type: BookingCreatedResponseDto })
@@ -526,7 +530,7 @@ export class ServicesController {
             user,
             parseIdempotencyKey(idempotencyKey),
         );
-        res.setHeader('Location', `/me/bookings`);
+        res.setHeader('Location', body.on_behalf ? `/bookings/${booking.booking_id}` : `/me/bookings`);
 
         if (replayed) res.setHeader('Idempotency-Replayed', 'true');
 

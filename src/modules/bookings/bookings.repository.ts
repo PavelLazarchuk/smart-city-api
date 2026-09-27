@@ -39,6 +39,31 @@ export class BookingsRepository extends BaseRepository<Booking> {
         return this.findMany(filter, { created_at: -1 }, session);
     }
 
+    async findScheduledByUser(
+        userId: Types.ObjectId,
+        since: Date,
+        now: Date,
+        limit: number,
+    ): Promise<BookingEntity[]> {
+        const upcoming = await this.model
+            .find({ user_id: userId, starts_at: { $gte: now } })
+            .sort({ starts_at: 1, _id: 1 })
+            .limit(limit)
+            .lean<BookingEntity[]>()
+            .exec();
+
+        if (upcoming.length >= limit) return upcoming;
+
+        const past = await this.model
+            .find({ user_id: userId, starts_at: { $gte: since, $lt: now } })
+            .sort({ starts_at: -1, _id: -1 })
+            .limit(limit - upcoming.length)
+            .lean<BookingEntity[]>()
+            .exec();
+
+        return [...past.reverse(), ...upcoming];
+    }
+
     findActiveByServices(serviceIds: string[], session?: ClientSession): Promise<BookingEntity[]> {
         if (serviceIds.length === 0) return Promise.resolve([]);
 
@@ -103,6 +128,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
                         finished_at: now,
                         status_changed_by: by,
                     },
+                    $inc: { sequence: 1 },
                 },
             )
             .session(session ?? null)
@@ -128,6 +154,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
                             starts_at: startsAt,
                             reminder_sent_at: null,
                         },
+                        $inc: { sequence: 1 },
                     },
                 },
             })),
@@ -200,7 +227,11 @@ export class BookingsRepository extends BaseRepository<Booking> {
         if (!active) set['finished_at'] = now;
 
         return this.model
-            .findOneAndUpdate({ id, status: { $in: from } }, { $set: set }, { new: true, session })
+            .findOneAndUpdate(
+                { id, status: { $in: from } },
+                { $set: set, $inc: { sequence: 1 } },
+                { new: true, session },
+            )
             .lean<BookingEntity>()
             .exec();
     }
@@ -218,7 +249,11 @@ export class BookingsRepository extends BaseRepository<Booking> {
         session?: ClientSession,
     ): Promise<BookingEntity | null> {
         return this.model
-            .findOneAndUpdate({ id, active: true }, { $set: target }, { new: true, session })
+            .findOneAndUpdate(
+                { id, active: true },
+                { $set: target, $inc: { sequence: 1 } },
+                { new: true, session },
+            )
             .lean<BookingEntity>()
             .exec();
     }

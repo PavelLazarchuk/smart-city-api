@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { type FilterQuery, Types } from 'mongoose';
+import { createHash } from 'node:crypto';
+import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
@@ -229,12 +230,33 @@ export class OrganizationsService {
         if (Object.keys(unset).length) update['$unset'] = unset;
 
         const updated = Object.keys(update).length
-            ? await this.organizations.updateById(id, update)
+            ? await this.organizations.updateById(id, { ...update, $inc: { version: 1 } })
             : await this.getById(id);
 
         if (!updated) throw ApiError.notFound('ORGANIZATION_NOT_FOUND');
 
         return updated;
+    }
+
+    touch(id: Types.ObjectId | string, session?: ClientSession): Promise<void> {
+        return this.organizations.bumpVersion(typeof id === 'string' ? new Types.ObjectId(id) : id, session);
+    }
+
+    async treeTag(id: string, variant: string): Promise<string | null> {
+        const state = await this.organizations.treeStateOf(id, new Date());
+
+        if (!state) return null;
+
+        const { version: build, sha } = this.config.build;
+        const digest = createHash('sha1')
+            .update(
+                [build, sha ?? '', id, state.version, state.released_at?.toISOString() ?? '', variant].join(
+                    '\n',
+                ),
+            )
+            .digest('base64url');
+
+        return `W/"${digest}"`;
     }
 
     async delete(id: string): Promise<void> {

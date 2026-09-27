@@ -15,6 +15,8 @@ reports in shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of 
 - **Logging.** [`JobRunner`](../src/jobs/job-runner.ts) logs `job started` / `job finished` with the duration
   and the job's own result object, `job skipped: lock held elsewhere` when the lease is taken, and
   `job failed` with the stack. A failing job never crashes the process.
+- **Tracing.** Every run is a `job <name>` span with `job.result`; the queries it issues and the outbox events
+  it queues (reminders) hang off that span, so a reminder's delivery is found from the run that queued it.
 - **Was it healthy?** Every finished run also writes its outcome onto its own lease document —
   `last_started_at`, `last_finished_at`, `last_status`, `last_duration_ms`, `last_success_at`, `last_error`
   and `consecutive_failures`. A run skipped for a held lease writes nothing, because it did not run.

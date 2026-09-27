@@ -77,6 +77,8 @@ export const outboxEventResponseSchema = z.object({
             delivered_at: isoDateTimeSchema.optional(),
         }),
     ),
+    request_id: z.string().nullable().catch(null),
+    trace_id: z.string().nullable().catch(null),
     ...timestampsOutputSchema,
 });
 export class OutboxEventResponseDto extends createZodDto(outboxEventResponseSchema) {}
@@ -85,6 +87,7 @@ export const listOutboxQuerySchema = paginationQuerySchema.extend({
     organization_id: objectIdSchema.optional(),
     type: z.enum(OUTBOX_EVENT_TYPES).optional(),
     status: z.enum(OUTBOX_STATUSES).optional(),
+    request_id: z.string().trim().min(1).max(64).optional(),
 });
 export type ListOutboxQuery = z.infer<typeof listOutboxQuerySchema>;
 export class ListOutboxQueryDto extends createZodDto(listOutboxQuerySchema) {}

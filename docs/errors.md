@@ -81,7 +81,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | Code                              | Status | Meaning                                                                                           |
 | --------------------------------- | ------ | ------------------------------------------------------------------------------------------------- |
 | `INVALID_CREDENTIALS`             | 401    | Wrong identifier or password                                                                      |
-| `TOKEN_INVALID` / `TOKEN_EXPIRED` | 401    | Access token rejected — refresh, then retry                                                       |
+| `TOKEN_INVALID` / `TOKEN_EXPIRED` | 401    | Access token rejected — refresh, then retry; a calendar feed token was rotated or revoked         |
 | `SESSION_REVOKED`                 | 401    | The session was revoked (logout-all, password change, account gone)                               |
 | `REFRESH_TOKEN_REUSED`            | 401    | An already-rotated refresh token was presented; the whole token family is revoked — sign in again |
 | `OTP_INVALID`                     | 401    | Wrong one-time code                                                                               |
@@ -107,6 +107,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `ADMIN_PASSWORD_REQUIRED`     | 422    | Admins sign in by password, so the account needs a login and a password |
 | `ADMIN_PHONE_REQUIRED`        | 422    | Admins sign in by code, so the account needs a phone                    |
 | `CLIENT_PHONE_REQUIRED`       | 422    | A client account needs a phone                                          |
+| `CLIENT_ACCOUNT_REQUIRED`     | 422    | `on_behalf` named the phone of a staff account; only clients qualify    |
 
 ### Content
 
@@ -165,9 +166,16 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `BOOKING_DOCUMENTS_REQUIRED`     | 422    | A required document was not confirmed; `details[]` names it                  |
 | `BOOKING_STATUS_TRANSITION`      | 422    | Not a legal move (`pending → confirmed → completed \| no_show`, `cancelled`) |
 | `BOOKING_NOT_ACTIVE`             | 422    | Cancel or reschedule of a finished booking                                   |
+| `BOOKING_NOT_DATED`              | 422    | `GET /bookings/:id/calendar.ics` for a booking without a date                |
 | `WAITLIST_NOT_FOUND`             | 404    |                                                                              |
 | `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                 |
 | `SLOT_NOT_FULL`                  | 422    | The waitlist is only for a full slot — book it instead                       |
+
+### Favorites
+
+| Code                      | Status | Meaning                               |
+| ------------------------- | ------ | ------------------------------------- |
+| `FAVORITES_LIMIT_REACHED` | 422    | The account already keeps 100 of them |
 
 ### Files and delivery
 

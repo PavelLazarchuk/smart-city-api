@@ -139,12 +139,20 @@ export class ImagesService implements OnModuleInit {
         const stored = await this.storage.put(key, bytes, file.mimetype);
 
         try {
-            return await this.images.create({
-                organization_id: new Types.ObjectId(organizationId),
-                name: stored.key,
-                src: stored.url,
-                mime_type: file.mimetype,
-                size: bytes.length,
+            return await this.tx.run(async (ctx) => {
+                const created = await this.images.create(
+                    {
+                        organization_id: new Types.ObjectId(organizationId),
+                        name: stored.key,
+                        src: stored.url,
+                        mime_type: file.mimetype,
+                        size: bytes.length,
+                    },
+                    ctx.session,
+                );
+                await this.organizations.touch(organizationId, ctx.session);
+
+                return created;
             });
         } catch (error) {
             await this.removeFile(stored.key);
@@ -157,6 +165,7 @@ export class ImagesService implements OnModuleInit {
         const image = await this.getById(id);
         await this.tx.run(async (ctx) => {
             await this.images.deleteById(id, ctx.session);
+            await this.organizations.touch(image.organization_id, ctx.session);
             ctx.afterCommit(() => this.removeFile(image.name));
         });
     }

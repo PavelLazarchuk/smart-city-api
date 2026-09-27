@@ -38,6 +38,7 @@ const booking = (
     confirmed_at: null,
     finished_at: null,
     status_changed_by: null,
+    created_by: null,
     reminder_sent_at: null,
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),

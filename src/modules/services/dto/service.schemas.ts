@@ -12,7 +12,9 @@ import {
     idOutputSchema,
     isoDateTimeSchema,
     labelSchema,
+    nameSchema,
     objectIdSchema,
+    phoneSchema,
     positionSchema,
     timeOfDaySchema,
     timestampsOutputSchema,
@@ -744,6 +746,7 @@ export const createBookingSchema = z.object({
     info: z.string().trim().max(1000).optional(),
     fields: bookingFieldsSchema.optional(),
     documents: z.array(fieldKeySchema).max(30).optional(),
+    on_behalf: z.object({ phone: phoneSchema, name: nameSchema }).optional(),
 });
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 export class CreateBookingDto extends createZodDto(createBookingSchema) {}
@@ -758,6 +761,7 @@ export const bookingCreatedResponseSchema = z.object({
     status: z.string(),
     date: outputText.nullish(),
     time: outputText.nullish(),
+    user_id: idOutputSchema.optional(),
     created_at: isoDateTimeSchema,
 });
 export type BookingCreated = z.infer<typeof bookingCreatedResponseSchema>;

@@ -9,10 +9,11 @@ import {
     Patch,
     Post,
     Query,
+    Req,
     Res,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiTags } from '@nestjs/swagger';
-import { type Response } from 'express';
+import { type Request, type Response } from 'express';
 
 import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -20,6 +21,7 @@ import { OrganizationScope } from '../../common/decorators/organization-scope.de
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
+import { notModified } from '../../common/http/conditional';
 import {
     Serialize,
     SerializeBy,
@@ -121,7 +123,17 @@ export class OrganizationsController {
 
         return { organization_id: tree._id.toHexString(), organization_label: tree.main_label };
     })
-    getOne(@Param('id') id: string, @CurrentUser() user?: AuthUser): Promise<OrganizationTree> {
+    async getOne(
+        @Param('id') id: string,
+        @Req() request: Request,
+        @Res({ passthrough: true }) response: Response,
+        @CurrentUser() user?: AuthUser,
+    ): Promise<OrganizationTree | undefined> {
+        const fields = typeof request.query['fields'] === 'string' ? request.query['fields'] : '';
+
+        if (!user && notModified(request, response, await this.organizations.treeTag(id, fields)))
+            return undefined;
+
         return this.organizations.getTree(id, user);
     }
 

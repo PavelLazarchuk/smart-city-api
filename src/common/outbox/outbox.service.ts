@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { SpanKind } from '@opentelemetry/api';
 import { randomUUID } from 'node:crypto';
 import { type ClientSession, Types } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
 import { AppConfig } from '../config/app-config';
+import { RequestContext } from '../context/request-context';
 import { MetricsService } from '../metrics/metrics.service';
+import { contextOf, currentTraceCarrier, detached, inSpan } from '../tracing/spans';
 import { type OutboxEventEntity, OutboxRepository } from './outbox.repository';
 import { type OutboxEvent, type OutboxDelivery, type OutboxEventType } from './schemas/outbox-event.schema';
 import { WebhookDeliveryService } from './webhook-delivery.service';
@@ -100,11 +103,13 @@ export class OutboxService {
             next_attempt_at: new Date(),
             claimed_until: null,
             deliveries: [],
+            request_id: RequestContext.requestId() ?? null,
+            trace: currentTraceCarrier(),
         };
     }
 
     poke(): void {
-        void this.dispatch().catch((error: unknown) => {
+        void detached(() => this.dispatch()).catch((error: unknown) => {
             this.logger.error({ err: error }, 'outbox dispatch failed');
         });
     }
@@ -155,7 +160,29 @@ export class OutboxService {
         return summary;
     }
 
-    private async process(event: OutboxEventEntity): Promise<'delivered' | 'retried' | 'failed'> {
+    private process(event: OutboxEventEntity): Promise<'delivered' | 'retried' | 'failed'> {
+        return inSpan(
+            `outbox ${event.type}`,
+            {
+                kind: SpanKind.CONSUMER,
+                parent: contextOf(event.trace),
+                attributes: {
+                    'outbox.event_id': event.id,
+                    'outbox.event_type': event.type,
+                    'outbox.attempt': event.attempts + 1,
+                    ...(event.request_id ? { request_id: event.request_id } : {}),
+                },
+            },
+            async (span) => {
+                const outcome = await this.deliver(event);
+                span.setAttribute('outbox.outcome', outcome);
+
+                return outcome;
+            },
+        );
+    }
+
+    private async deliver(event: OutboxEventEntity): Promise<'delivered' | 'retried' | 'failed'> {
         const deliveries = await this.targetsOf(event);
         const now = new Date();
 
@@ -163,7 +190,11 @@ export class OutboxService {
             if (delivery.status === 'delivered') continue;
 
             try {
-                await this.attempt(event, delivery.target);
+                await inSpan(
+                    `outbox deliver ${delivery.target.split(':')[0] ?? 'unknown'}`,
+                    { attributes: { 'outbox.target': delivery.target } },
+                    () => this.attempt(event, delivery.target),
+                );
                 delivery.status = 'delivered';
                 delivery.delivered_at = now;
                 delete delivery.last_error;
@@ -171,7 +202,13 @@ export class OutboxService {
                 delivery.attempts += 1;
                 delivery.last_error = error instanceof Error ? error.message : String(error);
                 this.logger.warn(
-                    { event: event.id, type: event.type, target: delivery.target, err: error },
+                    {
+                        event: event.id,
+                        type: event.type,
+                        target: delivery.target,
+                        origin_request_id: event.request_id,
+                        err: error,
+                    },
                     'outbox delivery attempt failed',
                 );
             }
@@ -211,7 +248,7 @@ export class OutboxService {
                 last_error: lastError,
             });
             this.logger.error(
-                { event: event.id, type: event.type, lastError },
+                { event: event.id, type: event.type, origin_request_id: event.request_id, lastError },
                 'outbox event failed for good',
             );
 

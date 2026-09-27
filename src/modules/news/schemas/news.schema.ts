@@ -72,6 +72,7 @@ NewsSchema.index(
 );
 NewsSchema.index({ rubric: 1, date: -1 });
 NewsSchema.index({ publish_at: 1 });
+NewsSchema.index({ organization_id: 1, publish_at: -1 });
 NewsSchema.index(
     { label: 'text', 'value.heading_value': 'text', 'value.text_value': 'text' },
     {

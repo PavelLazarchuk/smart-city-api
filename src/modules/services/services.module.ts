@@ -8,6 +8,7 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 import { SlotsModule } from '../slots/slots.module';
 import { SmsModule } from '../sms/sms.module';
 import { UsersModule } from '../users/users.module';
+import { BookingCalendarService } from './booking-calendar.service';
 import { BookingsService } from './bookings.service';
 import { ServiceRevision, ServiceRevisionSchema } from './schemas/service-revision.schema';
 import { Service, ServiceSchema } from './schemas/service.schema';
@@ -39,8 +40,9 @@ import { SlotAdminService } from './slot-admin.service';
         ServicesMasker,
         ServicesService,
         BookingsService,
+        BookingCalendarService,
         SlotAdminService,
     ],
-    exports: [ServicesService, BookingsService],
+    exports: [ServicesService, BookingsService, BookingCalendarService],
 })
 export class ServicesModule {}

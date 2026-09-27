@@ -35,6 +35,7 @@ export const bookingResourceSchema = z.object({
     status: z.enum(BOOKING_STATUSES).catch('confirmed'),
     confirmed_at: isoDateTimeSchema.nullable().catch(null),
     finished_at: isoDateTimeSchema.nullable().catch(null),
+    created_by: idOutputSchema.nullable().catch(null),
     created_at: isoDateTimeSchema,
 });
 export type BookingResource = z.infer<typeof bookingResourceSchema>;
@@ -112,6 +113,12 @@ export const bookingStatsResponseSchema = z.object({
 });
 export type BookingStats = z.infer<typeof bookingStatsResponseSchema>;
 export class BookingStatsResponseDto extends createZodDto(bookingStatsResponseSchema) {}
+
+export const calendarTokenResponseSchema = z.object({ token: z.string(), path: z.string() });
+export class CalendarTokenResponseDto extends createZodDto(calendarTokenResponseSchema) {}
+
+export const calendarFeedQuerySchema = z.object({ token: z.string().max(128).optional() });
+export class CalendarFeedQueryDto extends createZodDto(calendarFeedQuerySchema) {}
 
 export const joinWaitlistSchema = z.object({
     option_id: uuidSchema,

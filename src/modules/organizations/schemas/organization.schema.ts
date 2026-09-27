@@ -50,6 +50,9 @@ export class Organization {
 
     @Prop({ type: String, required: true, default: 'UTC' })
     timezone!: string;
+
+    @Prop({ type: Number, required: true, default: 0 })
+    version!: number;
 }
 
 export type OrganizationDocument = HydratedDocument<Organization>;
