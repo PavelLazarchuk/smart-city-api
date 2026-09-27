@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import sharp from 'sharp';
 
 import { NewsExpiryJob } from '../../src/jobs/news-expiry.job';
-import { expectError } from '../support/assertions';
+import { expectError, waitFor } from '../support/assertions';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
@@ -66,7 +66,9 @@ describe('conditional reads of the organization tree (e2e)', () => {
             (await tree({ 'If-None-Match': first.headers['etag'] as string, 'Cache-Control': 'no-cache' }))
                 .status,
         ).toBe(200);
-        expect(await fx.collection('AnalyticsEvent').countDocuments({ type: 'organization.viewed' })).toBe(3);
+        const views = () => fx.collection('AnalyticsEvent').countDocuments({ type: 'organization.viewed' });
+        await waitFor(async () => (await views()) >= 3);
+        expect(await views()).toBe(3);
     });
 
     it('gives each sparse field set its own tag', async () => {
