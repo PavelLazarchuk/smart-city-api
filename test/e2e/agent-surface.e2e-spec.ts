@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { type BookingPolicy } from '../../src/modules/services/schemas/service.schema';
 import { type OptionTree } from '../../src/modules/services/slot.logic';
+import { waitFor } from '../support/assertions';
 import { dateOnlyIn, shiftDateOnly } from '../support/dates';
 import { Fixtures, type FixtureUser } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
@@ -341,10 +342,12 @@ describe('agent-facing surface (e2e)', () => {
                 .set('User-Agent', 'smart-city-mcp/1.2.3')
                 .expect(200);
 
-            const row = await fx
-                .collection<{ source?: string }>('AnalyticsEvent')
-                .findOne({ type: 'organizations.listed' })
-                .lean();
+            const row = await waitFor(() =>
+                fx
+                    .collection<{ source?: string }>('AnalyticsEvent')
+                    .findOne({ type: 'organizations.listed' })
+                    .lean(),
+            );
             expect(row?.source).toBe('smart-city-mcp/1.2.3');
         });
 
