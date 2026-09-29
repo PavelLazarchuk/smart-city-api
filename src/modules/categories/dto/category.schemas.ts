@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { sanitizeRichText } from '../../../common/html';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
     enabledSchema,
@@ -25,7 +26,7 @@ export class CategoryResponseDto extends createZodDto(categoryResponseSchema) {}
 export const createCategorySchema = z.object({
     organization_id: objectIdSchema,
     label: labelSchema,
-    description: z.string().trim().max(2000).optional(),
+    description: z.string().trim().max(2000).transform(sanitizeRichText).optional(),
     enabled: enabledSchema.optional(),
 });
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
@@ -34,7 +35,7 @@ export class CreateCategoryDto extends createZodDto(createCategorySchema) {}
 export const updateCategorySchema = z
     .object({
         label: labelSchema,
-        description: z.string().trim().max(2000).nullable(),
+        description: z.string().trim().max(2000).transform(sanitizeRichText).nullable(),
         enabled: enabledSchema,
     })
     .partial();

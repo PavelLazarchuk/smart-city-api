@@ -54,4 +54,10 @@ export const timestampsOutputSchema = {
 
 export const positionSchema = z.number().int().min(0);
 
-export const urlSchema = z.url().max(2048);
+export const urlSchema = z.url({ protocol: /^https?$/ }).max(2048);
+
+export const safeLinkSchema = z
+    .string()
+    .trim()
+    .max(5000)
+    .refine((value) => /^(https?:\/\/|\/(?!\/))/i.test(value), 'Must be an http(s) URL or a relative path');

@@ -4,6 +4,7 @@ import { z, type ZodType } from 'zod';
 
 import { type RequestWithUser } from '../../../common/decorators/current-user.decorator';
 import { ROLES } from '../../../common/decorators/roles.decorator';
+import { sanitizeRichText } from '../../../common/html';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import { SLUG_MAX_LENGTH, SLUG_PATTERN } from '../../../common/slug';
 import {
@@ -18,6 +19,7 @@ import {
     positionSchema,
     timeOfDaySchema,
     timestampsOutputSchema,
+    safeLinkSchema,
     urlSchema,
     uuidSchema,
 } from '../../../common/zod/primitives';
@@ -31,6 +33,7 @@ import {
 } from '../schemas/service.schema';
 
 const text = z.string().trim().max(5000);
+const richText = text.transform(sanitizeRichText);
 const limitSchema = z.number().int().min(0).nullable();
 
 const outputText = z.string();
@@ -110,7 +113,7 @@ const rangeValueInput = z
     );
 
 const infoValue = z.object({
-    description: text.optional(),
+    description: richText.optional(),
     link: urlSchema.optional(),
     price: text.optional(),
 });
@@ -435,15 +438,15 @@ const uniqueKeys = <T extends { key: string }>(items: T[]): boolean =>
 
 export const serviceContentInputSchema = z.object({
     heading_label: text.optional(),
-    heading_value: text.optional(),
+    heading_value: richText.optional(),
     text_label: text.optional(),
-    text_value: text.optional(),
+    text_value: richText.optional(),
     image_label: text.optional(),
-    image_value: text.optional(),
+    image_value: safeLinkSchema.optional(),
     price_label: text.optional(),
     price_value: text.optional(),
     link_label: text.optional(),
-    link_value: text.optional(),
+    link_value: safeLinkSchema.optional(),
     subscribe: z.email().optional(),
 });
 
@@ -590,7 +593,7 @@ export const serviceSchemaForViewer = (request: Request): ZodType =>
 const descriptiveFields = {
     slug: slugSchema,
     status: z.enum(SERVICE_STATUSES),
-    description: text,
+    description: richText,
     tags: z.array(tagSchema).max(30),
     duration_minutes: z
         .number()

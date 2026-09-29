@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { sanitizeRichText } from '../../../common/html';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
     enabledSchema,
@@ -19,24 +20,38 @@ const coordinate = z
     .trim()
     .regex(/^-?\d{1,3}(\.\d+)?$/, 'Must be a decimal coordinate');
 
-export const infoSectionBodySchema = z.discriminatedUnion('control', [
-    z.object({
-        control: z.literal('text'),
-        value: z.object({
-            heading_label: text.optional(),
-            heading_value: text.optional(),
-            text_label: text.optional(),
-            text_value: text.optional(),
+const bodySchema = (textValue: z.ZodType<string>) =>
+    z.discriminatedUnion('control', [
+        z.object({
+            control: z.literal('text'),
+            value: z.object({
+                heading_label: text.optional(),
+                heading_value: textValue.optional(),
+                text_label: text.optional(),
+                text_value: textValue.optional(),
+            }),
         }),
-    }),
-    z.object({
-        control: z.literal('address'),
-        value: z.object({ text: text.optional(), lat: coordinate.optional(), lng: coordinate.optional() }),
-    }),
-    z.object({ control: z.literal('link'), value: z.object({ text: text.optional(), url: urlSchema }) }),
-    z.object({ control: z.literal('phone'), value: z.object({ phone: phoneSchema, text: text.optional() }) }),
-    z.object({ control: z.literal('email'), value: z.object({ email: z.email(), text: text.optional() }) }),
-]);
+        z.object({
+            control: z.literal('address'),
+            value: z.object({
+                text: text.optional(),
+                lat: coordinate.optional(),
+                lng: coordinate.optional(),
+            }),
+        }),
+        z.object({ control: z.literal('link'), value: z.object({ text: text.optional(), url: urlSchema }) }),
+        z.object({
+            control: z.literal('phone'),
+            value: z.object({ phone: phoneSchema, text: text.optional() }),
+        }),
+        z.object({
+            control: z.literal('email'),
+            value: z.object({ email: z.email(), text: text.optional() }),
+        }),
+    ]);
+
+export const infoSectionBodySchema = bodySchema(text);
+const infoSectionInputSchema = bodySchema(text.transform(sanitizeRichText));
 
 const infoSectionCommon = z.object({
     id: idOutputSchema,
@@ -61,7 +76,7 @@ export const createInfoSectionSchema = z.intersection(
         label: labelSchema,
         enabled: enabledSchema.optional(),
     }),
-    infoSectionBodySchema,
+    infoSectionInputSchema,
 );
 export type CreateInfoSectionInput = z.infer<typeof createInfoSectionSchema>;
 export class CreateInfoSectionDto extends createZodDto(loose(createInfoSectionSchema)) {}
@@ -70,7 +85,7 @@ export class CreateInfoSectionDto extends createZodDto(loose(createInfoSectionSc
 export const updateInfoSectionSchema = z.intersection(
     z.object({ label: labelSchema.optional(), enabled: enabledSchema.optional() }),
     z.union([
-        infoSectionBodySchema,
+        infoSectionInputSchema,
         z.object({ control: z.never().optional(), value: z.never().optional() }),
     ]),
 );

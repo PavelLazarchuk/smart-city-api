@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { sanitizeRichText } from '../../../common/html';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import { SLUG_MAX_LENGTH, SLUG_PATTERN } from '../../../common/slug';
 import {
@@ -10,6 +11,7 @@ import {
     labelSchema,
     objectIdSchema,
     positionSchema,
+    safeLinkSchema,
     timestampsOutputSchema,
 } from '../../../common/zod/primitives';
 
@@ -26,6 +28,13 @@ export const newsContentSchema = z.object({
     image_value: text.optional(),
     link_label: text.optional(),
     link_value: text.optional(),
+});
+
+const newsContentInputSchema = newsContentSchema.extend({
+    heading_value: text.transform(sanitizeRichText).optional(),
+    text_value: text.transform(sanitizeRichText).optional(),
+    image_value: safeLinkSchema.optional(),
+    link_value: safeLinkSchema.optional(),
 });
 
 export const newsResponseSchema = z.object({
@@ -57,7 +66,7 @@ export const createNewsSchema = z.object({
     is_main: z.boolean().optional(),
     is_offer: z.boolean().optional(),
     expires_at: isoDateTimeSchema.nullable().optional(),
-    value: newsContentSchema.optional(),
+    value: newsContentInputSchema.optional(),
 });
 export type CreateNewsInput = z.infer<typeof createNewsSchema>;
 export class CreateNewsDto extends createZodDto(createNewsSchema) {}
