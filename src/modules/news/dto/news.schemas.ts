@@ -1,7 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
-import { sanitizeRichText } from '../../../common/html';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import { SLUG_MAX_LENGTH, SLUG_PATTERN } from '../../../common/slug';
 import {
@@ -11,6 +10,7 @@ import {
     labelSchema,
     objectIdSchema,
     positionSchema,
+    richTextSchema,
     safeLinkSchema,
     timestampsOutputSchema,
 } from '../../../common/zod/primitives';
@@ -31,8 +31,7 @@ export const newsContentSchema = z.object({
 });
 
 const newsContentInputSchema = newsContentSchema.extend({
-    heading_value: text.transform(sanitizeRichText).optional(),
-    text_value: text.transform(sanitizeRichText).optional(),
+    text_value: richTextSchema(5000).optional(),
     image_value: safeLinkSchema.optional(),
     link_value: safeLinkSchema.optional(),
 });

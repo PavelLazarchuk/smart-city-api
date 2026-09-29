@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { z } from 'zod';
 
+import { sanitizeRichText } from '../html';
 import { isSupportedTimeZone } from '../time/zone';
 
 export const objectIdSchema = z
@@ -56,8 +57,29 @@ export const positionSchema = z.number().int().min(0);
 
 export const urlSchema = z.url({ protocol: /^https?$/ }).max(2048);
 
+export const linkUrlSchema = z.url({ protocol: /^(https?|mailto|tel|viber|tg)$/ }).max(2048);
+
+const isSafeLink = (value: string): boolean => {
+    if (value === '') return true;
+
+    if (/[\\\s\p{Cc}]/u.test(value)) return false;
+
+    if (value.startsWith('/')) return !value.startsWith('//');
+
+    if (!/^https?:\/\//i.test(value)) return false;
+
+    try {
+        return new URL(value).hostname !== '';
+    } catch {
+        return false;
+    }
+};
+
 export const safeLinkSchema = z
     .string()
     .trim()
     .max(5000)
-    .refine((value) => /^(https?:\/\/|\/(?!\/))/i.test(value), 'Must be an http(s) URL or a relative path');
+    .refine(isSafeLink, 'Must be an http(s) URL or a relative path');
+
+export const richTextSchema = (max: number) =>
+    z.string().trim().max(max).transform(sanitizeRichText).pipe(z.string().max(max));

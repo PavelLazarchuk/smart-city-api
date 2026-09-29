@@ -1,17 +1,17 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
-import { sanitizeRichText } from '../../../common/html';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
     enabledSchema,
     idOutputSchema,
     labelSchema,
+    linkUrlSchema,
     objectIdSchema,
     phoneSchema,
     positionSchema,
+    richTextSchema,
     timestampsOutputSchema,
-    urlSchema,
 } from '../../../common/zod/primitives';
 
 const text = z.string().trim().max(5000);
@@ -20,15 +20,15 @@ const coordinate = z
     .trim()
     .regex(/^-?\d{1,3}(\.\d+)?$/, 'Must be a decimal coordinate');
 
-const bodySchema = (textValue: z.ZodType<string>) =>
+const bodySchema = (richText: z.ZodType<string>, url: z.ZodType<string>) =>
     z.discriminatedUnion('control', [
         z.object({
             control: z.literal('text'),
             value: z.object({
                 heading_label: text.optional(),
-                heading_value: textValue.optional(),
+                heading_value: text.optional(),
                 text_label: text.optional(),
-                text_value: textValue.optional(),
+                text_value: richText.optional(),
             }),
         }),
         z.object({
@@ -39,7 +39,7 @@ const bodySchema = (textValue: z.ZodType<string>) =>
                 lng: coordinate.optional(),
             }),
         }),
-        z.object({ control: z.literal('link'), value: z.object({ text: text.optional(), url: urlSchema }) }),
+        z.object({ control: z.literal('link'), value: z.object({ text: text.optional(), url }) }),
         z.object({
             control: z.literal('phone'),
             value: z.object({ phone: phoneSchema, text: text.optional() }),
@@ -50,8 +50,8 @@ const bodySchema = (textValue: z.ZodType<string>) =>
         }),
     ]);
 
-export const infoSectionBodySchema = bodySchema(text);
-const infoSectionInputSchema = bodySchema(text.transform(sanitizeRichText));
+export const infoSectionBodySchema = bodySchema(z.string(), z.string());
+const infoSectionInputSchema = bodySchema(richTextSchema(5000), linkUrlSchema);
 
 const infoSectionCommon = z.object({
     id: idOutputSchema,
