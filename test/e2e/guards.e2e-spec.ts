@@ -251,6 +251,9 @@ describe('cross-cutting guards (e2e)', () => {
             const superAdmin = await fx.bearer(await fx.superAdmin());
             const admin = await fx.bearer(await fx.admin([organization.id]));
             const foreignAdmin = await fx.bearer(await fx.admin([foreignOrganization.id]));
+            const operator = await fx.bearer(
+                await fx.user({ role: 'operator', organization_ids: [organization.id] }),
+            );
             const client = await fx.bearer(await fx.client());
             const category = await fx.category(organization.id);
 
@@ -263,61 +266,187 @@ describe('cross-cutting guards (e2e)', () => {
                 {
                     method: 'get',
                     path: '/users',
-                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 403,
+                        foreign: 403,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'post',
                     path: '/organizations',
                     body: { main_label: 'x', main_image: 'https://e.com/i.jpg' },
-                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 201 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 403,
+                        foreign: 403,
+                        super: 201,
+                    },
                 },
                 {
                     method: 'patch',
                     path: `/organizations/${organization.id}`,
                     body: { main_label: 'y' },
-                    expected: { anonymous: 401, client: 403, admin: 200, foreign: 404, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 200,
+                        foreign: 404,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'post',
                     path: '/categories',
                     body: { organization_id: organization.id, label: 'c' },
-                    expected: { anonymous: 401, client: 403, admin: 201, foreign: 403, super: 201 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 201,
+                        foreign: 403,
+                        super: 201,
+                    },
                 },
                 {
                     method: 'patch',
                     path: `/categories/${category.id}`,
                     body: { label: 'z' },
-                    expected: { anonymous: 401, client: 403, admin: 200, foreign: 404, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 200,
+                        foreign: 404,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'get',
                     path: '/archives',
-                    expected: { anonymous: 401, client: 403, admin: 200, foreign: 200, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 200,
+                        foreign: 200,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'get',
                     path: '/images',
-                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 403,
+                        foreign: 403,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'get',
                     path: '/sms',
-                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 403,
+                        foreign: 403,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'get',
                     path: '/analytics/events',
-                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 200 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 403,
+                        foreign: 403,
+                        super: 200,
+                    },
+                },
+                {
+                    method: 'get',
+                    path: '/bookings',
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 200,
+                        admin: 200,
+                        foreign: 200,
+                        super: 200,
+                    },
+                },
+                {
+                    method: 'get',
+                    path: '/suspensions',
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 200,
+                        admin: 200,
+                        foreign: 200,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'get',
                     path: `/organizations/${organization.id}`,
-                    expected: { anonymous: 200, client: 200, admin: 200, foreign: 200, super: 200 },
+                    expected: {
+                        anonymous: 200,
+                        client: 200,
+                        operator: 200,
+                        admin: 200,
+                        foreign: 200,
+                        super: 200,
+                    },
+                },
+                {
+                    method: 'get',
+                    path: `/organizations/${organization.id}/notification-templates`,
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 200,
+                        foreign: 404,
+                        super: 200,
+                    },
+                },
+                {
+                    method: 'post',
+                    path: `/organizations/${organization.id}/notification-templates/booking_reminder_sms/preview`,
+                    body: {},
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 200,
+                        foreign: 404,
+                        super: 200,
+                    },
                 },
                 {
                     method: 'delete',
                     path: `/organizations/${organization.id}`,
-                    expected: { anonymous: 401, client: 403, admin: 403, foreign: 403, super: 204 },
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 403,
+                        admin: 403,
+                        foreign: 403,
+                        super: 204,
+                    },
                 },
             ];
             const bearers: Record<string, string | undefined> = {
@@ -325,6 +454,7 @@ describe('cross-cutting guards (e2e)', () => {
                 client,
                 admin,
                 foreign: foreignAdmin,
+                operator,
                 super: superAdmin,
             };
             const failures: string[] = [];

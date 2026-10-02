@@ -94,12 +94,15 @@ export const ERROR_CODES = {
     BOOKING_NOT_DATED: 'BOOKING_NOT_DATED',
     BOOKING_ADDRESS_REQUIRED: 'BOOKING_ADDRESS_REQUIRED',
     BOOKING_PHONE_REQUIRED: 'BOOKING_PHONE_REQUIRED',
+    BOOKING_SUSPENDED: 'BOOKING_SUSPENDED',
+    SUSPENSION_NOT_FOUND: 'SUSPENSION_NOT_FOUND',
     WAITLIST_NOT_FOUND: 'WAITLIST_NOT_FOUND',
     WAITLIST_ALREADY_JOINED: 'WAITLIST_ALREADY_JOINED',
     WAITLIST_NOT_SUPPORTED: 'WAITLIST_NOT_SUPPORTED',
     SLOT_NOT_FULL: 'SLOT_NOT_FULL',
     NEWS_SLUG_TAKEN: 'NEWS_SLUG_TAKEN',
     WEBHOOK_NOT_FOUND: 'WEBHOOK_NOT_FOUND',
+    NOTIFICATION_TEMPLATE_NOT_FOUND: 'NOTIFICATION_TEMPLATE_NOT_FOUND',
     FIELDS_NOT_ALLOWED: 'FIELDS_NOT_ALLOWED',
     FAVORITES_LIMIT_REACHED: 'FAVORITES_LIMIT_REACHED',
 
@@ -213,12 +216,15 @@ export const errorMessages: Record<ErrorCode, string> = {
     BOOKING_NOT_DATED: 'The booking has no date, so it cannot be added to a calendar.',
     BOOKING_ADDRESS_REQUIRED: 'An address is required for this booking.',
     BOOKING_PHONE_REQUIRED: 'A phone number is required for a call-back request.',
+    BOOKING_SUSPENDED: 'Booking this service is suspended for your account.',
+    SUSPENSION_NOT_FOUND: 'Suspension not found.',
     WAITLIST_NOT_FOUND: 'Waitlist entry not found.',
     WAITLIST_ALREADY_JOINED: 'You are already on the waitlist for this slot.',
     WAITLIST_NOT_SUPPORTED: 'This slot type has no waitlist.',
     SLOT_NOT_FULL: 'The slot still has free capacity. Book it instead of joining the waitlist.',
     NEWS_SLUG_TAKEN: 'This slug is already used by another news item of the organization.',
     WEBHOOK_NOT_FOUND: 'Webhook not found.',
+    NOTIFICATION_TEMPLATE_NOT_FOUND: 'There is no notification with this key.',
     FIELDS_NOT_ALLOWED: 'One of the requested fields is not part of this response.',
     FAVORITES_LIMIT_REACHED: 'You already have the maximum number of favorites.',
 
@@ -236,95 +242,8 @@ export const texts = {
     sms: {
         otp: (code: string): string => `${code} is your Smart City verification code.`,
         test: (code: string): string => `${code} is a Smart City test message.`,
-        reminder: (data: { service: string; date?: string; time?: string }): string =>
-            `Reminder: ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}.`,
-        waitlist: (data: { service: string; date?: string; time?: string }): string =>
-            `A place is free for ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}. Book it now.`,
-        cancelled: (data: { service: string; date?: string; time?: string; reason?: string }): string =>
-            `${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''} was cancelled.${data.reason ? ` ${data.reason}` : ''}`,
-        moved: (data: { service: string; date?: string; time?: string; reason?: string }): string =>
-            `${data.service} was moved to ${data.date ?? 'another date'}${data.time ? `, ${data.time}` : ''}.${data.reason ? ` ${data.reason}` : ''}`,
     },
     mail: {
-        bookingSubject: 'Smart City: new booking',
-        bookingBody: (data: {
-            service: string;
-            date?: string;
-            time?: string;
-            phone: string;
-            name: string;
-        }): string =>
-            [
-                `Service: ${data.service}`,
-                `Date: ${data.date ?? 'not specified'}`,
-                `Time: ${data.time ?? 'not specified'}`,
-                `Phone: ${data.phone}`,
-                `Name: ${data.name}`,
-            ].join('\n'),
-        bookingConfirmedSubject: 'Smart City: booking confirmed',
-        reminderSubject: 'Smart City: booking reminder',
-        reminderBody: (data: {
-            service: string;
-            date?: string;
-            time?: string;
-            phone: string;
-            calendar?: boolean;
-        }): string =>
-            [
-                `Reminder: ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}.`,
-                `Booked with phone ${data.phone || 'not specified'}.`,
-                ...(data.calendar ? ['Open the attached booking.ics to add it to your calendar.'] : []),
-            ].join('\n'),
-        waitlistSubject: 'Smart City: a place is free',
-        waitlistBody: (data: { service: string; date?: string; time?: string; phone: string }): string =>
-            [
-                `A place is free for ${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''}. Book it now.`,
-                `You are on the waiting list with phone ${data.phone || 'not specified'}.`,
-            ].join('\n'),
-        cancelledSubject: 'Smart City: booking cancelled',
-        cancelledBody: (data: {
-            service: string;
-            date?: string;
-            time?: string;
-            phone: string;
-            reason?: string;
-        }): string =>
-            [
-                `${data.service} on ${data.date ?? 'the agreed date'}${data.time ? ` at ${data.time}` : ''} was cancelled by the organization.`,
-                ...(data.reason ? [`Reason: ${data.reason}`] : []),
-                `Booked with phone ${data.phone || 'not specified'}.`,
-            ].join('\n'),
-        movedSubject: 'Smart City: booking moved',
-        movedBody: (data: {
-            service: string;
-            date?: string;
-            time?: string;
-            previous_date?: string;
-            previous_time?: string;
-            phone: string;
-            reason?: string;
-        }): string =>
-            [
-                `${data.service} was moved to ${data.date ?? 'another date'}${data.time ? ` at ${data.time}` : ''}.`,
-                `It was booked for ${data.previous_date ?? 'the agreed date'}${data.previous_time ? ` at ${data.previous_time}` : ''}.`,
-                ...(data.reason ? [`Reason: ${data.reason}`] : []),
-                `Booked with phone ${data.phone || 'not specified'}.`,
-            ].join('\n'),
-        callbackSubject: 'Smart City: call-back due',
-        callbackBody: (data: {
-            service: string;
-            date?: string;
-            time?: string;
-            end_time?: string;
-            phone: string;
-            name: string;
-        }): string =>
-            [
-                `Call back for ${data.service}.`,
-                `When: ${data.date ?? 'not specified'}${data.time ? `, ${data.time}` : ''}${data.end_time ? `-${data.end_time}` : ''}`,
-                `Phone: ${data.phone || 'not specified'}`,
-                `Name: ${data.name || 'not specified'}`,
-            ].join('\n'),
         reportSubject: 'Smart City: services without upcoming slots',
         reportBody: (count: number): string =>
             `The attached report lists ${count} service(s) that currently have no upcoming booking slots.`,
@@ -352,6 +271,112 @@ export const texts = {
             },
             unknownOrganization: 'Deleted organization',
         },
+    },
+    notifications: {
+        booking_created_mail: {
+            subject: 'Smart City: new booking',
+            body: [
+                'Service: {{service}}',
+                'Date: {{#date}}{{date}}{{/date}}{{^date}}not specified{{/date}}',
+                'Time: {{#time}}{{time}}{{#end_time}}-{{end_time}}{{/end_time}}{{/time}}{{^time}}not specified{{/time}}',
+                'Phone: {{phone}}',
+                'Name: {{name}}',
+            ].join('\n'),
+        },
+        booking_reminder_mail: {
+            subject: 'Smart City: booking reminder',
+            body: [
+                'Reminder: {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}.',
+                'Booked with phone {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}.',
+                '{{#calendar}}',
+                'Open the attached booking.ics to add it to your calendar.',
+                '{{/calendar}}',
+            ].join('\n'),
+        },
+        booking_reminder_sms: {
+            subject: null,
+            body: 'Reminder: {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}.',
+        },
+        waitlist_available_mail: {
+            subject: 'Smart City: a place is free',
+            body: [
+                'A place is free for {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}. Book it now.',
+                'You are on the waiting list with phone {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}.',
+            ].join('\n'),
+        },
+        waitlist_available_sms: {
+            subject: null,
+            body: 'A place is free for {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}. Book it now.',
+        },
+        booking_cancelled_mail: {
+            subject: 'Smart City: booking cancelled',
+            body: [
+                '{{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}} was cancelled by the organization.',
+                '{{#reason}}',
+                'Reason: {{reason}}',
+                '{{/reason}}',
+                'Booked with phone {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}.',
+            ].join('\n'),
+        },
+        booking_cancelled_sms: {
+            subject: null,
+            body: '{{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}} was cancelled.{{#reason}} {{reason}}{{/reason}}',
+        },
+        booking_moved_mail: {
+            subject: 'Smart City: booking moved',
+            body: [
+                '{{service}} was moved to {{#date}}{{date}}{{/date}}{{^date}}another date{{/date}}{{#time}} at {{time}}{{/time}}.',
+                'It was booked for {{#previous_date}}{{previous_date}}{{/previous_date}}{{^previous_date}}the agreed date{{/previous_date}}{{#previous_time}} at {{previous_time}}{{/previous_time}}.',
+                '{{#reason}}',
+                'Reason: {{reason}}',
+                '{{/reason}}',
+                'Booked with phone {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}.',
+            ].join('\n'),
+        },
+        booking_moved_sms: {
+            subject: null,
+            body: '{{service}} was moved to {{#date}}{{date}}{{/date}}{{^date}}another date{{/date}}{{#time}}, {{time}}{{/time}}.{{#reason}} {{reason}}{{/reason}}',
+        },
+        booking_suspended_mail: {
+            subject: 'Smart City: booking suspended',
+            body: [
+                '{{#missed}}',
+                'You did not come to {{missed}} bookings of {{service}}.',
+                '{{/missed}}',
+                'Booking {{service}} is suspended {{#until}}until {{until}}{{/until}}{{^until}}until the organization lifts it{{/until}}.',
+                '{{#reason}}',
+                'Reason: {{reason}}',
+                '{{/reason}}',
+                'Account phone: {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}.',
+            ].join('\n'),
+        },
+        booking_suspended_sms: {
+            subject: null,
+            body: '{{#missed}}You missed {{missed}} bookings. {{/missed}}Booking {{service}} is suspended{{#until}} until {{until}}{{/until}}.{{#reason}} {{reason}}{{/reason}}',
+        },
+        callback_due_mail: {
+            subject: 'Smart City: call-back due',
+            body: [
+                'Call back for {{service}}.',
+                'When: {{#date}}{{date}}{{/date}}{{^date}}not specified{{/date}}{{#time}}, {{time}}{{/time}}{{#end_time}}-{{end_time}}{{/end_time}}',
+                'Phone: {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}',
+                'Name: {{#name}}{{name}}{{/name}}{{^name}}not specified{{/name}}',
+            ].join('\n'),
+        },
+    },
+    notificationSample: {
+        service: 'Passport consultation',
+        date: '2026-10-15',
+        time: '10:00',
+        end_time: '10:30',
+        previous_date: '2026-10-14',
+        previous_time: '09:00',
+        until: '2026-11-15',
+        missed: 3,
+        reason: 'The specialist is on sick leave.',
+        phone: '380501234567',
+        name: 'Anna',
+        calendar: true,
     },
     defaults: {
         serviceLabel: 'Service',

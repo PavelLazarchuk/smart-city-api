@@ -17,7 +17,7 @@ import { type Response } from 'express';
 
 import { ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
-import { ROLES, Roles } from '../../common/decorators/roles.decorator';
+import { ROLES, Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { ImageResponseDto, imageResponseSchema, ListImagesQueryDto } from './dto/image.schemas';
@@ -39,7 +39,7 @@ export class ImagesController {
     }
 
     @Post('organizations/:id/images')
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'path' })
     @UseInterceptors(FileInterceptor('file'))
     @ApiConsumes('multipart/form-data')

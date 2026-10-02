@@ -24,6 +24,8 @@ export const SLOT_BULK_MAX_BOOKINGS = 500;
 
 export const FAVORITES_MAX_PER_USER = 100;
 
+export const NOTIFICATION_TEMPLATE_LIMITS = { subject: 200, mailBody: 5000, smsBody: 640 } as const;
+
 export const CALENDAR_FEED = { pastDays: 30, maxEvents: 500, refreshMinutes: 60 } as const;
 
 export const PAGINATION = {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { isStaffOf } from '../../common/content/visibility';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ROLES } from '../../common/decorators/roles.decorator';
 import { texts } from '../../common/i18n/messages';
@@ -23,7 +24,7 @@ export interface ServiceView {
 }
 
 /**
- * Admins of the owning organization and super-admins see bookings and `subscribe`; everyone else gets
+ * Staff of the owning organization and super-admins see bookings and `subscribe`; everyone else gets
  * `{ status: 'reserved' }` markers rebuilt from the counters, so a forgotten `mask()` leaks nothing.
  */
 @Injectable()
@@ -33,11 +34,7 @@ export class ServicesMasker {
     }
 
     canSeeDetails(viewer: AuthUser | undefined, organizationId: string): boolean {
-        if (!viewer) return false;
-
-        if (viewer.role === ROLES.SUPER_ADMIN) return true;
-
-        return viewer.role === ROLES.COMMON_ADMIN && viewer.organization_ids.includes(organizationId);
+        return isStaffOf(viewer, organizationId);
     }
 
     maskCounts<T extends ServiceView>(service: T): T {

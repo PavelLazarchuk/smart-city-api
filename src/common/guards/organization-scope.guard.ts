@@ -7,7 +7,7 @@ import {
     ORGANIZATION_SCOPE_KEY,
     type OrganizationScopeOptions,
 } from '../decorators/organization-scope.decorator';
-import { ROLES } from '../decorators/roles.decorator';
+import { ORGANIZATION_ROLES, ROLES } from '../decorators/roles.decorator';
 import { ApiError } from '../http/api-error';
 import { type ErrorCode } from '../i18n/messages';
 import { objectIdSchema } from '../zod/primitives';
@@ -22,7 +22,7 @@ const NOT_FOUND_BY_KIND = {
     archive: 'ARCHIVE_NOT_FOUND',
 } as const;
 
-/** A `common-admin` is limited to their `organization_ids`; super-admins bypass, everyone else is refused. */
+/** A `common-admin` or `operator` is limited to their `organization_ids`; super-admins bypass, everyone else is refused. */
 @Injectable()
 export class OrganizationScopeGuard implements CanActivate {
     constructor(
@@ -45,7 +45,7 @@ export class OrganizationScopeGuard implements CanActivate {
 
         if (user.role === ROLES.SUPER_ADMIN) return true;
 
-        if (user.role !== ROLES.COMMON_ADMIN) throw ApiError.forbidden('FORBIDDEN');
+        if (!ORGANIZATION_ROLES.includes(user.role)) throw ApiError.forbidden('FORBIDDEN');
 
         const organizationId = await this.resolveOrganizationId(request, options);
 

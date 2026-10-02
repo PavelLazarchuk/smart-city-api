@@ -191,6 +191,15 @@ migration that creates the index, because changing one needs a `collMod` migrati
   stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
   (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told when a
   place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
+- No-show sanctions: with `booking_policy.no_show_limit` and `no_show_suspension_days` set (optionally
+  `no_show_window_days`), the client's n-th `no_show` on a service suspends booking it — `422 BOOKING_SUSPENDED`
+  on booking and on the waitlist, while staff may still book `on_behalf`. Staff list suspensions with
+  `GET /suspensions` (and `GET /suspensions/:id`), suspend by hand with `POST /suspensions` (`user_id` or `phone`, `reason`, optional `days`,
+  none meaning until lifted) and lift one with `DELETE /suspensions/:id`; correcting a counted `no_show` lifts it
+  too. The client is told by e-mail or SMS (`booking.suspended`, also a webhook event) — see
+  [docs/data-model.md](docs/data-model.md#no-show-sanctions).
+- The `operator` role is the front desk of its organizations: bookings, waitlists, suspensions and news, but
+  not the catalogue — see [docs/auth.md](docs/auth.md#roles).
 - A client may keep an `email` on the account (at registration or later via `PATCH /users/:id`, `null` clears
   it). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
   the booking was made with, since one mailbox may serve several accounts.
@@ -198,6 +207,12 @@ migration that creates the index, because changing one needs a `collMod` migrati
   webhooks (`/webhooks`, HMAC-signed `POST`s for `booking.*` and `waitlist.*` events; `GET /outbox/events`,
   `POST /outbox/events/:id/replay`) are delivered after the commit with retries — see
   [docs/architecture.md](docs/architecture.md#outbox-and-webhooks).
+- An organization may reword its notifications: `GET /organizations/:id/notification-templates` lists the twelve
+  keys with the text in force, the built-in text and the variables each one accepts;
+  `PUT /organizations/:id/notification-templates/:key` saves `{ subject, body }` (`subject` for e-mail only),
+  `DELETE` returns the key to the built-in text from `messages.ts`, and `POST …/:key/preview` renders the stored
+  template or a draft with sample data. Admins of the organization and super-admins only — see
+  [docs/data-model.md](docs/data-model.md#notification-templates).
 - News have `slug` (`GET /organizations/:id/news/:slug`), `rubric` (`?rubric=`), `publish_at` (hidden from the
   public until then), `?q=` and an RSS 2.0 feed at `GET /news/rss?organization_id=&rubric=`, whose
   `<enclosure>` carries the type and size of the stored image, or the type its extension implies.
@@ -218,7 +233,8 @@ src/
                  http (errors, envelope), pagination, zod primitives, decorators, guards, cascade registry,
                  message catalogue
   modules/       auth, users, organizations, categories, services, bookings, news, infosections,
-                 images, archives, sms, analytics, health, webhooks — each: controller / service / repository / schemas / dto
+                 images, archives, sms, analytics, health, webhooks, notification-templates —
+                 each: controller / service / repository / schemas / dto
   integrations/  sms (console, smpp), mail (console, smtp), storage (local, s3) behind provider interfaces
   jobs/          recurrent slots, news expiry, slot expiry, stale bookings, cascade reconcile, storage gc,
                  debtor report, unreferenced images, outbox dispatch, booking reminders, trash purge;

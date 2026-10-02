@@ -31,19 +31,21 @@ export function eventPayload(
     };
 }
 
-export interface BookingNotice {
+export type BookingNotice = {
     service: string;
     date?: string;
     time?: string;
+    end_time?: string;
     reason?: string;
     phone: string;
-}
+};
 
 export function notice(event: OutboxEventEntity): BookingNotice {
     return {
         service: text(event.payload['service_label']),
         date: optional(event.payload['date']),
         time: optional(event.payload['time']),
+        end_time: optional(event.payload['end_time']),
         reason: optional(event.payload['reason']),
         phone: text(event.internal?.['phone']),
     };
@@ -64,4 +66,8 @@ export function announced(event: OutboxEventEntity): boolean {
 
 export function recipientEmail(event: OutboxEventEntity): string {
     return text(event.internal?.['email']);
+}
+
+export function organizationOf(event: OutboxEventEntity): string | null {
+    return event.organization_id?.toHexString() ?? optional(event.payload['organization_id']) ?? null;
 }

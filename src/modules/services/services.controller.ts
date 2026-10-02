@@ -20,7 +20,7 @@ import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.dec
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { ROLES, Roles } from '../../common/decorators/roles.decorator';
+import { ROLES, Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { parseBody } from '../../common/http/parse-body';
@@ -110,6 +110,7 @@ const BOOKING_ERRORS = [
     'SERVICE_NOT_PUBLISHED',
     'ORGANIZATION_CLOSED',
     'BOOKING_LIMIT_REACHED',
+    'BOOKING_SUSPENDED',
     'BOOKING_LEAD_TIME',
     'BOOKING_TOO_FAR_AHEAD',
     'BOOKING_FIELDS_INVALID',
@@ -455,7 +456,7 @@ export class ServicesController {
 
     @Post(':id/options/:option_id/slots/:slot_id/cancel')
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @HttpCode(HttpStatus.OK)
     @ApiData(CloseSlotResponseDto)
@@ -479,6 +480,8 @@ export class ServicesController {
         @Res({ passthrough: true }) res: Response,
         @Headers('idempotency-key') idempotencyKey?: string,
     ): Promise<CloseSlotResult> {
+        if (body.remove && user.role === ROLES.OPERATOR) throw ApiError.forbidden('FORBIDDEN');
+
         return this.replayable(
             this.slots.close(id, optionId, slotId, body, user, parseIdempotencyKey(idempotencyKey)),
             res,
@@ -487,7 +490,7 @@ export class ServicesController {
 
     @Post(':id/options/:option_id/slots/:slot_id/move')
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @HttpCode(HttpStatus.OK)
     @ApiData(MoveSlotResponseDto)
@@ -596,6 +599,7 @@ export class ServicesController {
         'WAITLIST_NOT_SUPPORTED',
         'SERVICE_NOT_PUBLISHED',
         'ORGANIZATION_CLOSED',
+        'BOOKING_SUSPENDED',
         'WAITLIST_ALREADY_JOINED',
     )
     @Serialize(waitlistEntryResponseSchema)
@@ -609,7 +613,7 @@ export class ServicesController {
 
     @Get(':id/waitlist')
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiPaginated(WaitlistEntryResponseDto)
     @ApiErrors('SERVICE_NOT_FOUND')

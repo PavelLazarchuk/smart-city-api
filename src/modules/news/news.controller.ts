@@ -19,7 +19,7 @@ import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.dec
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { ROLES, Roles } from '../../common/decorators/roles.decorator';
+import { Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -87,7 +87,7 @@ export class NewsController {
 
     @Post()
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'body' })
     @ApiCreatedResponse({ type: NewsResponseDto })
     @ApiErrors('ORGANIZATION_NOT_FOUND', 'NEWS_SLUG_TAKEN')
@@ -104,7 +104,7 @@ export class NewsController {
 
     @Patch(':id')
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'entity', entity: 'news' })
     @ApiData(NewsResponseDto)
     @ApiErrors('NEWS_NOT_FOUND', 'NEWS_SLUG_TAKEN')
@@ -115,7 +115,7 @@ export class NewsController {
 
     @Delete(':id')
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'entity', entity: 'news' })
     @HttpCode(HttpStatus.NO_CONTENT)
     async remove(@Param('id') id: string): Promise<void> {

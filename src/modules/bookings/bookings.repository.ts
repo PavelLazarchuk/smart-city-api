@@ -258,6 +258,29 @@ export class BookingsRepository extends BaseRepository<Booking> {
         );
     }
 
+    async findNoShowIds(
+        userId: string,
+        serviceId: string,
+        since: Date,
+        session?: ClientSession,
+    ): Promise<string[]> {
+        const rows = await this.model
+            .find(
+                {
+                    user_id: new Types.ObjectId(userId),
+                    service_id: new Types.ObjectId(serviceId),
+                    status: 'no_show',
+                    finished_at: { $gte: since },
+                },
+                { id: 1 },
+            )
+            .session(session ?? null)
+            .lean<{ id: string }[]>()
+            .exec();
+
+        return rows.map((row) => row.id);
+    }
+
     async transition(
         id: string,
         from: BookingStatus[],

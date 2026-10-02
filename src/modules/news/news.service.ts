@@ -4,8 +4,7 @@ import { type ClientSession, type FilterQuery, Types } from 'mongoose';
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
-import { ROLES } from '../../common/decorators/roles.decorator';
-import { administers, publishedClause } from '../../common/content/visibility';
+import { isStaffOf, publishedClause, releasedClause } from '../../common/content/visibility';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
 import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -79,13 +78,11 @@ export class NewsService implements OnModuleInit {
     }
 
     private scheduledFilter(viewer?: AuthUser): FilterQuery<News> {
-        if (viewer && viewer.role !== ROLES.COMMON_USER) return {};
-
-        return { $or: [{ publish_at: null }, { publish_at: { $lte: new Date() } }] };
+        return releasedClause(viewer, new Date()) ?? {};
     }
 
     private isScheduled(item: NewsEntity, viewer?: AuthUser): boolean {
-        if (viewer && viewer.role !== ROLES.COMMON_USER) return false;
+        if (isStaffOf(viewer, item.organization_id.toHexString())) return false;
 
         return (
             item.publish_at !== null &&
@@ -95,7 +92,7 @@ export class NewsService implements OnModuleInit {
     }
 
     private isHidden(item: NewsEntity, viewer?: AuthUser): boolean {
-        return !item.enabled && !administers(viewer, item.organization_id.toHexString());
+        return !item.enabled && !isStaffOf(viewer, item.organization_id.toHexString());
     }
 
     async getById(id: string, viewer?: AuthUser): Promise<NewsEntity> {

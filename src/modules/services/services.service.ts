@@ -5,7 +5,7 @@ import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
-import { ROLES } from '../../common/decorators/roles.decorator';
+import { ORGANIZATION_ROLES, ROLES } from '../../common/decorators/roles.decorator';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
 import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
@@ -268,10 +268,11 @@ export class ServicesService implements OnModuleInit {
         if (viewer?.role === ROLES.SUPER_ADMIN)
             return trash ? { deleted_at: { $ne: null } } : { deleted_at: null };
 
-        if (viewer?.role === ROLES.COMMON_ADMIN) {
+        if (viewer && ORGANIZATION_ROLES.includes(viewer.role)) {
             const own = viewer.organization_ids.map((id) => new Types.ObjectId(id));
 
-            if (trash) return { deleted_at: { $ne: null }, organization_id: { $in: own } };
+            if (trash && viewer.role === ROLES.COMMON_ADMIN)
+                return { deleted_at: { $ne: null }, organization_id: { $in: own } };
 
             return { deleted_at: null, $or: [{ status: 'published' }, { organization_id: { $in: own } }] };
         }
@@ -859,6 +860,9 @@ export class ServicesService implements OnModuleInit {
                 max_advance_days: input.booking_policy.max_advance_days ?? null,
                 cancel_deadline_minutes: input.booking_policy.cancel_deadline_minutes ?? null,
                 requires_confirmation: input.booking_policy.requires_confirmation ?? false,
+                no_show_limit: input.booking_policy.no_show_limit ?? null,
+                no_show_window_days: input.booking_policy.no_show_window_days ?? null,
+                no_show_suspension_days: input.booking_policy.no_show_suspension_days ?? null,
             };
             fields['booking_policy'] = policy;
         }

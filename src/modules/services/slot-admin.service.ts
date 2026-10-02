@@ -6,7 +6,6 @@ import { SLOT_BULK_MAX_BOOKINGS } from '../../common/config/constants';
 import { type TransactionContext, TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ApiError } from '../../common/http/api-error';
-import { texts } from '../../common/i18n/messages';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { type EnqueueRequest, OutboxService } from '../../common/outbox/outbox.service';
 import { dateOnlyIn, instantIn } from '../../common/time/zone';
@@ -16,9 +15,17 @@ import { WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
 import { SlotsRepository } from '../slots/slots.repository';
+import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
-import { announced, eventPayload, notice, previousOf, recipientEmail } from './booking-events';
+import {
+    announced,
+    eventPayload,
+    notice,
+    organizationOf,
+    previousOf,
+    recipientEmail,
+} from './booking-events';
 import { BookingsService } from './bookings.service';
 import {
     type CloseSlotInput,
@@ -58,6 +65,7 @@ export class SlotAdminService implements OnModuleInit {
         private readonly users: UsersService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
+        private readonly templates: NotificationTemplatesService,
         private readonly outbox: OutboxService,
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
@@ -78,28 +86,48 @@ export class SlotAdminService implements OnModuleInit {
 
             if (!announced(event) || !email) return;
 
-            await this.mail.sendBookingCancellation(email, notice(event));
+            const message = await this.templates.mail(
+                organizationOf(event),
+                'booking_cancelled_mail',
+                notice(event),
+            );
+            await this.mail.send({ to: [email], ...message });
         });
         this.outbox.registerHandler('booking.cancelled', 'sms', async (event) => {
             const { phone, ...data } = notice(event);
 
             if (!announced(event) || recipientEmail(event) || !phone) return;
 
-            await this.sms.send(phone, texts.sms.cancelled(data), 'cancellation');
+            await this.sms.send(
+                phone,
+                await this.templates.sms(organizationOf(event), 'booking_cancelled_sms', data),
+                'cancellation',
+            );
         });
         this.outbox.registerHandler('booking.rescheduled', 'mail', async (event) => {
             const email = recipientEmail(event);
 
             if (!announced(event) || !email) return;
 
-            await this.mail.sendBookingMoved(email, { ...notice(event), ...previousOf(event) });
+            const message = await this.templates.mail(organizationOf(event), 'booking_moved_mail', {
+                ...notice(event),
+                ...previousOf(event),
+            });
+            await this.mail.send({ to: [email], ...message });
         });
         this.outbox.registerHandler('booking.rescheduled', 'sms', async (event) => {
             const { phone, ...data } = notice(event);
 
             if (!announced(event) || recipientEmail(event) || !phone) return;
 
-            await this.sms.send(phone, texts.sms.moved(data), 'reschedule');
+            await this.sms.send(
+                phone,
+                await this.templates.sms(organizationOf(event), 'booking_moved_sms', {
+                    ...data,
+                    ...previousOf(event),
+                }),
+                'reschedule',
+            );
         });
     }
 

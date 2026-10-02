@@ -15,6 +15,9 @@ const policy = (overrides: Partial<BookingPolicy>): BookingPolicy => ({
     max_advance_days: null,
     cancel_deadline_minutes: null,
     requires_confirmation: false,
+    no_show_limit: null,
+    no_show_window_days: null,
+    no_show_suspension_days: null,
     ...overrides,
 });
 

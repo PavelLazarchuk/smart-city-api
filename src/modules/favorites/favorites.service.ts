@@ -3,7 +3,7 @@ import { type Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { FAVORITES_MAX_PER_USER } from '../../common/config/constants';
-import { administers } from '../../common/content/visibility';
+import { isStaffOf } from '../../common/content/visibility';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -132,6 +132,6 @@ export class FavoritesService implements OnModuleInit {
     ) {
         if (service.deleted_at) return false;
 
-        return service.status === 'published' || administers(actor, service.organization_id.toHexString());
+        return service.status === 'published' || isStaffOf(actor, service.organization_id.toHexString());
     }
 }

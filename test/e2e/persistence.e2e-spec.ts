@@ -29,6 +29,7 @@ const migrations: Migration[] = [
     slotsMigration,
     require('../../migrations/20260925000000-favorites-calendar-and-tracing.js') as Migration,
     subtypesMigration,
+    require('../../migrations/20261001000000-booking-suspensions.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -67,6 +68,7 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     webhooks: 'Webhook',
     service_revisions: 'ServiceRevision',
     slots: 'Slot',
+    booking_suspensions: 'BookingSuspension',
 };
 
 describe('persistence (e2e)', () => {

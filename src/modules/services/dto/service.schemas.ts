@@ -377,13 +377,28 @@ export const geoPointOutputSchema = z.object({
     coordinates: z.tuple([z.number(), z.number()]),
 });
 
-export const bookingPolicySchema = z.object({
-    max_active_per_user: z.number().int().min(1).nullable().optional(),
-    lead_time_minutes: z.number().int().min(0).nullable().optional(),
-    max_advance_days: z.number().int().min(1).nullable().optional(),
-    cancel_deadline_minutes: z.number().int().min(0).nullable().optional(),
-    requires_confirmation: z.boolean().optional(),
-});
+export const bookingPolicySchema = z
+    .object({
+        max_active_per_user: z.number().int().min(1).nullable().optional(),
+        lead_time_minutes: z.number().int().min(0).nullable().optional(),
+        max_advance_days: z.number().int().min(1).nullable().optional(),
+        cancel_deadline_minutes: z.number().int().min(0).nullable().optional(),
+        requires_confirmation: z.boolean().optional(),
+        no_show_limit: z.number().int().min(1).max(100).nullable().optional(),
+        no_show_window_days: z.number().int().min(1).max(3650).nullable().optional(),
+        no_show_suspension_days: z.number().int().min(1).max(3650).nullable().optional(),
+    })
+    .superRefine((policy, ctx) => {
+        const limit = policy.no_show_limit ?? null;
+        const days = policy.no_show_suspension_days ?? null;
+
+        if ((limit === null) !== (days === null))
+            ctx.addIssue({
+                code: 'custom',
+                path: [limit === null ? 'no_show_limit' : 'no_show_suspension_days'],
+                message: 'no_show_limit and no_show_suspension_days are set together',
+            });
+    });
 export type BookingPolicyInput = z.infer<typeof bookingPolicySchema>;
 
 const bookingPolicyOutputSchema = z.object({
@@ -392,6 +407,9 @@ const bookingPolicyOutputSchema = z.object({
     max_advance_days: z.number().int().nullable().catch(null),
     cancel_deadline_minutes: z.number().int().nullable().catch(null),
     requires_confirmation: z.boolean().catch(false),
+    no_show_limit: z.number().int().nullable().catch(null),
+    no_show_window_days: z.number().int().nullable().catch(null),
+    no_show_suspension_days: z.number().int().nullable().catch(null),
 });
 
 export const formFieldSchema = z
@@ -509,6 +527,9 @@ const serviceResponseSchemaFor = (bookings: z.ZodType) =>
             max_advance_days: null,
             cancel_deadline_minutes: null,
             requires_confirmation: false,
+            no_show_limit: null,
+            no_show_window_days: null,
+            no_show_suspension_days: null,
         }),
         form_fields: z.array(formFieldOutputSchema).catch([]),
         required_documents: z.array(requiredDocumentOutputSchema).catch([]),

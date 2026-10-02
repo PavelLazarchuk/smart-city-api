@@ -2,7 +2,7 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
-import { administers, publishedClause } from '../../common/content/visibility';
+import { isStaffOf, publishedClause } from '../../common/content/visibility';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
@@ -64,7 +64,7 @@ export class CategoriesService implements OnModuleInit {
     async getById(id: string, viewer?: AuthUser): Promise<CategoryEntity> {
         const category = await this.loadForAdmin(id);
 
-        if (!category.enabled && !administers(viewer, category.organization_id.toHexString()))
+        if (!category.enabled && !isStaffOf(viewer, category.organization_id.toHexString()))
             throw ApiError.notFound('CATEGORY_NOT_FOUND');
 
         return category;

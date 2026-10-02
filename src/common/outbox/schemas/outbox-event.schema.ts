@@ -11,6 +11,8 @@ export const OUTBOX_EVENT_TYPES = [
     'booking.reminder',
     'booking.callback_due',
     'waitlist.slot_available',
+    'booking.suspended',
+    'booking.suspension_lifted',
     'webhook.test',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];

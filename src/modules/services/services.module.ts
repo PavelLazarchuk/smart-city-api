@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MailModule } from '../../integrations/mail/mail.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { CategoriesModule } from '../categories/categories.module';
+import { NotificationTemplatesModule } from '../notification-templates/notification-templates.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { SlotsModule } from '../slots/slots.module';
 import { SmsModule } from '../sms/sms.module';
@@ -18,6 +19,7 @@ import { ServicesMasker } from './services.masker';
 import { ServicesRepository } from './services.repository';
 import { ServicesService } from './services.service';
 import { SlotAdminService } from './slot-admin.service';
+import { SuspensionsService } from './suspensions.service';
 
 @Module({
     imports: [
@@ -32,6 +34,7 @@ import { SlotAdminService } from './slot-admin.service';
         MailModule,
         SmsModule,
         UsersModule,
+        NotificationTemplatesModule,
     ],
     controllers: [ServicesController],
     providers: [
@@ -42,7 +45,8 @@ import { SlotAdminService } from './slot-admin.service';
         BookingsService,
         BookingCalendarService,
         SlotAdminService,
+        SuspensionsService,
     ],
-    exports: [ServicesService, BookingsService, BookingCalendarService],
+    exports: [ServicesService, BookingsService, BookingCalendarService, SuspensionsService],
 })
 export class ServicesModule {}

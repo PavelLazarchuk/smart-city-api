@@ -8,7 +8,6 @@ import { type TransactionContext, TransactionRunner } from '../../common/databas
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError, type ApiErrorDetail } from '../../common/http/api-error';
-import { texts } from '../../common/i18n/messages';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
@@ -37,11 +36,12 @@ import { type WaitlistEntry } from '../bookings/schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
+import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
 import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import { BookingCalendarService } from './booking-calendar.service';
-import { eventPayload, notice, recipientEmail, text } from './booking-events';
+import { eventPayload, notice, organizationOf, recipientEmail, text } from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
 import {
@@ -53,6 +53,7 @@ import {
 import { ServicesMasker } from './services.masker';
 import { type ServiceEntity, ServicesRepository } from './services.repository';
 import { assertFitsRange, minutesOf, rangeOf, timeOf } from './slot.logic';
+import { SuspensionsService } from './suspensions.service';
 
 const DUPLICATE_KEY = 11000;
 const BOOKING_SORTABLE = ['created_at', 'slot_date'] as const;
@@ -175,9 +176,11 @@ export class BookingsService implements OnModuleInit {
         private readonly users: UsersService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
+        private readonly templates: NotificationTemplatesService,
         private readonly outbox: OutboxService,
         private readonly masker: ServicesMasker,
         private readonly calendar: BookingCalendarService,
+        private readonly suspensions: SuspensionsService,
         private readonly pagination: PaginationService,
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
@@ -213,34 +216,39 @@ export class BookingsService implements OnModuleInit {
 
             if (typeof subscribe !== 'string' || !subscribe) return;
 
-            const time = (event.payload['time'] as string | null) ?? undefined;
-            const end = (event.payload['end_time'] as string | null) ?? undefined;
-
-            await this.mail.sendBookingNotification(subscribe, {
-                service: text(event.payload['service_label']),
-                date: (event.payload['date'] as string | null) ?? undefined,
-                time: time && end ? `${time}-${end}` : time,
+            const message = await this.templates.mail(organizationOf(event), 'booking_created_mail', {
+                ...notice(event),
                 phone: text(internal['phone']),
                 name: text(internal['person']),
             });
+            await this.mail.send({ to: [subscribe], ...message });
         });
         this.outbox.registerHandler('booking.reminder', 'mail', async (event) => {
             const email = recipientEmail(event);
 
             if (!email) return;
 
-            await this.mail.sendBookingReminder(
-                email,
-                notice(event),
-                await this.calendar.attachment(text(event.payload['booking_id'])),
-            );
+            const calendar = await this.calendar.attachment(text(event.payload['booking_id']));
+            const message = await this.templates.mail(organizationOf(event), 'booking_reminder_mail', {
+                ...notice(event),
+                calendar: Boolean(calendar),
+            });
+            await this.mail.send({
+                to: [email],
+                ...message,
+                ...(calendar ? { attachments: [calendar] } : {}),
+            });
         });
         this.outbox.registerHandler('booking.reminder', 'sms', async (event) => {
             const { phone, ...data } = notice(event);
 
             if (recipientEmail(event) || !phone) return;
 
-            await this.sms.send(phone, texts.sms.reminder(data), 'reminder');
+            await this.sms.send(
+                phone,
+                await this.templates.sms(organizationOf(event), 'booking_reminder_sms', data),
+                'reminder',
+            );
         });
         this.outbox.registerHandler('booking.callback_due', 'mail', async (event) => {
             const service = await this.repository.findById(text(event.payload['service_id']));
@@ -248,28 +256,35 @@ export class BookingsService implements OnModuleInit {
 
             if (!subscribe) return;
 
-            await this.mail.sendCallbackDue(subscribe, {
-                service: text(event.payload['service_label']),
-                date: (event.payload['date'] as string | null) ?? undefined,
-                time: (event.payload['time'] as string | null) ?? undefined,
-                end_time: (event.payload['end_time'] as string | null) ?? undefined,
+            const message = await this.templates.mail(organizationOf(event), 'callback_due_mail', {
+                ...notice(event),
                 phone: text(event.internal?.['phone']),
                 name: text(event.internal?.['person']),
             });
+            await this.mail.send({ to: [subscribe], ...message });
         });
         this.outbox.registerHandler('waitlist.slot_available', 'mail', async (event) => {
             const email = recipientEmail(event);
 
             if (!email) return;
 
-            await this.mail.sendWaitlistNotification(email, notice(event));
+            const message = await this.templates.mail(
+                organizationOf(event),
+                'waitlist_available_mail',
+                notice(event),
+            );
+            await this.mail.send({ to: [email], ...message });
         });
         this.outbox.registerHandler('waitlist.slot_available', 'sms', async (event) => {
             const { phone, ...data } = notice(event);
 
             if (recipientEmail(event) || !phone) return;
 
-            await this.sms.send(phone, texts.sms.waitlist(data), 'waitlist');
+            await this.sms.send(
+                phone,
+                await this.templates.sms(organizationOf(event), 'waitlist_available_sms', data),
+                'waitlist',
+            );
         });
     }
 
@@ -320,6 +335,12 @@ export class BookingsService implements OnModuleInit {
                 throw ApiError.unprocessable('BOOKING_PHONE_REQUIRED');
 
             if (!input.on_behalf) {
+                await this.suspensions.assertNotSuspended(
+                    actor.id,
+                    service._id.toHexString(),
+                    createdAt,
+                    ctx.session,
+                );
                 this.assertPolicy(bookable, target, actor, createdAt);
                 await this.assertActiveLimit(service, actor, ctx.session);
             }
@@ -579,6 +600,7 @@ export class BookingsService implements OnModuleInit {
             await this.emit(ctx, 'booking.status_changed', moved, undefined, {
                 previous_status: booking.status,
             });
+            await this.suspensions.onStatusChanged(moved, booking.status, actor, ctx);
 
             return moved;
         });
@@ -747,6 +769,9 @@ export class BookingsService implements OnModuleInit {
             const now = new Date();
             const bookable = await this.loadBookable(serviceId, actor, ctx.session);
             const { service } = bookable;
+
+            await this.suspensions.assertNotSuspended(actor.id, serviceId, now, ctx.session);
+
             const slot = await this.slots.findSlot(serviceId, input.option_id, input.slot_id, ctx.session);
 
             if (slot?.child_type === 'time_range') throw ApiError.unprocessable('WAITLIST_NOT_SUPPORTED');

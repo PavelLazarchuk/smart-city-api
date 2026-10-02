@@ -19,7 +19,7 @@ import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.dec
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { ROLES, Roles } from '../../common/decorators/roles.decorator';
+import { ROLES, Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { notModified } from '../../common/http/conditional';
 import {
@@ -253,7 +253,7 @@ export class OrganizationsController {
 
     @Patch(':id/news/order')
     @ApiBearerAuth()
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'path' })
     @HttpCode(HttpStatus.NO_CONTENT)
     async reorderNews(@Param('id') id: string, @Body() body: ReorderDto): Promise<void> {

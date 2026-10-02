@@ -117,6 +117,9 @@ export class BookingPolicy {
     @Prop({ type: Number, default: null }) max_advance_days!: number | null;
     @Prop({ type: Number, default: null }) cancel_deadline_minutes!: number | null;
     @Prop({ type: Boolean, required: true, default: false }) requires_confirmation!: boolean;
+    @Prop({ type: Number, default: null }) no_show_limit!: number | null;
+    @Prop({ type: Number, default: null }) no_show_window_days!: number | null;
+    @Prop({ type: Number, default: null }) no_show_suspension_days!: number | null;
 }
 export const BookingPolicySchema = SchemaFactory.createForClass(BookingPolicy);
 

@@ -6,7 +6,19 @@
 | -------------- | ------------------ | ------------------------------------------------------------- |
 | `common-user`  | Client             | Own profile and own bookings                                  |
 | `common-admin` | Organization admin | Only organizations listed in the account's `organization_ids` |
+| `operator`     | Front desk         | Same organization scope as `common-admin`, narrower rights    |
 | `super-admin`  | Platform operator  | Everything; bypasses the organization scope check             |
+
+An `operator` works the bookings of their organizations — lists, statistics, status changes, reschedules,
+cancellations, booking `on_behalf`, waitlists, suspensions, cancelling or moving a whole slot (but not
+`remove: true`, which deletes it) — and manages news, their order and image uploads. Everything else that
+changes the catalogue (services, options, slots, recurrence, categories, info sections, the organization,
+image deletion) stays with `common-admin`, as do webhooks, the outbox, notification templates and archives. For reading, an operator
+sees what a `common-admin` of the same organization sees: booking details, drafts and scheduled news. Routes
+name their roles through the groups in
+[roles.decorator.ts](../src/common/decorators/roles.decorator.ts) — `ADMIN_ROLES`, `STAFF_ROLES`,
+`ORGANIZATION_ROLES` — and a role missing from a route's list is refused, so a new role starts with no access.
+Operators sign in like admins (`AUTH_ADMIN_LOGIN_METHOD`) and only a super-admin creates them.
 
 Two rules protect the platform from lock-out and privilege drift: the last `super-admin` cannot be deleted
 or demoted (`409 LAST_SUPER_ADMIN`), and nobody may change their own role (`422 SELF_ROLE_CHANGE`).

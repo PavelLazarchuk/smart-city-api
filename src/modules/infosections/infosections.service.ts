@@ -2,7 +2,7 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type FilterQuery, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
-import { administers, publishedClause } from '../../common/content/visibility';
+import { isStaffOf, publishedClause } from '../../common/content/visibility';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
@@ -63,7 +63,7 @@ export class InfoSectionsService implements OnModuleInit {
     async getById(id: string, viewer?: AuthUser): Promise<InfoSectionEntity> {
         const item = await this.loadForAdmin(id);
 
-        if (!item.enabled && !administers(viewer, item.organization_id.toHexString()))
+        if (!item.enabled && !isStaffOf(viewer, item.organization_id.toHexString()))
             throw ApiError.notFound('INFOSECTION_NOT_FOUND');
 
         return item;

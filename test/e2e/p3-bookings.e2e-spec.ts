@@ -251,6 +251,9 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                     max_advance_days: null,
                     cancel_deadline_minutes: 48 * 60,
                     requires_confirmation: false,
+                    no_show_limit: null,
+                    no_show_window_days: null,
+                    no_show_suspension_days: null,
                 },
                 options: [
                     {

@@ -148,6 +148,14 @@ export class WaitlistRepository extends BaseRepository<WaitlistEntry> {
         return this.deleteMany({ user_id: new Types.ObjectId(userId) }, session);
     }
 
+    deleteByUserAndService(
+        userId: Types.ObjectId,
+        serviceId: Types.ObjectId,
+        session?: ClientSession,
+    ): Promise<number> {
+        return this.deleteMany({ user_id: userId, service_id: serviceId }, session);
+    }
+
     deleteByService(serviceId: string, session?: ClientSession): Promise<number> {
         return this.deleteMany({ service_id: new Types.ObjectId(serviceId) }, session);
     }

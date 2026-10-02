@@ -10,6 +10,7 @@ export const SMS_PURPOSES = [
     'waitlist',
     'cancellation',
     'reschedule',
+    'suspension',
 ] as const;
 export type SmsPurpose = (typeof SMS_PURPOSES)[number];
 

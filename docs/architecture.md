@@ -64,7 +64,7 @@ whether the first attempt landed.
 A business write and the record of "something happened" commit together: the booking service inserts an
 `outbox_events` row in the same transaction as the booking (`booking.created`, `booking.cancelled`,
 `booking.rescheduled`, `booking.status_changed`; the reminder job adds `booking.reminder`, a freed place
-`waitlist.slot_available`). After the commit the caller pokes
+`waitlist.slot_available`, a suspension `booking.suspended` and `booking.suspension_lifted`). After the commit the caller pokes
 [`OutboxService`](../src/common/outbox/outbox.service.ts), which claims due events with a short lease and fans
 each one out to its targets: the internal handlers registered for the type (the `subscribe` e-mail, the
 reminder and the freed-place notice) and every enabled webhook subscribed to it — the organization's own hooks

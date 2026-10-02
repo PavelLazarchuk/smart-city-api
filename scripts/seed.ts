@@ -12,6 +12,7 @@ import { UsersService } from '../src/modules/users/users.service';
 const SEED = {
     superAdmin: { login: 'superadmin', password: 'Superadmin-Pass1', name: 'Super Admin' },
     admin: { login: 'cityadmin', password: 'Cityadmin-Pass1', name: 'City Admin' },
+    operator: { login: 'frontdesk', password: 'Frontdesk-Pass1', name: 'Front Desk' },
     client: { phone: '4915290000001', name: 'Client One' },
     organization: {
         main_label: 'City Clinic No. 1',
@@ -64,6 +65,11 @@ async function main(): Promise<void> {
         }
 
         console.log(`admin: ${admin._id.toHexString()} (login ${SEED.admin.login})`);
+
+        const operator =
+            (await users.findByLoginWithPassword(SEED.operator.login)) ??
+            (await users.create({ ...SEED.operator, role: 'operator', organization_ids: [organizationId] }));
+        console.log(`operator: ${operator._id.toHexString()} (login ${SEED.operator.login})`);
 
         const client =
             (await users.findByPhone(SEED.client.phone)) ?? (await users.createClient(SEED.client));

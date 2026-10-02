@@ -148,15 +148,16 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 
 ### Catalogue (P3)
 
-| Code                    | Status | Meaning                                                            |
-| ----------------------- | ------ | ------------------------------------------------------------------ |
-| `SERVICE_SLUG_TAKEN`    | 409    | Another service of the organization already uses this slug         |
-| `NEWS_SLUG_TAKEN`       | 409    | Another news item of the organization already uses this slug       |
-| `SERVICE_NOT_DELETED`   | 422    | `POST /services/:id/restore` on a service that is not in the trash |
-| `SERVICE_NOT_PUBLISHED` | 422    | A client tried to book a draft or archived service                 |
-| `ORGANIZATION_CLOSED`   | 422    | The organization is `temporarily_closed`; no new bookings          |
-| `FIELDS_NOT_ALLOWED`    | 400    | `?fields=` named a key the response schema does not have           |
-| `WEBHOOK_NOT_FOUND`     | 404    |                                                                    |
+| Code                              | Status | Meaning                                                            |
+| --------------------------------- | ------ | ------------------------------------------------------------------ |
+| `SERVICE_SLUG_TAKEN`              | 409    | Another service of the organization already uses this slug         |
+| `NEWS_SLUG_TAKEN`                 | 409    | Another news item of the organization already uses this slug       |
+| `SERVICE_NOT_DELETED`             | 422    | `POST /services/:id/restore` on a service that is not in the trash |
+| `SERVICE_NOT_PUBLISHED`           | 422    | A client tried to book a draft or archived service                 |
+| `ORGANIZATION_CLOSED`             | 422    | The organization is `temporarily_closed`; no new bookings          |
+| `FIELDS_NOT_ALLOWED`              | 400    | `?fields=` named a key the response schema does not have           |
+| `WEBHOOK_NOT_FOUND`               | 404    |                                                                    |
+| `NOTIFICATION_TEMPLATE_NOT_FOUND` | 404    | The key is not one of the notifications an organization can reword |
 
 ### Booking lifecycle (P3)
 
@@ -171,6 +172,8 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `BOOKING_STATUS_TRANSITION`      | 422    | Not a legal move (`pending → confirmed → completed \| no_show`, `cancelled`) |
 | `BOOKING_NOT_ACTIVE`             | 422    | Cancel or reschedule of a finished booking                                   |
 | `BOOKING_NOT_DATED`              | 422    | `GET /bookings/:id/calendar.ics` for a booking without a date                |
+| `BOOKING_SUSPENDED`              | 422    | The client is suspended for this service; `details[0]` carries `until`       |
+| `SUSPENSION_NOT_FOUND`           | 404    | Unknown id, or a suspension of another organization                          |
 | `WAITLIST_NOT_FOUND`             | 404    |                                                                              |
 | `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                 |
 | `WAITLIST_NOT_SUPPORTED`         | 422    | A `time_range` slot has no waitlist                                          |

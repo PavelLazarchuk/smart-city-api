@@ -18,7 +18,7 @@ import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.dec
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { ROLES, Roles } from '../../common/decorators/roles.decorator';
+import { Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
 import { texts } from '../../common/i18n/messages';
@@ -58,7 +58,7 @@ export class BookingsController {
     ) {}
 
     @Get('bookings')
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @ApiPaginated(BookingResourceDto)
     @SerializePaginated(bookingResourceSchema)
     list(
@@ -69,7 +69,7 @@ export class BookingsController {
     }
 
     @Get('bookings/stats')
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @ApiData(BookingStatsResponseDto)
     @Serialize(bookingStatsResponseSchema)
     stats(@Query() query: BookingStatsQueryDto, @CurrentUser() user: AuthUser): Promise<BookingStats> {
@@ -130,7 +130,7 @@ export class BookingsController {
     }
 
     @Get('services/:id/bookings')
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @ApiPaginated(BookingResourceDto)
     @ApiErrors('SERVICE_NOT_FOUND')
@@ -166,7 +166,7 @@ export class BookingsController {
     }
 
     @Patch('bookings/:booking_id/status')
-    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @Roles(...STAFF_ROLES)
     @ApiData(BookingResourceDto)
     @ApiErrors('BOOKING_NOT_FOUND', 'BOOKING_STATUS_TRANSITION', 'BOOKING_NOT_ACTIVE')
     @Serialize(bookingResourceSchema)
