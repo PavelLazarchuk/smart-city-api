@@ -1,3 +1,6 @@
+import { type Types } from 'mongoose';
+
+import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type OutboxEventEntity } from '../../common/outbox/outbox.repository';
 import { type BookingEntity } from '../bookings/bookings.repository';
 import { type Booking } from '../bookings/schemas/booking.schema';
@@ -8,6 +11,15 @@ export function text(value: unknown): string {
 
 function optional(value: unknown): string | undefined {
     return typeof value === 'string' && value ? value : undefined;
+}
+
+export interface EventActor {
+    id: string;
+    kind: 'client' | 'staff';
+}
+
+export function eventActor(actor: AuthUser, booking: { user_id: Types.ObjectId }): EventActor {
+    return { id: actor.id, kind: actor.id === booking.user_id.toHexString() ? 'client' : 'staff' };
 }
 
 export function eventPayload(

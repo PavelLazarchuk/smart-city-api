@@ -250,10 +250,11 @@ describe('no-show sanctions (e2e)', () => {
         expect(Math.abs(until - (Date.now() + 3 * DAY_MS))).toBeLessThan(60_000);
 
         const event = await fx
-            .collection<{ internal: unknown }>('OutboxEvent')
+            .collection<{ internal: Record<string, unknown> | null }>('OutboxEvent')
             .findOne({ type: 'booking.suspended' })
             .lean();
-        expect(event?.internal ?? null).toBeNull();
+        expect(event?.internal).not.toHaveProperty('phone');
+        expect(event?.internal).not.toHaveProperty('email');
     });
 
     it('a no-show does not cut short a manual suspension without an end', async () => {

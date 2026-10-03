@@ -35,6 +35,18 @@ export class SlotsRepository extends BaseRepository<Slot> {
         return this.findMany({ service_id: { $in: serviceIds } }, { _id: 1 }, session);
     }
 
+    findByServiceExcept(
+        serviceId: Types.ObjectId,
+        childTypes: readonly string[],
+        session?: ClientSession,
+    ): Promise<SlotEntity[]> {
+        return this.findMany(
+            { service_id: serviceId, child_type: { $nin: childTypes } },
+            { _id: 1 },
+            session,
+        );
+    }
+
     findSlot(
         serviceId: string,
         optionId: string,

@@ -40,6 +40,8 @@ export const ERROR_CODES = {
     ADMIN_PHONE_REQUIRED: 'ADMIN_PHONE_REQUIRED',
     LAST_SUPER_ADMIN: 'LAST_SUPER_ADMIN',
     SELF_ROLE_CHANGE: 'SELF_ROLE_CHANGE',
+    PHONE_CODE_REQUIRED: 'PHONE_CODE_REQUIRED',
+    PHONE_CODE_INVALID: 'PHONE_CODE_INVALID',
 
     ORGANIZATION_NOT_FOUND: 'ORGANIZATION_NOT_FOUND',
     CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
@@ -102,7 +104,9 @@ export const ERROR_CODES = {
     SLOT_NOT_FULL: 'SLOT_NOT_FULL',
     NEWS_SLUG_TAKEN: 'NEWS_SLUG_TAKEN',
     WEBHOOK_NOT_FOUND: 'WEBHOOK_NOT_FOUND',
-    NOTIFICATION_TEMPLATE_NOT_FOUND: 'NOTIFICATION_TEMPLATE_NOT_FOUND',
+    CHANNEL_TEMPLATE_NOT_FOUND: 'CHANNEL_TEMPLATE_NOT_FOUND',
+    NOTIFICATION_NOT_FOUND: 'NOTIFICATION_NOT_FOUND',
+    CLIENT_NOT_FOUND: 'CLIENT_NOT_FOUND',
     FIELDS_NOT_ALLOWED: 'FIELDS_NOT_ALLOWED',
     FAVORITES_LIMIT_REACHED: 'FAVORITES_LIMIT_REACHED',
 
@@ -162,6 +166,8 @@ export const errorMessages: Record<ErrorCode, string> = {
     ADMIN_PHONE_REQUIRED: 'Admins sign in with a one-time code, so the account needs a phone number.',
     LAST_SUPER_ADMIN: 'The last super-admin account cannot be removed or demoted.',
     SELF_ROLE_CHANGE: 'You cannot change your own role.',
+    PHONE_CODE_REQUIRED: 'Confirm the new phone number with the code sent to it.',
+    PHONE_CODE_INVALID: 'The confirmation code is invalid or expired. Request a new one.',
 
     ORGANIZATION_NOT_FOUND: 'Organization not found.',
     CATEGORY_NOT_FOUND: 'Category not found.',
@@ -224,7 +230,9 @@ export const errorMessages: Record<ErrorCode, string> = {
     SLOT_NOT_FULL: 'The slot still has free capacity. Book it instead of joining the waitlist.',
     NEWS_SLUG_TAKEN: 'This slug is already used by another news item of the organization.',
     WEBHOOK_NOT_FOUND: 'Webhook not found.',
-    NOTIFICATION_TEMPLATE_NOT_FOUND: 'There is no notification with this key.',
+    CHANNEL_TEMPLATE_NOT_FOUND: 'There is no channel template with this key.',
+    NOTIFICATION_NOT_FOUND: 'Notification not found.',
+    CLIENT_NOT_FOUND: 'This user is not a client of the organization.',
     FIELDS_NOT_ALLOWED: 'One of the requested fields is not part of this response.',
     FAVORITES_LIMIT_REACHED: 'You already have the maximum number of favorites.',
 
@@ -237,6 +245,13 @@ export const errorMessages: Record<ErrorCode, string> = {
     SMS_BUDGET_EXCEEDED: 'The SMS sending budget for this period is exhausted. Try again later.',
     ARCHIVE_SERVICE_MISMATCH: 'The service belongs to a different organization.',
 };
+
+const INBOX_WHEN = '{{#date}} on {{date}}{{/date}}{{#time}} at {{time}}{{/time}}';
+const INBOX_TARGET = '{{#date}}{{date}}{{/date}}{{^date}}another date{{/date}}{{#time}} at {{time}}{{/time}}';
+const INBOX_PREVIOUS =
+    '{{#previous_date}} from {{previous_date}}{{#previous_time}} {{previous_time}}{{/previous_time}}{{/previous_date}}';
+const INBOX_REASON = '{{#reason}} Reason: {{reason}}{{/reason}}';
+const INBOX_CLIENT = '{{#name}}{{name}}{{/name}}{{^name}}A client{{/name}}{{#phone}} ({{phone}}){{/phone}}';
 
 export const texts = {
     sms: {
@@ -272,7 +287,7 @@ export const texts = {
             unknownOrganization: 'Deleted organization',
         },
     },
-    notifications: {
+    channels: {
         booking_created_mail: {
             subject: 'Smart City: new booking',
             body: [
@@ -364,7 +379,7 @@ export const texts = {
             ].join('\n'),
         },
     },
-    notificationSample: {
+    channelSample: {
         service: 'Passport consultation',
         date: '2026-10-15',
         time: '10:00',
@@ -378,8 +393,79 @@ export const texts = {
         name: 'Anna',
         calendar: true,
     },
+    inbox: {
+        booking_cancelled: {
+            title: 'Booking cancelled',
+            body: `{{organization}} cancelled {{service}}${INBOX_WHEN}.${INBOX_REASON}`,
+        },
+        booking_rejected: {
+            title: 'Booking request declined',
+            body: `{{organization}} declined your request for {{service}}${INBOX_WHEN}.${INBOX_REASON}`,
+        },
+        slot_cancelled: {
+            title: 'Booking cancelled',
+            body: `{{service}}${INBOX_WHEN} was cancelled: {{organization}} closed the slot.${INBOX_REASON}`,
+        },
+        booking_rescheduled: {
+            title: 'Booking moved',
+            body: `{{organization}} moved {{service}}${INBOX_PREVIOUS} to ${INBOX_TARGET}.${INBOX_REASON}`,
+        },
+        slot_moved: {
+            title: 'Booking moved',
+            body: `{{organization}} moved the whole slot: {{service}}${INBOX_PREVIOUS} is now ${INBOX_TARGET}.${INBOX_REASON}`,
+        },
+        booking_confirmed: {
+            title: 'Booking confirmed',
+            body: `{{organization}} confirmed {{service}}${INBOX_WHEN}.`,
+        },
+        booking_created_for_you: {
+            title: 'New booking',
+            body: `{{organization}} booked {{service}}${INBOX_WHEN} for you.`,
+        },
+        booking_reminder: {
+            title: 'Booking reminder',
+            body: `Reminder: {{service}}${INBOX_WHEN} at {{organization}}.`,
+        },
+        waitlist_slot_available: {
+            title: 'A place is free',
+            body: `A place is free for {{service}}${INBOX_WHEN}. Book it now.`,
+        },
+        booking_suspended: {
+            title: 'Booking suspended',
+            body: `{{#missed}}You missed {{missed}} bookings of {{service}}. {{/missed}}{{organization}} suspended booking {{service}} {{#until}}until {{until}}{{/until}}{{^until}}until it is lifted{{/until}}.${INBOX_REASON}`,
+        },
+        booking_suspension_lifted: {
+            title: 'Booking allowed again',
+            body: '{{organization}} lifted the suspension: you can book {{service}} again.',
+        },
+        organization_message: {
+            title: 'Message from {{organization}}',
+            body: '{{body}}',
+        },
+        client_booked: {
+            title: '{{#requires_action}}Booking request{{/requires_action}}{{^requires_action}}New booking{{/requires_action}}',
+            body: `${INBOX_CLIENT} booked {{service}}${INBOX_WHEN}.{{#requires_action}} The booking waits for confirmation.{{/requires_action}}`,
+        },
+        client_cancelled: {
+            title: 'Booking cancelled by the client',
+            body: `${INBOX_CLIENT} cancelled {{service}}${INBOX_WHEN}.`,
+        },
+        client_rescheduled: {
+            title: 'Booking moved by the client',
+            body: `${INBOX_CLIENT} moved {{service}}${INBOX_PREVIOUS} to ${INBOX_TARGET}.`,
+        },
+        callback_due: {
+            title: 'Call-back due',
+            body: `Call ${INBOX_CLIENT} back about {{service}}{{#date}} on {{date}}{{/date}}{{#time}}, {{time}}{{#end_time}}-{{end_time}}{{/end_time}}{{/time}}.`,
+        },
+        client_suspended: {
+            title: 'Client suspended',
+            body: `${INBOX_CLIENT} missed {{#missed}}{{missed}} {{/missed}}bookings of {{service}} and cannot book it {{#until}}until {{until}}{{/until}}{{^until}}until the suspension is lifted{{/until}}.`,
+        },
+    },
     defaults: {
         serviceLabel: 'Service',
+        copyLabel: (label: string): string => `${label} (copy)`,
         optionLabel: 'Online booking',
         slotLabel: 'Booking',
         dateSlotLabel: 'Booking by date',
@@ -396,5 +482,9 @@ export const texts = {
         untitledEvent: 'Booking',
         fileName: 'booking.ics',
         contentType: 'text/calendar; charset=utf-8',
+    },
+    bookingsExport: {
+        fileName: 'bookings.csv',
+        contentType: 'text/csv; charset=utf-8',
     },
 } as const;

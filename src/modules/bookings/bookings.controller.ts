@@ -13,6 +13,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { type Response } from 'express';
+import { PinoLogger } from 'nestjs-pino';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -25,6 +28,7 @@ import { texts } from '../../common/i18n/messages';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { BookingCalendarService, type CalendarToken } from '../services/booking-calendar.service';
+import { bookingsCsv } from '../services/booking-export';
 import { BookingsService } from '../services/bookings.service';
 import {
     type BookingResource,
@@ -37,6 +41,7 @@ import {
     CalendarFeedQueryDto,
     CalendarTokenResponseDto,
     calendarTokenResponseSchema,
+    ExportBookingsQueryDto,
     ListBookingsQueryDto,
     ListOwnBookingsQueryDto,
     ListServiceBookingsQueryDto,
@@ -55,7 +60,10 @@ export class BookingsController {
     constructor(
         private readonly bookings: BookingsService,
         private readonly calendar: BookingCalendarService,
-    ) {}
+        private readonly logger: PinoLogger,
+    ) {
+        this.logger.setContext(BookingsController.name);
+    }
 
     @Get('bookings')
     @Roles(...STAFF_ROLES)
@@ -74,6 +82,31 @@ export class BookingsController {
     @Serialize(bookingStatsResponseSchema)
     stats(@Query() query: BookingStatsQueryDto, @CurrentUser() user: AuthUser): Promise<BookingStats> {
         return this.bookings.stats(query, user);
+    }
+
+    @Get('bookings/export.csv')
+    @Roles(...STAFF_ROLES)
+    @ApiProduces('text/csv')
+    @ApiOkResponse({ schema: { type: 'string' } })
+    @ApiErrors('FORBIDDEN')
+    async export(
+        @Query() query: ExportBookingsQueryDto,
+        @CurrentUser() user: AuthUser,
+        @Res() res: Response,
+    ): Promise<void> {
+        const rows = Readable.from(bookingsCsv(this.bookings.export(query, user)));
+        res.setHeader('Content-Type', texts.bookingsExport.contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${texts.bookingsExport.fileName}"`);
+        res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+
+        try {
+            await pipeline(rows, res);
+        } catch (error) {
+            if (!res.headersSent) throw error;
+
+            if ((error as { code?: string }).code !== 'ERR_STREAM_PREMATURE_CLOSE')
+                this.logger.error({ err: error }, 'bookings export aborted');
+        }
     }
 
     @Get('me/bookings')

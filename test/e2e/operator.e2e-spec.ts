@@ -62,6 +62,17 @@ describe('operator role (e2e)', () => {
         ).toBe(200);
     });
 
+    it('lists the clients of its organization and writes to them', async () => {
+        const clients = await as('get', `/organizations/${organization.id}/clients`);
+        expect(clients.body.data.map((row: { user_id: string }) => row.user_id)).toEqual([client.id]);
+
+        const sent = await as('post', `/organizations/${organization.id}/messages`).send({
+            user_id: client.id,
+            body: 'Please bring your passport.',
+        });
+        expect(sent.status).toBe(201);
+    });
+
     it('cancels the bookings of a slot but may not remove the slot', async () => {
         const path = `/services/${serviceId}/options/${option.id}/slots/${option.slot_id}/cancel`;
 

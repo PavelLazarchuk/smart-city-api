@@ -2,15 +2,15 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { type HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 import { baseSchemaOptions } from '../../../common/database/schema-options';
-import { NOTIFICATION_KEYS, type NotificationKey } from '../notification-catalogue';
+import { CHANNEL_TEMPLATE_KEYS, type ChannelTemplateKey } from '../channel-catalogue';
 
-@Schema(baseSchemaOptions('notification_templates'))
-export class NotificationTemplate {
+@Schema(baseSchemaOptions('channel_templates'))
+export class ChannelTemplate {
     @Prop({ type: SchemaTypes.ObjectId, required: true })
     organization_id!: Types.ObjectId;
 
-    @Prop({ type: String, enum: NOTIFICATION_KEYS, required: true })
-    key!: NotificationKey;
+    @Prop({ type: String, enum: CHANNEL_TEMPLATE_KEYS, required: true })
+    key!: ChannelTemplateKey;
 
     @Prop({ type: String, default: null })
     subject!: string | null;
@@ -22,9 +22,9 @@ export class NotificationTemplate {
     updated_by!: Types.ObjectId | null;
 }
 
-export type NotificationTemplateDocument = HydratedDocument<NotificationTemplate>;
-export const NotificationTemplateSchema = SchemaFactory.createForClass(NotificationTemplate);
-NotificationTemplateSchema.index(
+export type ChannelTemplateDocument = HydratedDocument<ChannelTemplate>;
+export const ChannelTemplateSchema = SchemaFactory.createForClass(ChannelTemplate);
+ChannelTemplateSchema.index(
     { organization_id: 1, key: 1 },
     { unique: true, name: 'unique_template_per_organization' },
 );

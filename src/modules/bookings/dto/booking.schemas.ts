@@ -51,7 +51,7 @@ const dateRange = {
 
 export const bookingStatusFilterSchema = z.enum([...BOOKING_STATUSES, 'active', 'all']).optional();
 
-export const listBookingsQuerySchema = paginationQuerySchema.extend({
+const bookingFilters = {
     organization_id: objectIdSchema.optional(),
     service_id: objectIdSchema.optional(),
     user_id: objectIdSchema.optional(),
@@ -60,9 +60,15 @@ export const listBookingsQuerySchema = paginationQuerySchema.extend({
     child_type: z.enum(SLOT_TYPES).optional(),
     status: bookingStatusFilterSchema,
     ...dateRange,
-});
+};
+
+export const listBookingsQuerySchema = paginationQuerySchema.extend(bookingFilters);
 export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
 export class ListBookingsQueryDto extends createZodDto(listBookingsQuerySchema) {}
+
+export const exportBookingsQuerySchema = z.object(bookingFilters);
+export type ExportBookingsQuery = z.infer<typeof exportBookingsQuerySchema>;
+export class ExportBookingsQueryDto extends createZodDto(exportBookingsQuerySchema) {}
 
 export const listOwnBookingsQuerySchema = paginationQuerySchema.extend({
     status: bookingStatusFilterSchema,

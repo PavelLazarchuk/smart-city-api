@@ -9,6 +9,14 @@ import { Booking, type BookingStatus } from './schemas/booking.schema';
 
 export type BookingEntity = Lean<Booking>;
 
+export interface OrganizationClientRow {
+    user_id: Types.ObjectId;
+    name: string;
+    phone: string;
+    bookings: number;
+    last_booking_at: Date;
+}
+
 export interface BookingStatusCounts {
     total: number;
     by_status: Record<BookingStatus, number>;
@@ -395,6 +403,15 @@ export class BookingsRepository extends BaseRepository<Booking> {
             .cursor({ batchSize: 200 });
     }
 
+    iterate(filter: FilterQuery<Booking>): AsyncIterable<BookingEntity> {
+        return this.model
+            .find(filter)
+            .sort({ slot_date: 1, slot_time: 1, created_at: 1, _id: 1 })
+            .allowDiskUse(true)
+            .lean<BookingEntity>()
+            .cursor({ batchSize: 500 });
+    }
+
     findDueReminders(from: Date, to: Date, limit: number): Promise<BookingEntity[]> {
         return this.model
             .find({ active: true, starts_at: { $gt: from, $lte: to }, reminder_sent_at: null })
@@ -412,6 +429,62 @@ export class BookingsRepository extends BaseRepository<Booking> {
             .exec();
 
         return result.modifiedCount;
+    }
+
+    hasClient(organizationId: string, userId: string): Promise<boolean> {
+        return this.exists({
+            user_id: new Types.ObjectId(userId),
+            organization_id: new Types.ObjectId(organizationId),
+        });
+    }
+
+    async clientsOf(
+        organizationId: string,
+        search: string | undefined,
+        skip: number,
+        limit: number,
+    ): Promise<{ items: OrganizationClientRow[]; total: number }> {
+        const pattern = search ? new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+        const [result] = await this.aggregate<{ items: OrganizationClientRow[]; total: { count: number }[] }>(
+            [
+                { $match: { organization_id: new Types.ObjectId(organizationId) } },
+                { $sort: { created_at: -1 } },
+                {
+                    $group: {
+                        _id: '$user_id',
+                        person: { $first: '$person' },
+                        phone: { $first: '$phone' },
+                        bookings: { $sum: 1 },
+                        last_booking_at: { $first: '$created_at' },
+                    },
+                },
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: '_id',
+                        foreignField: '_id',
+                        pipeline: [{ $project: { name: 1, phone: 1 } }],
+                        as: 'user',
+                    },
+                },
+                { $unwind: '$user' },
+                {
+                    $project: {
+                        _id: 0,
+                        user_id: '$_id',
+                        name: { $ifNull: ['$user.name', '$person'] },
+                        phone: { $ifNull: ['$user.phone', '$phone'] },
+                        bookings: 1,
+                        last_booking_at: 1,
+                    },
+                },
+                ...(pattern ? [{ $match: { $or: [{ name: pattern }, { phone: pattern }] } }] : []),
+                { $sort: { last_booking_at: -1, user_id: -1 } },
+                { $facet: { items: [{ $skip: skip }, { $limit: limit }], total: [{ $count: 'count' }] } },
+            ],
+        );
+
+        return { items: result?.items ?? [], total: result?.total[0]?.count ?? 0 };
     }
 
     async countByStatus(filter: FilterQuery<Booking>): Promise<BookingStatusCounts> {

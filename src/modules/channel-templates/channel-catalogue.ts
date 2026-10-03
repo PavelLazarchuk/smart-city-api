@@ -1,7 +1,7 @@
 import { texts } from '../../common/i18n/messages';
 import { type OutboxEventType } from '../../common/outbox/schemas/outbox-event.schema';
 
-export const NOTIFICATION_KEYS = [
+export const CHANNEL_TEMPLATE_KEYS = [
     'booking_created_mail',
     'booking_reminder_mail',
     'booking_reminder_sms',
@@ -15,20 +15,20 @@ export const NOTIFICATION_KEYS = [
     'booking_suspended_sms',
     'callback_due_mail',
 ] as const;
-export type NotificationKey = (typeof NOTIFICATION_KEYS)[number];
+export type ChannelTemplateKey = (typeof CHANNEL_TEMPLATE_KEYS)[number];
 
-export const NOTIFICATION_CHANNELS = ['mail', 'sms'] as const;
-export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+export const CHANNELS = ['mail', 'sms'] as const;
+export type Channel = (typeof CHANNELS)[number];
 
-export interface NotificationDefinition {
+export interface ChannelTemplateDefinition {
     event: OutboxEventType;
-    channel: NotificationChannel;
+    channel: Channel;
     variables: readonly string[];
 }
 
 const SLOT = ['service', 'date', 'time', 'end_time'] as const;
 
-export const NOTIFICATIONS: Record<NotificationKey, NotificationDefinition> = {
+export const CHANNEL_TEMPLATES: Record<ChannelTemplateKey, ChannelTemplateDefinition> = {
     booking_created_mail: {
         event: 'booking.created',
         channel: 'mail',
@@ -79,6 +79,6 @@ export const NOTIFICATIONS: Record<NotificationKey, NotificationDefinition> = {
     },
 };
 
-export function defaultTemplate(key: NotificationKey): { subject: string | null; body: string } {
-    return texts.notifications[key];
+export function defaultTemplate(key: ChannelTemplateKey): { subject: string | null; body: string } {
+    return texts.channels[key];
 }

@@ -1,4 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { type ClientSession, type FilterQuery, type ProjectionType, Types } from 'mongoose';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
@@ -12,6 +13,7 @@ import { texts } from '../../common/i18n/messages';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { slugify, uniqueSlug } from '../../common/slug';
+import { LABEL_MAX_LENGTH } from '../../common/zod/primitives';
 import { dateOnlyIn, instantIn, isoAtIn, isoIn, shiftDateOnly, timeOfDayIn } from '../../common/time/zone';
 import { BookingsRepository } from '../bookings/bookings.repository';
 import { CategoriesService } from '../categories/categories.service';
@@ -19,6 +21,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import {
     type AvailabilityQuery,
     type AvailabilityResponse,
+    type CloneServiceInput,
     type CreateServiceInput,
     type GetServiceQuery,
     type ListServicesQuery,
@@ -85,6 +88,19 @@ function byStart(left: SlotCandidate, right: SlotCandidate): number {
 const RANGE_FIELDS = ['from', 'to', 'step_minutes', 'min_minutes', 'max_minutes'] as const;
 const REVISION_IGNORED = new Set(['updated_at', 'created_at', '_id']);
 const DUPLICATE_KEY = 11000;
+const CLONE_OMITTED = new Set([
+    '_id',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+    'position',
+    'label',
+    'slug',
+    'status',
+    'enabled',
+    'published_at',
+    'options',
+]);
 
 export type ServiceTreeEntity = ServiceTree<ServiceEntity>;
 
@@ -621,6 +637,61 @@ export class ServicesService implements OnModuleInit {
 
             for (const { option, slots } of options)
                 await this.insertSlots(service, option.id, slots, ctx.session);
+
+            const tree = await this.load(service._id.toHexString(), ctx.session);
+            await this.record(tree, 'create', null, tree, viewer, ctx.session);
+
+            return tree;
+        });
+
+        return this.presented(created, viewer);
+    }
+
+    async clone(id: string, input: CloneServiceInput, viewer?: AuthUser): Promise<ServiceTreeEntity> {
+        const source = await this.services.findById(id);
+
+        if (!source || source.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
+
+        const label = input.label ?? texts.defaults.copyLabel(source.label).slice(0, LABEL_MAX_LENGTH);
+        const slug = await this.resolveSlug(source.organization_id, input.slug, label);
+        const position = await this.services.nextPosition(
+            source.organization_id.toHexString(),
+            source.category_id ? source.category_id.toHexString() : null,
+        );
+        const optionIds = new Map(source.options.map((option) => [option.id, randomUUID()]));
+        const infoSlots = (await this.slots.findByServiceExcept(source._id, BOOKABLE_SLOT_TYPES)).filter(
+            (slot) => optionIds.has(slot.option_id),
+        );
+        const settings = Object.fromEntries(
+            Object.entries(source).filter(([key]) => !CLONE_OMITTED.has(key)),
+        ) as Partial<Service>;
+        const created = await this.tx.run(async (ctx) => {
+            const service = await this.services.create(
+                {
+                    ...settings,
+                    position,
+                    label,
+                    slug,
+                    status: 'draft',
+                    enabled: false,
+                    published_at: null,
+                    deleted_at: null,
+                    options: source.options.map((option) => ({ ...option, id: optionIds.get(option.id)! })),
+                },
+                ctx.session,
+            );
+
+            for (const [sourceOptionId, optionId] of optionIds) {
+                const slots = infoSlots
+                    .filter((slot) => slot.option_id === sourceOptionId)
+                    .map((slot) => ({
+                        id: randomUUID(),
+                        label: slot.label,
+                        child_type: slot.child_type,
+                        value: slot.value,
+                    }));
+                await this.insertSlots(service, optionId, slots, ctx.session);
+            }
 
             const tree = await this.load(service._id.toHexString(), ctx.session);
             await this.record(tree, 'create', null, tree, viewer, ctx.session);

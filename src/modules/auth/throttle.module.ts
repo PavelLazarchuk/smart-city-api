@@ -57,7 +57,11 @@ function storageFor(
                         name: 'auth',
                         ttl: config.throttle.ttlSeconds * 1000,
                         limit: config.throttle.limit,
-                        skipIf: (context) => !pathOf(context).includes('/auth/'),
+                        skipIf: (context) => {
+                            const path = pathOf(context);
+
+                            return !path.includes('/auth/') && !path.endsWith('/me/phone/code');
+                        },
                     },
                     {
                         name: 'phone',

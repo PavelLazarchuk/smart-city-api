@@ -32,7 +32,8 @@ import { HealthModule } from './modules/health/health.module';
 import { ImagesModule } from './modules/images/images.module';
 import { InfoSectionsModule } from './modules/infosections/infosections.module';
 import { NewsModule } from './modules/news/news.module';
-import { NotificationTemplatesModule } from './modules/notification-templates/notification-templates.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ChannelTemplatesModule } from './modules/channel-templates/channel-templates.module';
 import { OrganizationsHttpModule } from './modules/organizations/organizations-http.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { ServicesModule } from './modules/services/services.module';
@@ -70,7 +71,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
         SmsModule,
         SmsHttpModule,
         WebhooksModule,
-        NotificationTemplatesModule,
+        ChannelTemplatesModule,
+        NotificationsModule,
         JobsModule,
     ],
     providers: [

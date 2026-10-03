@@ -738,6 +738,13 @@ export const nearbyQuerySchema = z.object({
 export type NearbyQuery = z.infer<typeof nearbyQuerySchema>;
 export class NearbyQueryDto extends createZodDto(nearbyQuerySchema) {}
 
+export const cloneServiceSchema = z.object({
+    label: labelSchema.optional(),
+    slug: slugSchema.optional(),
+});
+export type CloneServiceInput = z.infer<typeof cloneServiceSchema>;
+export class CloneServiceDto extends createZodDto(cloneServiceSchema) {}
+
 export const setServiceStatusSchema = z.object({ status: z.enum(SERVICE_STATUSES) });
 export class SetServiceStatusDto extends createZodDto(setServiceStatusSchema) {}
 

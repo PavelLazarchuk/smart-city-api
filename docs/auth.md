@@ -13,12 +13,18 @@ An `operator` works the bookings of their organizations — lists, statistics, s
 cancellations, booking `on_behalf`, waitlists, suspensions, cancelling or moving a whole slot (but not
 `remove: true`, which deletes it) — and manages news, their order and image uploads. Everything else that
 changes the catalogue (services, options, slots, recurrence, categories, info sections, the organization,
-image deletion) stays with `common-admin`, as do webhooks, the outbox, notification templates and archives. For reading, an operator
+image deletion) stays with `common-admin`, as do webhooks, the outbox, channel templates and archives. For reading, an operator
 sees what a `common-admin` of the same organization sees: booking details, drafts and scheduled news. Routes
 name their roles through the groups in
 [roles.decorator.ts](../src/common/decorators/roles.decorator.ts) — `ADMIN_ROLES`, `STAFF_ROLES`,
 `ORGANIZATION_ROLES` — and a role missing from a route's list is refused, so a new role starts with no access.
 Operators sign in like admins (`AUTH_ADMIN_LOGIN_METHOD`) and only a super-admin creates them.
+
+`/me/notifications` is open to every signed-in account and only ever shows the caller's own rows, plus — for an
+`operator` or `common-admin` — the shared staff rows of the organizations in their current `organization_ids`.
+Writing to a client (`POST /organizations/:id/messages`) and the client list behind it
+(`GET /organizations/:id/clients`) are `STAFF_ROLES` within the organization scope; the client sees the
+organization as the sender, never the staff member.
 
 Two rules protect the platform from lock-out and privilege drift: the last `super-admin` cannot be deleted
 or demoted (`409 LAST_SUPER_ADMIN`), and nobody may change their own role (`422 SELF_ROLE_CHANGE`).
@@ -57,6 +63,22 @@ reveal who is registered.
 `OTP_ATTEMPTS_EXCEEDED` beyond `OTP_MAX_ATTEMPTS`, and consumes the record atomically — a code works once.
 The record is removed by a TTL index on `expires_at`.
 
+Every code carries a `purpose`: `login` for the two endpoints above, `phone_change` for the profile flow below,
+which also binds the code to the requesting account. A code of one purpose is never accepted by the other, and
+the attempt budget carries over per phone and purpose.
+
+## Own profile
+
+`PATCH /me` changes the caller's `name`, `email` (`null` clears it) and `phone`. A new phone is a sign-in
+identifier, so it needs proof of ownership: `POST /me/phone/code` with `{ "phone" }` sends a `phone_change` code
+to the new number, and `PATCH /me` with `{ "phone", "code" }` applies it. Without a code the answer is
+`422 PHONE_CODE_REQUIRED`, a wrong, expired, foreign or exhausted code is `422 PHONE_CODE_INVALID` (not a `401`,
+so a client does not mistake it for a dead session). A number another account already uses gets no SMS but the
+same answer and the same argon2 cost, so the endpoint does not enumerate accounts; the change then fails on the
+code. A successful change revokes every other session of the account and drops the codes of the old number.
+`POST /me/phone/code` sits under the strict `THROTTLE_LIMIT` like `/auth/*`, and `PATCH /me` with a `phone`
+under the per-phone limit.
+
 ## Tokens and sessions
 
 A successful login returns an access/refresh pair:
@@ -89,22 +111,24 @@ sessions.
 
 Both `POST /auth/register` and `POST /auth/otp/verify` take an optional `email`. It is stored on the account
 as a contact address, never as a login identifier: it is not unique, it is not verified, and no sign-in method
-uses it. `PATCH /users/:id` changes it later, `"email": null` clears it. When it is set, booking reminders and
+uses it. `PATCH /me` (or `PATCH /users/:id`) changes it later, `"email": null` clears it. When it is set, booking reminders and
 freed-place notices go to it instead of by SMS.
 
 ## Endpoints
 
-| Endpoint                                           | Purpose                                       |
-| -------------------------------------------------- | --------------------------------------------- |
-| `POST /auth/login`                                 | Password login (login or phone as identifier) |
-| `POST /auth/register`                              | Client self-registration                      |
-| `POST /auth/otp/request` / `POST /auth/otp/verify` | One-time code login                           |
-| `POST /auth/refresh`                               | Rotate the token pair                         |
-| `POST /auth/logout` / `POST /auth/logout-all`      | Revoke this session / every other session     |
-| `GET /auth/me`                                     | The current principal                         |
-| `GET /auth/sessions`                               | The account's own devices                     |
-| `DELETE /auth/sessions/:sid`                       | Sign one device out                           |
-| `PATCH /auth/password`                             | Change own password                           |
+| Endpoint                                           | Purpose                                        |
+| -------------------------------------------------- | ---------------------------------------------- |
+| `POST /auth/login`                                 | Password login (login or phone as identifier)  |
+| `POST /auth/register`                              | Client self-registration                       |
+| `POST /auth/otp/request` / `POST /auth/otp/verify` | One-time code login                            |
+| `POST /auth/refresh`                               | Rotate the token pair                          |
+| `POST /auth/logout` / `POST /auth/logout-all`      | Revoke this session / every other session      |
+| `GET /auth/me`                                     | The current principal                          |
+| `GET /auth/sessions`                               | The account's own devices                      |
+| `DELETE /auth/sessions/:sid`                       | Sign one device out                            |
+| `PATCH /auth/password`                             | Change own password                            |
+| `PATCH /me`                                        | Change own name, e-mail or (with a code) phone |
+| `POST /me/phone/code`                              | Send a code to the new phone                   |
 
 ## How a route is authorised
 

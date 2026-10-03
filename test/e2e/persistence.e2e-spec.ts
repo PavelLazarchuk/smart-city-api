@@ -18,6 +18,8 @@ const timezoneMigration =
     require('../../migrations/20260922000000-organization-timezone-and-booking-start.js') as Migration;
 const slotsMigration = require('../../migrations/20260922100000-slots-collection.js') as Migration;
 const subtypesMigration = require('../../migrations/20260927000000-slot-subtypes.js') as Migration;
+const channelTemplatesMigration =
+    require('../../migrations/20261002100000-rename-notification-templates.js') as Migration;
 const migrations: Migration[] = [
     require('../../migrations/20260905000000-initial-indexes.js') as Migration,
     require('../../migrations/20260911000000-bookings-collection.js') as Migration,
@@ -30,6 +32,8 @@ const migrations: Migration[] = [
     require('../../migrations/20260925000000-favorites-calendar-and-tracing.js') as Migration,
     subtypesMigration,
     require('../../migrations/20261001000000-booking-suspensions.js') as Migration,
+    channelTemplatesMigration,
+    require('../../migrations/20261003000000-notifications.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -69,6 +73,8 @@ const MODEL_BY_COLLECTION: Record<string, string> = {
     service_revisions: 'ServiceRevision',
     slots: 'Slot',
     booking_suspensions: 'BookingSuspension',
+    channel_templates: 'ChannelTemplate',
+    notifications: 'Notification',
 };
 
 describe('persistence (e2e)', () => {
@@ -338,6 +344,32 @@ describe('persistence (e2e)', () => {
             ]);
             expect(await db.listCollections({ name: 'slots' }).toArray()).toEqual([]);
             await Promise.all(Object.values(t.connection.models).map((model) => model.syncIndexes()));
+        });
+
+        it('moves the notification templates into channel_templates without losing the rows already there', async () => {
+            const db = t.connection.db!;
+            const organizationId = new Types.ObjectId();
+            await db.collection('notification_templates').insertMany([
+                { organization_id: organizationId, key: 'booking_reminder_sms', body: 'old' },
+                { organization_id: organizationId, key: 'booking_moved_sms', body: 'old' },
+            ]);
+            await db
+                .collection('channel_templates')
+                .insertOne({ organization_id: organizationId, key: 'booking_reminder_sms', body: 'new' });
+
+            await channelTemplatesMigration.up(db);
+            await channelTemplatesMigration.up(db);
+
+            expect(await db.listCollections({ name: 'notification_templates' }).toArray()).toEqual([]);
+            const rows = await db
+                .collection<{ key: string; body: string }>('channel_templates')
+                .find({})
+                .sort({ key: 1 })
+                .toArray();
+            expect(rows.map((row) => [row.key, row.body])).toEqual([
+                ['booking_moved_sms', 'old'],
+                ['booking_reminder_sms', 'new'],
+            ]);
         });
 
         it('turns every delivery slot into pickup and gives old bookings the interval and address fields', async () => {

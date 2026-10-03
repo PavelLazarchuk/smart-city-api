@@ -4,7 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MailModule } from '../../integrations/mail/mail.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { CategoriesModule } from '../categories/categories.module';
-import { NotificationTemplatesModule } from '../notification-templates/notification-templates.module';
+import { ChannelTemplatesModule } from '../channel-templates/channel-templates.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { SlotsModule } from '../slots/slots.module';
 import { SmsModule } from '../sms/sms.module';
@@ -34,7 +34,7 @@ import { SuspensionsService } from './suspensions.service';
         MailModule,
         SmsModule,
         UsersModule,
-        NotificationTemplatesModule,
+        ChannelTemplatesModule,
     ],
     controllers: [ServicesController],
     providers: [

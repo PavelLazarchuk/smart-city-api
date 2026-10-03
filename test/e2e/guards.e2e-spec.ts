@@ -413,7 +413,7 @@ describe('cross-cutting guards (e2e)', () => {
                 },
                 {
                     method: 'get',
-                    path: `/organizations/${organization.id}/notification-templates`,
+                    path: `/organizations/${organization.id}/channel-templates`,
                     expected: {
                         anonymous: 401,
                         client: 403,
@@ -425,7 +425,7 @@ describe('cross-cutting guards (e2e)', () => {
                 },
                 {
                     method: 'post',
-                    path: `/organizations/${organization.id}/notification-templates/booking_reminder_sms/preview`,
+                    path: `/organizations/${organization.id}/channel-templates/booking_reminder_sms/preview`,
                     body: {},
                     expected: {
                         anonymous: 401,
@@ -434,6 +434,43 @@ describe('cross-cutting guards (e2e)', () => {
                         admin: 200,
                         foreign: 404,
                         super: 200,
+                    },
+                },
+                {
+                    method: 'get',
+                    path: '/me/notifications',
+                    expected: {
+                        anonymous: 401,
+                        client: 200,
+                        operator: 200,
+                        admin: 200,
+                        foreign: 200,
+                        super: 200,
+                    },
+                },
+                {
+                    method: 'get',
+                    path: `/organizations/${organization.id}/clients`,
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 200,
+                        admin: 200,
+                        foreign: 404,
+                        super: 200,
+                    },
+                },
+                {
+                    method: 'post',
+                    path: `/organizations/${organization.id}/messages`,
+                    body: {},
+                    expected: {
+                        anonymous: 401,
+                        client: 403,
+                        operator: 400,
+                        admin: 400,
+                        foreign: 404,
+                        super: 400,
                     },
                 },
                 {

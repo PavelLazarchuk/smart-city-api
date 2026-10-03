@@ -1,7 +1,7 @@
 import { createCategorySchema } from '../../modules/categories/dto/category.schemas';
 import { createInfoSectionSchema } from '../../modules/infosections/dto/infosection.schemas';
 import { createNewsSchema } from '../../modules/news/dto/news.schemas';
-import { linkUrlSchema, richTextSchema, safeLinkSchema, urlSchema } from './primitives';
+import { linkUrlSchema, plainTextSchema, richTextSchema, safeLinkSchema, urlSchema } from './primitives';
 
 describe('safeLinkSchema', () => {
     it.each(['https://a.b/x.png', 'http://a.b', '/uploads/x.png', ''])('accepts %j', (value) => {
@@ -103,5 +103,20 @@ describe('sanitized input schemas', () => {
         });
 
         expect(result.success).toBe(true);
+    });
+});
+
+describe('plainTextSchema', () => {
+    it('keeps markup as text, drops control characters and normalizes line breaks', () => {
+        expect(plainTextSchema(100).parse('  <b>Room</b>\r\n214\u0007 ')).toBe('<b>Room</b>\n214');
+    });
+
+    it('folds a single-line value onto one line', () => {
+        expect(plainTextSchema(100, false).parse(' Room\n\tchange ')).toBe('Room change');
+    });
+
+    it('rejects a value that is empty after cleaning or too long', () => {
+        expect(plainTextSchema(100).safeParse(' \u0000 ').success).toBe(false);
+        expect(plainTextSchema(3).safeParse('abcd').success).toBe(false);
     });
 });

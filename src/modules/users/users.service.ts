@@ -25,6 +25,7 @@ import { type UserEntity, UsersRepository } from './users.repository';
 import { type User } from './schemas/user.schema';
 
 const LOGIN_MIN_LENGTH = 6;
+const DUPLICATE_KEY = 11000;
 const CALENDAR_TOKEN_BYTES = 32;
 
 function calendarTokenHash(token: string): string {
@@ -192,8 +193,8 @@ export class UsersService implements OnModuleInit {
         return this.users.findOne({ calendar_token_hash: calendarTokenHash(token) });
     }
 
-    async updateSelf(id: string, input: UpdateSelfInput): Promise<UserEntity> {
-        await this.getById(id);
+    async updateSelf(id: string, input: UpdateSelfInput & { phone?: string }): Promise<UserEntity> {
+        const existing = await this.getById(id);
         const set: Record<string, unknown> = {};
         const unset: string[] = [];
 
@@ -204,7 +205,21 @@ export class UsersService implements OnModuleInit {
             else set['email'] = input.email;
         }
 
-        const updated = await this.users.updateFields(id, set, unset);
+        if (input.phone !== undefined && input.phone !== existing.phone) {
+            this.phonePolicy.assertSupported(input.phone);
+            await this.assertUnique(undefined, input.phone, id);
+            set['phone'] = input.phone;
+        }
+
+        let updated: UserEntity | null;
+
+        try {
+            updated = await this.users.updateFields(id, set, unset);
+        } catch (error) {
+            if ((error as { code?: number }).code === DUPLICATE_KEY) throw ApiError.conflict('PHONE_TAKEN');
+
+            throw error;
+        }
 
         if (!updated) throw ApiError.notFound('USER_NOT_FOUND');
 

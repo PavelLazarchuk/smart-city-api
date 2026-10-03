@@ -73,7 +73,11 @@ two handlers, `mail` and `sms`, which read the recipient captured in the event's
 when the account has an `email`, the SMS one only when it has none, so exactly one channel is used per event
 and a mail failure is retried as mail rather than turning into an SMS. `booking.cancelled` and
 `booking.rescheduled` have the same pair, and they act only on an event a bulk slot operation marked as
-announced in `internal`, so a client who cancels their own booking is not told about it. Every target is retried on its own with
+announced in `internal`, so a client who cancels their own booking is not told about it. Every booking and
+suspension event also has `handler:inbox`, which writes the in-app notifications
+([data-model.md](data-model.md#notifications)); to tell the client's actions from the staff's it reads
+`internal.actor` (`{ id, kind: client | staff }`, absent when the system acted), and for the staff text the
+client's `person` and `phone`, both also in `internal`. Every target is retried on its own with
 exponential backoff up to `OUTBOX.maxAttempts`; an event is `failed` only once the budget is spent, and
 `POST /outbox/events/:id/replay` puts it back. The `outbox_dispatch` job is the safety net for retries and for
 a replica that died between commit and poke.

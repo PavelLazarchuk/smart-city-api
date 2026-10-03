@@ -19,6 +19,7 @@ import {
     type BookingResource,
     type BookingStats,
     type BookingStatsQuery,
+    type ExportBookingsQuery,
     type JoinWaitlistInput,
     type ListBookingsQuery,
     type ListOwnBookingsQuery,
@@ -36,12 +37,12 @@ import { type WaitlistEntry } from '../bookings/schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
-import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
+import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
 import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import { BookingCalendarService } from './booking-calendar.service';
-import { eventPayload, notice, organizationOf, recipientEmail, text } from './booking-events';
+import { eventActor, eventPayload, notice, organizationOf, recipientEmail, text } from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
 import {
@@ -137,6 +138,23 @@ function toResource(booking: BookingEntity, cancelDeadlineMinutes?: number | nul
     };
 }
 
+function scoped(filter: FilterQuery<Booking>, query: DateRange & StatusFilter): FilterQuery<Booking> {
+    const result: FilterQuery<Booking> = { ...filter };
+    const status = query.status ?? 'active';
+
+    if (status === 'active') result['active'] = true;
+    else if (status !== 'all') result['status'] = status;
+
+    if (query.date_from || query.date_to) {
+        result['slot_date'] = {
+            ...(query.date_from ? { $gte: query.date_from } : {}),
+            ...(query.date_to ? { $lte: query.date_to } : {}),
+        };
+    }
+
+    return result;
+}
+
 function toWaitlistResource(entry: WaitlistEntryEntity): WaitlistEntryResource {
     return {
         id: entry.id,
@@ -176,7 +194,7 @@ export class BookingsService implements OnModuleInit {
         private readonly users: UsersService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
-        private readonly templates: NotificationTemplatesService,
+        private readonly templates: ChannelTemplatesService,
         private readonly outbox: OutboxService,
         private readonly masker: ServicesMasker,
         private readonly calendar: BookingCalendarService,
@@ -391,6 +409,7 @@ export class BookingsService implements OnModuleInit {
                 subscribe: service.value.subscribe,
                 person: booking.person,
                 phone: booking.phone,
+                actor: { id: actor.id, kind: input.on_behalf ? 'staff' : 'client' },
             });
 
             return {
@@ -425,6 +444,14 @@ export class BookingsService implements OnModuleInit {
     }
 
     list(query: ListBookingsQuery, actor: AuthUser): Promise<PaginatedResult<BookingResource>> {
+        return this.paginate(this.filterOf(query, actor), query);
+    }
+
+    export(query: ExportBookingsQuery, actor: AuthUser): AsyncIterable<BookingEntity> {
+        return this.bookings.iterate(scoped(this.filterOf(query, actor), query));
+    }
+
+    private filterOf(query: ExportBookingsQuery, actor: AuthUser): FilterQuery<Booking> {
         const filter: FilterQuery<Booking> = this.organizationScope(query.organization_id, actor);
 
         if (query.service_id) filter['service_id'] = new Types.ObjectId(query.service_id);
@@ -437,7 +464,7 @@ export class BookingsService implements OnModuleInit {
 
         if (query.child_type) filter['child_type'] = query.child_type;
 
-        return this.paginate(filter, query);
+        return filter;
     }
 
     listOwn(query: ListOwnBookingsQuery, actor: AuthUser): Promise<PaginatedResult<BookingResource>> {
@@ -500,20 +527,7 @@ export class BookingsService implements OnModuleInit {
             sortable: BOOKING_SORTABLE,
             defaultSort: 'created_at',
         });
-        const scoped: FilterQuery<Booking> = { ...filter };
-        const status = query.status ?? 'active';
-
-        if (status === 'active') scoped['active'] = true;
-        else if (status !== 'all') scoped['status'] = status;
-
-        if (query.date_from || query.date_to) {
-            scoped['slot_date'] = {
-                ...(query.date_from ? { $gte: query.date_from } : {}),
-                ...(query.date_to ? { $lte: query.date_to } : {}),
-            };
-        }
-
-        const result = await this.bookings.list(scoped, pagination);
+        const result = await this.bookings.list(scoped(filter, query), pagination);
         const deadlines = await this.repository.cancelDeadlines([
             ...new Set(result.items.map((booking) => booking.service_id.toHexString())),
         ]);
@@ -597,7 +611,7 @@ export class BookingsService implements OnModuleInit {
 
             if (!moved) throw ApiError.conflict('CONFLICT');
 
-            await this.emit(ctx, 'booking.status_changed', moved, undefined, {
+            await this.emit(ctx, 'booking.status_changed', moved, this.trail(booking, actor), {
                 previous_status: booking.status,
             });
             await this.suspensions.onStatusChanged(moved, booking.status, actor, ctx);
@@ -630,7 +644,7 @@ export class BookingsService implements OnModuleInit {
 
             if (!moved) throw ApiError.conflict('CONFLICT');
 
-            await this.emit(ctx, 'booking.status_changed', moved, undefined, {
+            await this.emit(ctx, 'booking.status_changed', moved, this.trail(booking, actor), {
                 previous_status: booking.status,
             });
 
@@ -712,7 +726,7 @@ export class BookingsService implements OnModuleInit {
             if (!updated) throw ApiError.notFound('BOOKING_NOT_FOUND');
 
             await this.notifyWaitlist(booking, ctx);
-            await this.emit(ctx, 'booking.rescheduled', updated, undefined, {
+            await this.emit(ctx, 'booking.rescheduled', updated, this.trail(booking, actor), {
                 previous: {
                     option_id: booking.option_id,
                     slot_id: booking.slot_id,
@@ -753,8 +767,9 @@ export class BookingsService implements OnModuleInit {
 
         await this.releaseCapacity(booking, ctx.session);
         await this.notifyWaitlist(booking, ctx);
-        await this.emit(ctx, 'booking.cancelled', moved, undefined, {
+        await this.emit(ctx, 'booking.cancelled', moved, this.trail(booking, actor), {
             cancelled_by: actor.id === booking.user_id.toHexString() ? 'owner' : 'admin',
+            previous_status: booking.status,
         });
 
         return moved;
@@ -1133,6 +1148,10 @@ export class BookingsService implements OnModuleInit {
                   );
 
         if (!accepted) throw ApiError.unprocessable('SLOT_FULL');
+    }
+
+    private trail(booking: BookingEntity, actor: AuthUser): Record<string, unknown> {
+        return { actor: eventActor(actor, booking), person: booking.person, phone: booking.phone };
     }
 
     private async emit(

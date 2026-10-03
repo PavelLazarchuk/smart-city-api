@@ -86,8 +86,6 @@ export const envSchema = z
 
         MONGO_URI: z.string().min(1),
         MONGO_MAX_POOL_SIZE: positiveInt(20),
-        MONGO_SERVER_SELECTION_TIMEOUT_MS: positiveInt(10_000),
-        MONGO_SOCKET_TIMEOUT_MS: positiveInt(45_000),
 
         METRICS_ENABLED: z.stringbool().default(true),
         METRICS_TOKEN: optionalString,

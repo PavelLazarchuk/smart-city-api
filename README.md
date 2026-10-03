@@ -184,10 +184,15 @@ migration that creates the index, because changing one needs a `collMod` migrati
   for an unknown name). `?q=` goes to the text index first and retries the same words as a loose match on
   label, description and tags when it scores nothing, so a near-miss spelling still answers. `DELETE` is a soft delete (`?deleted=true` lists the trash, `POST /services/:id/restore`,
   `?permanent=true` for super-admins), and `GET /services/:id/history` is the change log.
+  `POST /services/:id/clone` (optional `label`, `slug`) copies the settings and options into a new draft with
+  fresh option ids; bookable slots and bookings stay behind, info-only `pickup` / `courier` / `paycard` slots
+  are copied, and recurrence rules start generating slots for the copy on their own.
 - Bookings have a lifecycle: `pending → confirmed → completed | no_show`, or `cancelled`
   (`PATCH /bookings/:id/status`, admins); `GET /bookings/:id`; `POST /bookings/:id/confirm` is the owner's half
   of `requires_confirmation`, moving their own `pending` booking to `confirmed` without an admin;
-  `POST /bookings/:id/reschedule` moves one in a single transaction; `GET /bookings/stats` gives no-show and cancellation rates; cancelled and finished rows
+  `POST /bookings/:id/reschedule` moves one in a single transaction; `GET /bookings/stats` gives no-show and cancellation rates;
+  `GET /bookings/export.csv` streams the rows matching the `GET /bookings` filters as UTF-8 CSV for Excel (staff, own
+  organizations only; cells that would start a formula are prefixed with `'`); cancelled and finished rows
   stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
   (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told when a
   place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
@@ -200,19 +205,28 @@ migration that creates the index, because changing one needs a `collMod` migrati
   [docs/data-model.md](docs/data-model.md#no-show-sanctions).
 - The `operator` role is the front desk of its organizations: bookings, waitlists, suspensions and news, but
   not the catalogue — see [docs/auth.md](docs/auth.md#roles).
-- A client may keep an `email` on the account (at registration or later via `PATCH /users/:id`, `null` clears
-  it). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
+- A client may keep an `email` on the account (at registration or later via `PATCH /me`, `null` clears
+  it); `PATCH /me` also renames the account and changes the phone after a code sent to the new number
+  (`POST /me/phone/code`) — see [docs/auth.md](docs/auth.md#own-profile). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
   the booking was made with, since one mailbox may serve several accounts.
 - Notifications leave through a transactional outbox: the `subscribe` e-mail, reminders, freed-place notices and
   webhooks (`/webhooks`, HMAC-signed `POST`s for `booking.*` and `waitlist.*` events; `GET /outbox/events`,
   `POST /outbox/events/:id/replay`) are delivered after the commit with retries — see
   [docs/architecture.md](docs/architecture.md#outbox-and-webhooks).
-- An organization may reword its notifications: `GET /organizations/:id/notification-templates` lists the twelve
+- An organization may reword its e-mails and SMS: `GET /organizations/:id/channel-templates` lists the twelve
   keys with the text in force, the built-in text and the variables each one accepts;
-  `PUT /organizations/:id/notification-templates/:key` saves `{ subject, body }` (`subject` for e-mail only),
+  `PUT /organizations/:id/channel-templates/:key` saves `{ subject, body }` (`subject` for e-mail only),
   `DELETE` returns the key to the built-in text from `messages.ts`, and `POST …/:key/preview` renders the stored
   template or a draft with sample data. Admins of the organization and super-admins only — see
-  [docs/data-model.md](docs/data-model.md#notification-templates).
+  [docs/data-model.md](docs/data-model.md#channel-templates).
+- Every account has an in-app feed: `GET /me/notifications` (unread first, then the newest read ones;
+  `?status=`, `?organization_id=`, `?audience=`, `meta.unread`), `GET /me/notifications/unread-count`
+  (`?by_organization=true` splits it), `POST /me/notifications/:id/read` and `POST /me/notifications/read-all`
+  (`{ before }` stops at the newest one the user saw). Clients hear what the organization did to their bookings,
+  the staff of an organization share one feed of what clients did. Staff write to a client of their organization
+  with `POST /organizations/:id/messages` (`{ user_id, title?, body }`, `Idempotency-Key` honoured) and pick the
+  recipient from `GET /organizations/:id/clients` (`?q=` by name or phone) — see
+  [docs/data-model.md](docs/data-model.md#notifications).
 - News have `slug` (`GET /organizations/:id/news/:slug`), `rubric` (`?rubric=`), `publish_at` (hidden from the
   public until then), `?q=` and an RSS 2.0 feed at `GET /news/rss?organization_id=&rubric=`, whose
   `<enclosure>` carries the type and size of the stored image, or the type its extension implies.
@@ -233,7 +247,8 @@ src/
                  http (errors, envelope), pagination, zod primitives, decorators, guards, cascade registry,
                  message catalogue
   modules/       auth, users, organizations, categories, services, bookings, news, infosections,
-                 images, archives, sms, analytics, health, webhooks, notification-templates —
+                 images, archives, sms, analytics, health, webhooks, channel-templates,
+                 notifications —
                  each: controller / service / repository / schemas / dto
   integrations/  sms (console, smpp), mail (console, smtp), storage (local, s3) behind provider interfaces
   jobs/          recurrent slots, news expiry, slot expiry, stale bookings, cascade reconcile, storage gc,

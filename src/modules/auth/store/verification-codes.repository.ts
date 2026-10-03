@@ -1,11 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { type ClientSession, Model } from 'mongoose';
+import { type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
 
 import { BaseRepository, type Lean } from '../../../common/database/base.repository';
-import { VerificationCode } from '../schemas/verification-code.schema';
+import { type OtpPurpose, VerificationCode } from '../schemas/verification-code.schema';
 
 export type VerificationCodeEntity = Lean<VerificationCode> & { code_hash: string };
+
+export interface OtpScope {
+    purpose: OtpPurpose;
+    user_id?: string;
+}
+
+export const LOGIN_SCOPE: OtpScope = { purpose: 'login' };
+
+function scopeFilter(phone: string, scope: OtpScope): FilterQuery<VerificationCode> {
+    if (scope.purpose === 'login') return { phone, purpose: { $ne: 'phone_change' } };
+
+    return { phone, purpose: scope.purpose, user_id: new Types.ObjectId(scope.user_id) };
+}
 
 @Injectable()
 export class VerificationCodesRepository extends BaseRepository<VerificationCode> {
@@ -14,19 +27,32 @@ export class VerificationCodesRepository extends BaseRepository<VerificationCode
     }
 
     /** Attempt counters carry over, so asking for a fresh code does not reset the guessing budget of a number. */
-    async issue(phone: string, codeHash: string, expiresAt: Date): Promise<void> {
+    async issue(
+        phone: string,
+        codeHash: string,
+        expiresAt: Date,
+        scope: OtpScope = LOGIN_SCOPE,
+    ): Promise<void> {
+        const pending = { ...scopeFilter(phone, scope), consumed_at: { $exists: false } };
         const superseded = await this.model
-            .find({ phone, consumed_at: { $exists: false } }, { attempts: 1 })
+            .find(pending, { attempts: 1 })
             .lean<{ attempts: number }[]>()
             .exec();
         const attempts = superseded.reduce((total, code) => total + (code.attempts ?? 0), 0);
-        await this.model.deleteMany({ phone, consumed_at: { $exists: false } }).exec();
-        await this.model.create({ phone, code_hash: codeHash, attempts, expires_at: expiresAt });
+        await this.model.deleteMany(pending).exec();
+        await this.model.create({
+            phone,
+            code_hash: codeHash,
+            attempts,
+            expires_at: expiresAt,
+            purpose: scope.purpose,
+            ...(scope.user_id ? { user_id: new Types.ObjectId(scope.user_id) } : {}),
+        });
     }
 
-    findLatestActive(phone: string): Promise<VerificationCodeEntity | null> {
+    findLatestActive(phone: string, scope: OtpScope = LOGIN_SCOPE): Promise<VerificationCodeEntity | null> {
         return this.model
-            .findOne({ phone, consumed_at: { $exists: false } })
+            .findOne({ ...scopeFilter(phone, scope), consumed_at: { $exists: false } })
             .sort({ created_at: -1 })
             .select('+code_hash')
             .lean<VerificationCodeEntity>()

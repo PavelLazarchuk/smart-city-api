@@ -24,6 +24,7 @@ import { ROLES, Roles, STAFF_ROLES } from '../../common/decorators/roles.decorat
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { parseBody } from '../../common/http/parse-body';
+import { parseIdempotencyKey } from '../../common/idempotency/idempotency-key';
 import {
     Serialize,
     SerializeBy,
@@ -49,6 +50,8 @@ import {
     type BookingCreated,
     BookingCreatedResponseDto,
     bookingCreatedResponseSchema,
+    CloneServiceDto,
+    cloneServiceSchema,
     CloseSlotDto,
     CloseSlotResponseDto,
     closeSlotResponseSchema,
@@ -85,19 +88,6 @@ import {
 import { type ServiceRevisionEntity } from './service-revisions.repository';
 import { type ServiceListItem, ServicesService, type ServiceTreeEntity } from './services.service';
 import { SlotAdminService } from './slot-admin.service';
-
-function parseIdempotencyKey(raw: string | undefined): string | undefined {
-    const key = raw?.trim();
-
-    if (!key) return undefined;
-
-    if (key.length > 128)
-        throw ApiError.badRequest('VALIDATION_ERROR', [
-            { path: 'Idempotency-Key', message: 'Must be at most 128 characters' },
-        ]);
-
-    return key;
-}
 
 const BOOKING_ERRORS = [
     'SERVICE_NOT_FOUND',
@@ -307,6 +297,26 @@ export class ServicesController {
     @Serialize(serviceResponseSchema)
     restore(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<ServiceTreeEntity> {
         return this.services.restore(id, user);
+    }
+
+    @Post(':id/clone')
+    @ApiBearerAuth()
+    @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
+    @OrganizationScope({ from: 'entity', entity: 'service' })
+    @ApiBody({ type: CloneServiceDto, required: false })
+    @ApiCreatedResponse({ type: ServiceResponseDto })
+    @ApiErrors('SERVICE_NOT_FOUND', 'SERVICE_SLUG_TAKEN')
+    @Serialize(serviceResponseSchema)
+    async clone(
+        @Param('id') id: string,
+        @Body() body: unknown,
+        @CurrentUser() user: AuthUser,
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<ServiceTreeEntity> {
+        const service = await this.services.clone(id, parseBody(cloneServiceSchema, body ?? {}), user);
+        res.setHeader('Location', `/services/${service._id.toHexString()}`);
+
+        return service;
     }
 
     @Post(':id/options')

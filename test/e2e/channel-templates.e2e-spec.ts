@@ -5,14 +5,14 @@ import { expectError, waitFor } from '../support/assertions';
 import { Fixtures } from '../support/fixtures';
 import { createTestApp, type TestApp } from '../support/test-app';
 
-describe('notification templates (e2e)', () => {
+describe('channel templates (e2e)', () => {
     let t: TestApp;
     let fx: Fixtures;
     let organization: { id: string };
     let admin: string;
 
     const path = (key = '', organizationId = organization.id) =>
-        `${t.prefix}/organizations/${organizationId}/notification-templates${key ? `/${key}` : ''}`;
+        `${t.prefix}/organizations/${organizationId}/channel-templates${key ? `/${key}` : ''}`;
 
     const put = (key: string, body: object, bearer = admin) =>
         t.http.put(path(key)).set('Authorization', bearer).send(body);
@@ -28,7 +28,7 @@ describe('notification templates (e2e)', () => {
         admin = await fx.bearer(await fx.admin([organization.id]));
     });
 
-    it('lists every notification with the built-in text until the organization sets its own', async () => {
+    it('lists every channel template with the built-in text until the organization sets its own', async () => {
         const res = await t.http.get(path()).set('Authorization', admin);
 
         expect(res.status).toBe(200);
@@ -102,11 +102,11 @@ describe('notification templates (e2e)', () => {
             400,
             'VALIDATION_ERROR',
         );
-        expectError(await put('otp_sms', { body: 'x' }), 404, 'NOTIFICATION_TEMPLATE_NOT_FOUND');
+        expectError(await put('otp_sms', { body: 'x' }), 404, 'CHANNEL_TEMPLATE_NOT_FOUND');
         expectError(
             await t.http.get(path('otp_sms')).set('Authorization', admin),
             404,
-            'NOTIFICATION_TEMPLATE_NOT_FOUND',
+            'CHANNEL_TEMPLATE_NOT_FOUND',
         );
     });
 
@@ -241,6 +241,6 @@ describe('notification templates (e2e)', () => {
                     .set('Authorization', superAdmin)
             ).status,
         ).toBe(204);
-        expect(await fx.collection('NotificationTemplate').countDocuments({})).toBe(0);
+        expect(await fx.collection('ChannelTemplate').countDocuments({})).toBe(0);
     });
 });

@@ -2,6 +2,8 @@ export const HTTP_BODY_LIMIT = '1mb';
 
 export const MONGO_CONNECTION = {
     minPoolSize: 0,
+    serverSelectionTimeoutMs: 10_000,
+    socketTimeoutMs: 45_000,
     retryWrites: true,
     writeConcern: 'majority',
     readPreference: 'primary',
@@ -24,7 +26,9 @@ export const SLOT_BULK_MAX_BOOKINGS = 500;
 
 export const FAVORITES_MAX_PER_USER = 100;
 
-export const NOTIFICATION_TEMPLATE_LIMITS = { subject: 200, mailBody: 5000, smsBody: 640 } as const;
+export const CHANNEL_TEMPLATE_LIMITS = { subject: 200, mailBody: 5000, smsBody: 640 } as const;
+
+export const NOTIFICATIONS = { keepRead: 30, maxUnread: 400, titleMax: 120, bodyMax: 1000 } as const;
 
 export const CALENDAR_FEED = { pastDays: 30, maxEvents: 500, refreshMinutes: 60 } as const;
 

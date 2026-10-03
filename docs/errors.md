@@ -104,6 +104,8 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `LOGIN_TAKEN` / `PHONE_TAKEN` | 409    | Uniqueness                                                              |
 | `LAST_SUPER_ADMIN`            | 409    | The last super-admin cannot be deleted or demoted                       |
 | `SELF_ROLE_CHANGE`            | 422    | Nobody changes their own role                                           |
+| `PHONE_CODE_REQUIRED`         | 422    | `PATCH /me` with a new phone but no code from `POST /me/phone/code`     |
+| `PHONE_CODE_INVALID`          | 422    | The phone-change code is wrong, expired, used up or someone else's      |
 | `ADMIN_PASSWORD_REQUIRED`     | 422    | Admins sign in by password, so the account needs a login and a password |
 | `ADMIN_PHONE_REQUIRED`        | 422    | Admins sign in by code, so the account needs a phone                    |
 | `CLIENT_PHONE_REQUIRED`       | 422    | A client account needs a phone                                          |
@@ -148,16 +150,16 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 
 ### Catalogue (P3)
 
-| Code                              | Status | Meaning                                                            |
-| --------------------------------- | ------ | ------------------------------------------------------------------ |
-| `SERVICE_SLUG_TAKEN`              | 409    | Another service of the organization already uses this slug         |
-| `NEWS_SLUG_TAKEN`                 | 409    | Another news item of the organization already uses this slug       |
-| `SERVICE_NOT_DELETED`             | 422    | `POST /services/:id/restore` on a service that is not in the trash |
-| `SERVICE_NOT_PUBLISHED`           | 422    | A client tried to book a draft or archived service                 |
-| `ORGANIZATION_CLOSED`             | 422    | The organization is `temporarily_closed`; no new bookings          |
-| `FIELDS_NOT_ALLOWED`              | 400    | `?fields=` named a key the response schema does not have           |
-| `WEBHOOK_NOT_FOUND`               | 404    |                                                                    |
-| `NOTIFICATION_TEMPLATE_NOT_FOUND` | 404    | The key is not one of the notifications an organization can reword |
+| Code                         | Status | Meaning                                                             |
+| ---------------------------- | ------ | ------------------------------------------------------------------- |
+| `SERVICE_SLUG_TAKEN`         | 409    | Another service of the organization already uses this slug          |
+| `NEWS_SLUG_TAKEN`            | 409    | Another news item of the organization already uses this slug        |
+| `SERVICE_NOT_DELETED`        | 422    | `POST /services/:id/restore` on a service that is not in the trash  |
+| `SERVICE_NOT_PUBLISHED`      | 422    | A client tried to book a draft or archived service                  |
+| `ORGANIZATION_CLOSED`        | 422    | The organization is `temporarily_closed`; no new bookings           |
+| `FIELDS_NOT_ALLOWED`         | 400    | `?fields=` named a key the response schema does not have            |
+| `WEBHOOK_NOT_FOUND`          | 404    |                                                                     |
+| `CHANNEL_TEMPLATE_NOT_FOUND` | 404    | The key is not one of the e-mails or SMS an organization can reword |
 
 ### Booking lifecycle (P3)
 
@@ -186,6 +188,13 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | Code                      | Status | Meaning                               |
 | ------------------------- | ------ | ------------------------------------- |
 | `FAVORITES_LIMIT_REACHED` | 422    | The account already keeps 100 of them |
+
+### Notifications
+
+| Code                     | Status | Meaning                                                                                                    |
+| ------------------------ | ------ | ---------------------------------------------------------------------------------------------------------- |
+| `NOTIFICATION_NOT_FOUND` | 404    | Unknown id, another user's notification, or a staff one of an organization the caller left                 |
+| `CLIENT_NOT_FOUND`       | 404    | A message to an account that does not exist or has no booking with the organization — same answer for both |
 
 ### Files and delivery
 

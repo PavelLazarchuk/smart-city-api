@@ -63,8 +63,8 @@ a constant in the migration that creates the index. Changing one requires a new 
 on that TTL index (`expireAfterSeconds`). `analytics_events` and `sms` expire on `created_at` because those
 rows carry client phone numbers and names.
 
-The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE`, `MONGO_SERVER_SELECTION_TIMEOUT_MS` and
-`MONGO_SOCKET_TIMEOUT_MS`, and by the fixed `retryWrites` / `majority` / `primary` settings in
+The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE` and by the fixed timeouts and
+`retryWrites` / `majority` / `primary` settings in
 [src/common/config/constants.ts](../src/common/config/constants.ts), rather than by whatever the URI happens
 to carry, so a copied connection string cannot quietly change the durability of every write.
 

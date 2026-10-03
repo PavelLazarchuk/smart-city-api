@@ -12,6 +12,8 @@ import {
 } from '../../../common/zod/primitives';
 import { userResponseSchema } from '../../users/dto/user.schemas';
 
+const otpCodeSchema = z.string().regex(/^\d{4,10}$/, 'Must be the numeric verification code');
+
 export const loginRequestSchema = z
     .object({
         login: loginSchema.optional(),
@@ -39,7 +41,7 @@ export class OtpRequestDto extends createZodDto(otpRequestSchema) {}
 
 export const otpVerifySchema = z.object({
     phone: phoneSchema,
-    code: z.string().regex(/^\d{4,10}$/, 'Must be the numeric verification code'),
+    code: otpCodeSchema,
     name: nameSchema.optional(),
     email: emailSchema.optional(),
 });
@@ -87,3 +89,17 @@ export const otpRequestResponseSchema = z.object({
     expires_in: z.number().int(),
 });
 export class OtpRequestResponseDto extends createZodDto(otpRequestResponseSchema) {}
+
+export const updateProfileSchema = z
+    .object({
+        name: nameSchema,
+        email: emailSchema.nullable(),
+        phone: phoneSchema,
+        code: otpCodeSchema,
+    })
+    .partial();
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export class UpdateProfileDto extends createZodDto(updateProfileSchema) {}
+
+export const phoneCodeRequestSchema = z.object({ phone: phoneSchema });
+export class PhoneCodeRequestDto extends createZodDto(phoneCodeRequestSchema) {}

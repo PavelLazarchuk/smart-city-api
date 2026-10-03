@@ -24,7 +24,7 @@ import { type BookingSuspension } from '../bookings/schemas/suspension.schema';
 import { type BookingSuspensionEntity, SuspensionsRepository } from '../bookings/suspensions.repository';
 import { WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
+import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
 import { SmsService } from '../sms/sms.service';
 import { type UserEntity } from '../users/users.repository';
 import { UsersService } from '../users/users.service';
@@ -92,7 +92,7 @@ export class SuspensionsService implements OnModuleInit {
         private readonly outbox: OutboxService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
-        private readonly templates: NotificationTemplatesService,
+        private readonly templates: ChannelTemplatesService,
         private readonly pagination: PaginationService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
@@ -199,6 +199,7 @@ export class SuspensionsService implements OnModuleInit {
                     suspended_by: new Types.ObjectId(actor.id),
                 },
                 input.notify === false ? null : client,
+                actor,
                 now,
                 ctx,
             );
@@ -300,7 +301,8 @@ export class SuspensionsService implements OnModuleInit {
         await this.suspend(
             row,
             change,
-            client ?? { _id: booking.user_id, phone: booking.phone, email: undefined },
+            client ?? { _id: booking.user_id, phone: booking.phone, email: undefined, name: booking.person },
+            null,
             now,
             ctx,
         );
@@ -309,7 +311,8 @@ export class SuspensionsService implements OnModuleInit {
     private async suspend(
         row: BookingSuspensionEntity,
         change: Pick<BookingSuspension, 'until' | 'kind' | 'reason' | 'booking_ids' | 'suspended_by'>,
-        recipient: Pick<UserEntity, '_id' | 'phone' | 'email'> | null,
+        recipient: Pick<UserEntity, '_id' | 'phone' | 'email' | 'name'> | null,
+        actor: AuthUser | null,
         now: Date,
         ctx: TransactionContext,
     ): Promise<BookingSuspensionEntity> {
@@ -329,7 +332,7 @@ export class SuspensionsService implements OnModuleInit {
         if (!updated) throw ApiError.conflict('CONFLICT');
 
         await this.waitlist.deleteByUserAndService(updated.user_id, updated.service_id, ctx.session);
-        await this.emit('booking.suspended', updated, recipient, ctx);
+        await this.emit('booking.suspended', updated, recipient, actor, ctx);
 
         return updated;
     }
@@ -346,17 +349,28 @@ export class SuspensionsService implements OnModuleInit {
             ctx.session,
         );
 
-        if (updated) await this.emit('booking.suspension_lifted', updated, null, ctx);
+        if (updated) await this.emit('booking.suspension_lifted', updated, null, actor, ctx);
     }
 
     private async emit(
         type: 'booking.suspended' | 'booking.suspension_lifted',
         row: BookingSuspensionEntity,
-        recipient: Pick<UserEntity, 'phone' | 'email'> | null,
+        recipient: Pick<UserEntity, 'phone' | 'email' | 'name'> | null,
+        actor: AuthUser | null,
         ctx: TransactionContext,
     ): Promise<void> {
         const organizationId = row.organization_id.toHexString();
         const timeZone = row.until ? await this.organizations.timezoneOf(organizationId) : null;
+        const internal = {
+            ...(recipient
+                ? {
+                      phone: recipient.phone ?? null,
+                      email: recipient.email ?? null,
+                      person: recipient.name ?? null,
+                  }
+                : {}),
+            ...(actor ? { actor: { id: actor.id, kind: 'staff' } } : {}),
+        };
 
         await this.outbox.enqueue(
             type,
@@ -374,9 +388,7 @@ export class SuspensionsService implements OnModuleInit {
             },
             {
                 organizationId: row.organization_id,
-                internal: recipient
-                    ? { phone: recipient.phone ?? null, email: recipient.email ?? null }
-                    : undefined,
+                internal: Object.keys(internal).length > 0 ? internal : undefined,
                 session: ctx.session,
             },
         );

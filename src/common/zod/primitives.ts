@@ -26,7 +26,9 @@ export const nameSchema = z.string().trim().min(1).max(120);
 
 export const emailSchema = z.string().trim().toLowerCase().pipe(z.email().max(254));
 
-export const labelSchema = z.string().trim().min(1).max(200);
+export const LABEL_MAX_LENGTH = 200;
+
+export const labelSchema = z.string().trim().min(1).max(LABEL_MAX_LENGTH);
 
 export const enabledSchema = z.boolean();
 
@@ -83,3 +85,13 @@ export const safeLinkSchema = z
 
 export const richTextSchema = (max: number) =>
     z.string().trim().max(max).transform(sanitizeRichText).pipe(z.string().max(max));
+
+export const plainTextSchema = (max: number, multiline = true) =>
+    z
+        .string()
+        .transform((value) => {
+            const text = value.replace(/\r\n?/g, '\n').replace(/[^\P{Cc}\n\t]/gu, '');
+
+            return (multiline ? text : text.replace(/\s+/g, ' ')).trim();
+        })
+        .pipe(z.string().min(1).max(max));

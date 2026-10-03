@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
-import { NOTIFICATION_TEMPLATE_LIMITS } from '../../common/config/constants';
+import { CHANNEL_TEMPLATE_LIMITS } from '../../common/config/constants';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ApiError, type ApiErrorDetail } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
@@ -15,29 +15,26 @@ import {
 } from '../../common/i18n/template';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
-    type NotificationTemplateResource,
-    type PreviewNotificationTemplateInput,
-    type RenderedNotification,
-    type SaveNotificationTemplateInput,
-} from './dto/notification-template.schemas';
+    type ChannelTemplateResource,
+    type PreviewChannelTemplateInput,
+    type RenderedTemplate,
+    type SaveChannelTemplateInput,
+} from './dto/channel-template.schemas';
 import {
     defaultTemplate,
-    NOTIFICATION_KEYS,
-    type NotificationKey,
-    NOTIFICATIONS,
-} from './notification-catalogue';
-import {
-    type NotificationTemplateEntity,
-    NotificationTemplatesRepository,
-} from './notification-templates.repository';
+    CHANNEL_TEMPLATE_KEYS,
+    type ChannelTemplateKey,
+    CHANNEL_TEMPLATES,
+} from './channel-catalogue';
+import { type ChannelTemplateEntity, ChannelTemplatesRepository } from './channel-templates.repository';
 
 interface Template {
     subject: string | null;
     body: string;
 }
 
-function isKey(value: string): value is NotificationKey {
-    return (NOTIFICATION_KEYS as readonly string[]).includes(value);
+function isKey(value: string): value is ChannelTemplateKey {
+    return (CHANNEL_TEMPLATE_KEYS as readonly string[]).includes(value);
 }
 
 function singleLine(value: string): string {
@@ -45,36 +42,32 @@ function singleLine(value: string): string {
 }
 
 @Injectable()
-export class NotificationTemplatesService implements OnModuleInit {
+export class ChannelTemplatesService implements OnModuleInit {
     constructor(
-        private readonly templates: NotificationTemplatesRepository,
+        private readonly templates: ChannelTemplatesRepository,
         private readonly organizations: OrganizationsService,
         private readonly cascade: CascadeRegistry,
         private readonly logger: PinoLogger,
     ) {
-        this.logger.setContext(NotificationTemplatesService.name);
+        this.logger.setContext(ChannelTemplatesService.name);
     }
 
     onModuleInit(): void {
-        this.cascade.register(
-            'organization',
-            'notification_templates.delete',
-            async (organizationId, ctx) => {
-                await this.templates.deleteByOrganization(organizationId, ctx.session);
-            },
-        );
+        this.cascade.register('organization', 'channel_templates.delete', async (organizationId, ctx) => {
+            await this.templates.deleteByOrganization(organizationId, ctx.session);
+        });
     }
 
-    async list(organizationId: string): Promise<NotificationTemplateResource[]> {
+    async list(organizationId: string): Promise<ChannelTemplateResource[]> {
         await this.organizations.assertExists(organizationId);
         const rows = new Map(
             (await this.templates.listByOrganization(organizationId)).map((row) => [row.key, row]),
         );
 
-        return NOTIFICATION_KEYS.map((key) => this.resource(key, rows.get(key) ?? null));
+        return CHANNEL_TEMPLATE_KEYS.map((key) => this.resource(key, rows.get(key) ?? null));
     }
 
-    async get(organizationId: string, rawKey: string): Promise<NotificationTemplateResource> {
+    async get(organizationId: string, rawKey: string): Promise<ChannelTemplateResource> {
         const key = this.key(rawKey);
         await this.organizations.assertExists(organizationId);
 
@@ -84,9 +77,9 @@ export class NotificationTemplatesService implements OnModuleInit {
     async save(
         organizationId: string,
         rawKey: string,
-        input: SaveNotificationTemplateInput,
+        input: SaveChannelTemplateInput,
         actor: AuthUser,
-    ): Promise<NotificationTemplateResource> {
+    ): Promise<ChannelTemplateResource> {
         const key = this.key(rawKey);
         await this.organizations.assertExists(organizationId);
         const template = this.validate(key, { subject: input.subject ?? null, body: input.body });
@@ -107,8 +100,8 @@ export class NotificationTemplatesService implements OnModuleInit {
     async preview(
         organizationId: string,
         rawKey: string,
-        input: PreviewNotificationTemplateInput,
-    ): Promise<RenderedNotification> {
+        input: PreviewChannelTemplateInput,
+    ): Promise<RenderedTemplate> {
         const key = this.key(rawKey);
         await this.organizations.assertExists(organizationId);
         const current = await this.effective(organizationId, key);
@@ -117,12 +110,12 @@ export class NotificationTemplatesService implements OnModuleInit {
             body: input.body ?? current.body,
         });
 
-        return this.render(key, template, texts.notificationSample);
+        return this.render(key, template, texts.channelSample);
     }
 
     async mail(
         organizationId: string | null,
-        key: NotificationKey,
+        key: ChannelTemplateKey,
         data: TemplateData,
     ): Promise<{ subject: string; text: string }> {
         const rendered = await this.compose(organizationId, key, data);
@@ -130,15 +123,15 @@ export class NotificationTemplatesService implements OnModuleInit {
         return { subject: rendered.subject ?? '', text: rendered.body };
     }
 
-    async sms(organizationId: string | null, key: NotificationKey, data: TemplateData): Promise<string> {
+    async sms(organizationId: string | null, key: ChannelTemplateKey, data: TemplateData): Promise<string> {
         return (await this.compose(organizationId, key, data)).body;
     }
 
     private async compose(
         organizationId: string | null,
-        key: NotificationKey,
+        key: ChannelTemplateKey,
         data: TemplateData,
-    ): Promise<RenderedNotification> {
+    ): Promise<RenderedTemplate> {
         const custom =
             organizationId && Types.ObjectId.isValid(organizationId)
                 ? await this.templates.find(organizationId, key)
@@ -152,12 +145,12 @@ export class NotificationTemplatesService implements OnModuleInit {
 
                 this.logger.warn(
                     { organization_id: organizationId, key },
-                    'notification template rendered empty, falling back to the default',
+                    'channel template rendered empty, falling back to the default',
                 );
             } catch (error) {
                 this.logger.warn(
                     { err: error, organization_id: organizationId, key },
-                    'notification template no longer renders, falling back to the default',
+                    'channel template no longer renders, falling back to the default',
                 );
             }
         }
@@ -165,12 +158,12 @@ export class NotificationTemplatesService implements OnModuleInit {
         return this.render(key, defaultTemplate(key), data);
     }
 
-    private async effective(organizationId: string, key: NotificationKey): Promise<Template> {
+    private async effective(organizationId: string, key: ChannelTemplateKey): Promise<Template> {
         return (await this.templates.find(organizationId, key)) ?? defaultTemplate(key);
     }
 
-    private render(key: NotificationKey, template: Template, data: TemplateData): RenderedNotification {
-        const { variables } = NOTIFICATIONS[key];
+    private render(key: ChannelTemplateKey, template: Template, data: TemplateData): RenderedTemplate {
+        const { variables } = CHANNEL_TEMPLATES[key];
 
         return {
             subject:
@@ -181,8 +174,8 @@ export class NotificationTemplatesService implements OnModuleInit {
         };
     }
 
-    private validate(key: NotificationKey, template: Template): Template {
-        const { channel, variables } = NOTIFICATIONS[key];
+    private validate(key: ChannelTemplateKey, template: Template): Template {
+        const { channel, variables } = CHANNEL_TEMPLATES[key];
         const details: ApiErrorDetail[] = [];
 
         if (channel === 'mail' && template.subject === null)
@@ -191,10 +184,10 @@ export class NotificationTemplatesService implements OnModuleInit {
         if (channel === 'sms' && template.subject !== null)
             details.push({ path: 'subject', message: 'An SMS template has no subject' });
 
-        if (channel === 'sms' && template.body.length > NOTIFICATION_TEMPLATE_LIMITS.smsBody)
+        if (channel === 'sms' && template.body.length > CHANNEL_TEMPLATE_LIMITS.smsBody)
             details.push({
                 path: 'body',
-                message: `An SMS template is limited to ${NOTIFICATION_TEMPLATE_LIMITS.smsBody} characters`,
+                message: `An SMS template is limited to ${CHANNEL_TEMPLATE_LIMITS.smsBody} characters`,
             });
 
         for (const field of ['subject', 'body'] as const) {
@@ -216,17 +209,14 @@ export class NotificationTemplatesService implements OnModuleInit {
         return template;
     }
 
-    private key(raw: string): NotificationKey {
-        if (!isKey(raw)) throw ApiError.notFound('NOTIFICATION_TEMPLATE_NOT_FOUND');
+    private key(raw: string): ChannelTemplateKey {
+        if (!isKey(raw)) throw ApiError.notFound('CHANNEL_TEMPLATE_NOT_FOUND');
 
         return raw;
     }
 
-    private resource(
-        key: NotificationKey,
-        row: NotificationTemplateEntity | null,
-    ): NotificationTemplateResource {
-        const { event, channel, variables } = NOTIFICATIONS[key];
+    private resource(key: ChannelTemplateKey, row: ChannelTemplateEntity | null): ChannelTemplateResource {
+        const { event, channel, variables } = CHANNEL_TEMPLATES[key];
         const fallback = defaultTemplate(key);
 
         return {

@@ -15,11 +15,12 @@ import { WaitlistRepository } from '../bookings/waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
 import { SlotsRepository } from '../slots/slots.repository';
-import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
+import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import {
     announced,
+    eventActor,
     eventPayload,
     notice,
     organizationOf,
@@ -65,7 +66,7 @@ export class SlotAdminService implements OnModuleInit {
         private readonly users: UsersService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
-        private readonly templates: NotificationTemplatesService,
+        private readonly templates: ChannelTemplatesService,
         private readonly outbox: OutboxService,
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
@@ -190,7 +191,7 @@ export class SlotAdminService implements OnModuleInit {
 
             if (!closing) for (const booking of bookings) await this.lifecycle.notifyWaitlist(booking, ctx);
 
-            const queued = await this.announce(bookings, input.notify !== false, ctx, (booking) => ({
+            const queued = await this.announce(bookings, input.notify !== false, actor, ctx, (booking) => ({
                 type: 'booking.cancelled',
                 payload: eventPayload(booking, {
                     status: 'cancelled',
@@ -292,7 +293,7 @@ export class SlotAdminService implements OnModuleInit {
                 ctx.session,
             );
 
-            const queued = await this.announce(bookings, input.notify !== false, ctx, (booking) => ({
+            const queued = await this.announce(bookings, input.notify !== false, actor, ctx, (booking) => ({
                 type: 'booking.rescheduled',
                 payload: eventPayload(booking, {
                     date: input.date,
@@ -534,6 +535,7 @@ export class SlotAdminService implements OnModuleInit {
     private async announce(
         bookings: BookingEntity[],
         notify: boolean,
+        actor: AuthUser,
         ctx: TransactionContext,
         describe: (booking: BookingEntity) => Announcement,
     ): Promise<number> {
@@ -547,13 +549,16 @@ export class SlotAdminService implements OnModuleInit {
             bookings.map((booking) => ({
                 ...describe(booking),
                 organizationId: booking.organization_id,
-                internal: notify
-                    ? {
-                          notify: true,
-                          phone: booking.phone,
-                          email: emails.get(booking.user_id.toHexString()) ?? null,
-                      }
-                    : undefined,
+                internal: {
+                    actor: eventActor(actor, booking),
+                    ...(notify
+                        ? {
+                              notify: true,
+                              phone: booking.phone,
+                              email: emails.get(booking.user_id.toHexString()) ?? null,
+                          }
+                        : {}),
+                },
             })),
             ctx.session,
         );

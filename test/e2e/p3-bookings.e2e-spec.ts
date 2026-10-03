@@ -691,6 +691,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
                     ]),
                 ).toEqual([
                     ['handler', 'delivered'],
+                    ['handler', 'delivered'],
                     ['webhook', 'delivered'],
                 ]);
 

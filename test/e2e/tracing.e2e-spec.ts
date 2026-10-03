@@ -108,6 +108,7 @@ describe('tracing from a request or a job to the deferred delivery (e2e)', () =>
             'outbox.outcome': 'delivered',
         });
         expect(attempts.map((span) => span.attributes['outbox.target']).sort()).toEqual([
+            'handler:inbox',
             'handler:mail',
             'handler:sms',
         ]);
