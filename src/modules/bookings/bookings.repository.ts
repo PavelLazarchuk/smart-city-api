@@ -277,7 +277,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
                 {
                     user_id: new Types.ObjectId(userId),
                     service_id: new Types.ObjectId(serviceId),
-                    status: 'no_show',
+                    $or: [{ status: 'no_show' }, { status: 'cancelled', late_cancel: true }],
                     finished_at: { $gte: since },
                 },
                 { id: 1 },
@@ -296,9 +296,10 @@ export class BookingsRepository extends BaseRepository<Booking> {
         by: Types.ObjectId | null,
         now: Date,
         session?: ClientSession,
+        extra: { late_cancel?: boolean } = {},
     ): Promise<BookingEntity | null> {
         const active = to === 'pending' || to === 'confirmed';
-        const set: Record<string, unknown> = { status: to, active, status_changed_by: by };
+        const set: Record<string, unknown> = { ...extra, status: to, active, status_changed_by: by };
 
         if (to === 'confirmed') set['confirmed_at'] = now;
 

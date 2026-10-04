@@ -932,6 +932,7 @@ export class ServicesService implements OnModuleInit {
                 lead_time_minutes: input.booking_policy.lead_time_minutes ?? null,
                 max_advance_days: input.booking_policy.max_advance_days ?? null,
                 cancel_deadline_minutes: input.booking_policy.cancel_deadline_minutes ?? null,
+                late_cancel: input.booking_policy.late_cancel ?? 'forbid',
                 requires_confirmation: input.booking_policy.requires_confirmation ?? false,
                 no_show_limit: input.booking_policy.no_show_limit ?? null,
                 no_show_window_days: input.booking_policy.no_show_window_days ?? null,

@@ -38,6 +38,7 @@ export const bookingResourceSchema = z.object({
     status: z.enum(BOOKING_STATUSES).catch('confirmed'),
     confirmed_at: isoDateTimeSchema.nullable().catch(null),
     finished_at: isoDateTimeSchema.nullable().catch(null),
+    late_cancel: z.boolean().catch(false),
     created_by: idOutputSchema.nullable().catch(null),
     created_at: isoDateTimeSchema,
 });

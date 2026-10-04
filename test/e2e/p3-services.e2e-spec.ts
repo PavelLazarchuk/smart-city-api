@@ -170,6 +170,7 @@ describe('services catalogue (e2e)', () => {
                     lead_time_minutes: 60,
                     max_advance_days: null,
                     cancel_deadline_minutes: null,
+                    late_cancel: 'forbid',
                     requires_confirmation: true,
                 },
                 required_documents: [{ key: 'old_passport', label: 'Old passport', required: true }],

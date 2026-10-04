@@ -39,6 +39,7 @@ describe('booking on behalf of a walk-in client (e2e)', () => {
                     max_active_per_user: 1,
                     max_advance_days: null,
                     cancel_deadline_minutes: null,
+                    late_cancel: 'forbid',
                     no_show_limit: null,
                     no_show_window_days: null,
                     no_show_suspension_days: null,

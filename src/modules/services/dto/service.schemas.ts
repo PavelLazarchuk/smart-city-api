@@ -26,6 +26,7 @@ import {
 import { REVISION_ACTIONS } from '../schemas/service-revision.schema';
 import {
     FORM_FIELD_TYPES,
+    LATE_CANCEL_POLICIES,
     SERVICE_STATUSES,
     SERVICE_TYPES,
     SLOT_TYPES,
@@ -383,6 +384,7 @@ export const bookingPolicySchema = z
         lead_time_minutes: z.number().int().min(0).nullable().optional(),
         max_advance_days: z.number().int().min(1).nullable().optional(),
         cancel_deadline_minutes: z.number().int().min(0).nullable().optional(),
+        late_cancel: z.enum(LATE_CANCEL_POLICIES).optional(),
         requires_confirmation: z.boolean().optional(),
         no_show_limit: z.number().int().min(1).max(100).nullable().optional(),
         no_show_window_days: z.number().int().min(1).max(3650).nullable().optional(),
@@ -406,6 +408,7 @@ const bookingPolicyOutputSchema = z.object({
     lead_time_minutes: z.number().int().nullable().catch(null),
     max_advance_days: z.number().int().nullable().catch(null),
     cancel_deadline_minutes: z.number().int().nullable().catch(null),
+    late_cancel: z.enum(LATE_CANCEL_POLICIES).catch('forbid'),
     requires_confirmation: z.boolean().catch(false),
     no_show_limit: z.number().int().nullable().catch(null),
     no_show_window_days: z.number().int().nullable().catch(null),
@@ -526,6 +529,7 @@ const serviceResponseSchemaFor = (bookings: z.ZodType) =>
             lead_time_minutes: null,
             max_advance_days: null,
             cancel_deadline_minutes: null,
+            late_cancel: 'forbid',
             requires_confirmation: false,
             no_show_limit: null,
             no_show_window_days: null,

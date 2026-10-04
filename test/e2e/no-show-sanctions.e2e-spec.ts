@@ -17,11 +17,12 @@ describe('no-show sanctions (e2e)', () => {
     let option: ReturnType<Fixtures['bookableOption']>;
     let serviceId: string;
 
-    const policy = (overrides: Record<string, number | null> = {}) => ({
+    const policy = (overrides: Record<string, number | string | null> = {}) => ({
         max_active_per_user: null,
         lead_time_minutes: null,
         max_advance_days: null,
         cancel_deadline_minutes: null,
+        late_cancel: 'forbid' as const,
         requires_confirmation: false,
         no_show_limit: 2,
         no_show_window_days: 30,
@@ -359,6 +360,119 @@ describe('no-show sanctions (e2e)', () => {
             'SUSPENSION_NOT_FOUND',
         );
         expectError(await suspensions('', clientBearer), 403);
+    });
+
+    describe('late cancellation', () => {
+        const usePolicy = (overrides: Record<string, number | string | null>) =>
+            fx
+                .collection('Service')
+                .updateOne(
+                    { _id: new Types.ObjectId(serviceId) },
+                    { $set: { booking_policy: policy(overrides) } },
+                );
+
+        const bookAndCancel = async (bearer = clientBearer): Promise<string> => {
+            const created = await book();
+            expect(created.status).toBe(201);
+            const id = created.body.data.booking_id as string;
+
+            const cancelled = await t.http.delete(`${t.prefix}/bookings/${id}`).set('Authorization', bearer);
+            expect(cancelled.status).toBe(204);
+
+            return id;
+        };
+
+        const lateFlag = async (id: string) =>
+            (await t.http.get(`${t.prefix}/bookings/${id}`).set('Authorization', operatorBearer)).body.data;
+
+        it('counts a cancellation after the deadline as a no-show', async () => {
+            await usePolicy({ cancel_deadline_minutes: 48 * 60, late_cancel: 'no_show' });
+
+            const first = await bookAndCancel();
+            expect(await lateFlag(first)).toMatchObject({ status: 'cancelled', late_cancel: true });
+            expect((await suspensions()).body.data).toEqual([]);
+
+            const second = await bookAndCancel();
+            const listed = await suspensions();
+            expect(listed.body.data).toHaveLength(1);
+            expect(listed.body.data[0]).toMatchObject({ kind: 'no_show', active: true });
+            expect([...listed.body.data[0].booking_ids].sort()).toEqual([first, second].sort());
+            expectError(await book(), 422, 'BOOKING_SUSPENDED');
+
+            const event = await fx
+                .collection<{ payload: Record<string, unknown> }>('OutboxEvent')
+                .findOne({ type: 'booking.cancelled', 'payload.booking_id': first })
+                .lean();
+            expect(event?.payload).toMatchObject({ cancelled_by: 'owner', late_cancel: true });
+        });
+
+        it('mixes late cancellations with no-shows in one counter', async () => {
+            await usePolicy({ cancel_deadline_minutes: 48 * 60, late_cancel: 'no_show' });
+
+            const { id: missed } = await seedBooking();
+            expect((await mark(missed, 'no_show')).status).toBe(200);
+            const late = await bookAndCancel();
+
+            const [row] = (await suspensions()).body.data as { booking_ids: string[] }[];
+            expect([...row!.booking_ids].sort()).toEqual([missed, late].sort());
+        });
+
+        it('does not count a cancellation in time or one by staff', async () => {
+            await usePolicy({ cancel_deadline_minutes: 0, late_cancel: 'no_show' });
+            const early = await bookAndCancel();
+            expect(await lateFlag(early)).toMatchObject({ late_cancel: false });
+
+            await usePolicy({ cancel_deadline_minutes: 48 * 60, late_cancel: 'no_show' });
+            const byStaff = await bookAndCancel(operatorBearer);
+            expect(await lateFlag(byStaff)).toMatchObject({ late_cancel: false });
+            await bookAndCancel(operatorBearer);
+
+            expect((await suspensions()).body.data).toEqual([]);
+        });
+
+        it('still refuses a late cancellation under the forbid policy', async () => {
+            await usePolicy({ cancel_deadline_minutes: 48 * 60, late_cancel: 'forbid' });
+            const created = await book();
+
+            expectError(
+                await t.http
+                    .delete(`${t.prefix}/bookings/${created.body.data.booking_id as string}`)
+                    .set('Authorization', clientBearer),
+                422,
+                'BOOKING_CANCEL_DEADLINE_PASSED',
+            );
+        });
+
+        it('refuses a cancellation once the booking has started, even under the no_show policy', async () => {
+            await usePolicy({ cancel_deadline_minutes: 48 * 60, late_cancel: 'no_show' });
+            const created = await book();
+            const id = created.body.data.booking_id as string;
+            await fx
+                .collection('Booking')
+                .updateOne({ id }, { $set: { starts_at: new Date(Date.now() - 60 * 60_000) } });
+
+            expectError(
+                await t.http.delete(`${t.prefix}/bookings/${id}`).set('Authorization', clientBearer),
+                422,
+                'BOOKING_CANCEL_DEADLINE_PASSED',
+            );
+            expect(await lateFlag(id)).toMatchObject({ status: 'confirmed', late_cancel: false });
+            expect((await suspensions()).body.data).toEqual([]);
+        });
+
+        it('keeps refusing a late reschedule under the no_show policy', async () => {
+            await usePolicy({ cancel_deadline_minutes: 48 * 60, late_cancel: 'no_show' });
+            const created = await book();
+
+            expectError(
+                await t.http
+                    .post(`${t.prefix}/bookings/${created.body.data.booking_id as string}/reschedule`)
+                    .set('Authorization', clientBearer)
+                    .send({ slot_id: option.slot_id, time: '11:00' }),
+                422,
+                'BOOKING_CANCEL_DEADLINE_PASSED',
+            );
+        });
     });
 
     it('refuses a policy that sets the limit without the suspension length', async () => {

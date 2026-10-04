@@ -25,7 +25,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `infosections`        | Static info blocks                                             | `organization_id`, `position`, `label`, `enabled`, `control`, `value`                                                                                                                                                                                                                                                                                                                     |
 | `images`              | Uploaded files                                                 | `organization_id`, storage key, mime, size                                                                                                                                                                                                                                                                                                                                                |
 | `archives`            | Snapshots of finished bookings                                 | `organization_id`, `service_id`, `type`, `payload` (Mixed)                                                                                                                                                                                                                                                                                                                                |
-| `bookings`            | One booking of one slot                                        | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `starts_at`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `finished_at`, `reminder_sent_at`, `created_by`                                                                                                                      |
+| `bookings`            | One booking of one slot                                        | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `starts_at`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `finished_at`, `late_cancel`, `reminder_sent_at`, `created_by`                                                                                                       |
 | `booking_suspensions` | No-show and manual suspensions, one row per client and service | `id`, `user_id`, `service_id`, `organization_id`, `suspended`, `until` (`null` = until lifted), `kind` (`no_show` \| `manual`), `reason`, `booking_ids[]`, `counted_from`, `suspended_at`/`_by`, `lifted_at`/`_by`                                                                                                                                                                        |
 | `waitlist`            | Clients waiting for a full slot                                | `id`, slot coordinates, `user_id`, `person`, `phone`, `status` (`waiting` \| `notified`), `notified_at`                                                                                                                                                                                                                                                                                   |
 | `outbox_events`       | Transactional outbox                                           | `id`, `type`, `organization_id`, `payload`, `internal`, `status`, `attempts`, `next_attempt_at`, `claimed_until`, `deliveries[]`, `request_id`, `trace`                                                                                                                                                                                                                                   |
@@ -157,8 +157,11 @@ entries in one statement.
   list is cut from the service's `working_hours` into `duration_minutes + buffer_minutes` steps, and dates in
   the service's `blackout_dates`, its `holidays` (`MM-DD`, yearly) or the organization's `holidays` are skipped.
 - **`booking_policy`** — `max_active_per_user`, `lead_time_minutes`, `max_advance_days`,
-  `cancel_deadline_minutes`, `requires_confirmation` — is enforced by the booking service for clients; the
-  organization's admins are exempt from the client-facing rules.
+  `cancel_deadline_minutes`, `late_cancel`, `requires_confirmation` — is enforced by the booking service for
+  clients; the organization's admins are exempt from the client-facing rules. `late_cancel` decides what a
+  client's cancellation inside `cancel_deadline_minutes` does: `forbid` (the default) refuses it, `no_show`
+  lets it through until the booking starts, marks it `late_cancel: true` and counts it as a no-show (see
+  below). Once the booking has started, and for a late reschedule, the answer is the 422 either way.
 - **Time zone.** A slot's `date` and `time` are wall clock in the owning organization's `timezone`, and every
   rule that compares them against "now" — lead time, the advance horizon, expiry, the recurrence walk,
   the debtor report — reads that zone, never the server's. A booking stores the resolved instant as
@@ -196,6 +199,11 @@ count as well. A manual suspension (`POST /suspensions`, by `user_id` or `phone`
 no-shows. Reaching the limit while a manual suspension is in force only extends its `until`: the kind, the
 reason and who set it stay, so correcting a no-show never lifts a manual suspension. Suspending a client also
 removes them from the service's waitlists, so a freed place is offered to someone who can book it.
+
+Under `late_cancel: no_show` a client's late cancellation counts the same way: the booking ends `cancelled`
+with `late_cancel: true` (the place is freed and the waitlist told), and the counter takes it alongside the
+`no_show` marks. A cancelled booking cannot be corrected, so staff lift such a suspension with
+`DELETE /suspensions/:id`. The `booking.cancelled` event carries `late_cancel: true`.
 
 The row is per client and service and every counted mark writes to it before counting, so two marks for the
 same client in concurrent transactions conflict on it and the retried one sees the other's no-show. Expiry is

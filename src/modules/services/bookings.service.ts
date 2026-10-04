@@ -133,6 +133,7 @@ function toResource(booking: BookingEntity, cancelDeadlineMinutes?: number | nul
         status: booking.status,
         confirmed_at: booking.confirmed_at ? booking.confirmed_at.toISOString() : null,
         finished_at: booking.finished_at ? booking.finished_at.toISOString() : null,
+        late_cancel: booking.late_cancel ?? false,
         created_by: booking.created_by ? booking.created_by.toHexString() : null,
         created_at: booking.created_at.toISOString(),
     };
@@ -574,9 +575,10 @@ export class BookingsService implements OnModuleInit {
 
             if (!booking.active) throw ApiError.unprocessable('BOOKING_NOT_ACTIVE');
 
-            if (!this.isAdminOf(booking, actor)) await this.assertCancelDeadline(booking, ctx.session);
+            const late = !this.isAdminOf(booking, actor) && (await this.isLateCancel(booking, ctx.session));
+            const cancelled = await this.finish(booking, 'cancelled', actor, ctx, late);
 
-            const cancelled = await this.finish(booking, 'cancelled', actor, ctx);
+            if (late) await this.suspensions.onLateCancel(cancelled, ctx);
 
             return {
                 user_id: cancelled.user_id.toHexString(),
@@ -753,6 +755,7 @@ export class BookingsService implements OnModuleInit {
         status: 'cancelled',
         actor: AuthUser,
         ctx: TransactionContext,
+        late = false,
     ): Promise<BookingEntity> {
         const moved = await this.bookings.transition(
             booking.id,
@@ -761,6 +764,7 @@ export class BookingsService implements OnModuleInit {
             new Types.ObjectId(actor.id),
             new Date(),
             ctx.session,
+            late ? { late_cancel: true } : {},
         );
 
         if (!moved) throw ApiError.unprocessable('BOOKING_NOT_ACTIVE');
@@ -770,6 +774,7 @@ export class BookingsService implements OnModuleInit {
         await this.emit(ctx, 'booking.cancelled', moved, this.trail(booking, actor), {
             cancelled_by: actor.id === booking.user_id.toHexString() ? 'owner' : 'admin',
             previous_status: booking.status,
+            ...(late ? { late_cancel: true } : {}),
         });
 
         return moved;
@@ -1036,22 +1041,32 @@ export class BookingsService implements OnModuleInit {
         if (active >= max) throw ApiError.unprocessable('BOOKING_LIMIT_REACHED');
     }
 
-    private async assertCancelDeadline(booking: BookingEntity, session: ClientSession): Promise<void> {
+    private async isLateCancel(booking: BookingEntity, session: ClientSession): Promise<boolean> {
         const service = await this.repository.findById(booking.service_id.toHexString(), session);
 
-        if (!service) return;
+        const now = new Date();
 
-        this.assertDeadline(service, booking, new Date());
+        if (!service || !this.deadlinePassed(service, booking, now)) return false;
+
+        const upcoming = booking.starts_at !== null && booking.starts_at.getTime() > now.getTime();
+
+        if (upcoming && service.booking_policy?.late_cancel === 'no_show') return true;
+
+        throw ApiError.unprocessable('BOOKING_CANCEL_DEADLINE_PASSED');
     }
 
     private assertDeadline(service: ServiceEntity, booking: BookingEntity, now: Date): void {
+        if (this.deadlinePassed(service, booking, now))
+            throw ApiError.unprocessable('BOOKING_CANCEL_DEADLINE_PASSED');
+    }
+
+    private deadlinePassed(service: ServiceEntity, booking: BookingEntity, now: Date): boolean {
         const deadline = service.booking_policy?.cancel_deadline_minutes;
         const start = booking.starts_at;
 
-        if (deadline === null || deadline === undefined || !start) return;
+        if (deadline === null || deadline === undefined || !start) return false;
 
-        if (start.getTime() - now.getTime() < deadline * 60_000)
-            throw ApiError.unprocessable('BOOKING_CANCEL_DEADLINE_PASSED');
+        return start.getTime() - now.getTime() < deadline * 60_000;
     }
 
     private validateForm(

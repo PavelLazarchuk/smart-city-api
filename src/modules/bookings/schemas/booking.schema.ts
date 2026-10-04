@@ -85,6 +85,9 @@ export class Booking {
     @Prop({ type: Date, default: null })
     finished_at!: Date | null;
 
+    @Prop({ type: Boolean, default: false })
+    late_cancel?: boolean;
+
     @Prop({ type: SchemaTypes.ObjectId, default: null })
     status_changed_by!: Types.ObjectId | null;
 

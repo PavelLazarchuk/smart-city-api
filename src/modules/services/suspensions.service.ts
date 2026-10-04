@@ -174,6 +174,10 @@ export class SuspensionsService implements OnModuleInit {
             await this.release(row, actor, now, ctx);
     }
 
+    async onLateCancel(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
+        await this.countNoShow(booking, ctx);
+    }
+
     async create(input: CreateSuspensionInput, actor: AuthUser): Promise<SuspensionResource> {
         const service = await this.services.findById(input.service_id);
 

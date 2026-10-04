@@ -68,6 +68,9 @@ export const WEEKDAYS = [
 ] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
 
+export const LATE_CANCEL_POLICIES = ['forbid', 'no_show'] as const;
+export type LateCancelPolicy = (typeof LATE_CANCEL_POLICIES)[number];
+
 @Schema(subSchemaOptions)
 export class RecurrentTime {
     @Prop({ type: String, required: true }) time!: string;
@@ -116,6 +119,8 @@ export class BookingPolicy {
     @Prop({ type: Number, default: null }) lead_time_minutes!: number | null;
     @Prop({ type: Number, default: null }) max_advance_days!: number | null;
     @Prop({ type: Number, default: null }) cancel_deadline_minutes!: number | null;
+    @Prop({ type: String, enum: LATE_CANCEL_POLICIES, required: true, default: 'forbid' })
+    late_cancel!: LateCancelPolicy;
     @Prop({ type: Boolean, required: true, default: false }) requires_confirmation!: boolean;
     @Prop({ type: Number, default: null }) no_show_limit!: number | null;
     @Prop({ type: Number, default: null }) no_show_window_days!: number | null;
