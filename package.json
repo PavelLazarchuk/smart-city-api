@@ -36,7 +36,6 @@
         "seed:load": "TS_NODE_PROJECT=tsconfig.scripts.json node --env-file=load/load.env -r ts-node/register scripts/seed-load.ts",
         "load:smoke": "sh load/k6.sh run -e PROFILE=smoke load/mixed.js",
         "load": "sh load/k6.sh run -e PROFILE=load load/mixed.js",
-        "audit": "npm audit --audit-level=high",
         "prepare": "husky"
     },
     "dependencies": {

@@ -9,6 +9,7 @@ import { RequestContextMiddleware } from './common/context/request-context.middl
 import { DatabaseModule } from './common/database/database.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { OutboxModule } from './common/outbox/outbox.module';
+import { SettingsModule } from './common/settings/settings.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { OrganizationScopeGuard } from './common/guards/organization-scope.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -49,6 +50,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
         MetricsModule,
         DatabaseModule,
         CommonModule,
+        SettingsModule,
         IdempotencyModule,
         OutboxModule,
         JwtModule.register({}),

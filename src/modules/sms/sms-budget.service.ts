@@ -3,8 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
-import { AppConfig } from '../../common/config/app-config';
 import { MetricsService } from '../../common/metrics/metrics.service';
+import { SettingsService } from '../../common/settings/settings.service';
 import { SmsCounter } from './schemas/sms-counter.schema';
 
 export type BudgetWindow = 'hour' | 'day';
@@ -24,7 +24,7 @@ export interface BudgetDecision {
 export class SmsBudgetService {
     constructor(
         @InjectModel(SmsCounter.name) private readonly counters: Model<SmsCounter>,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly metrics: MetricsService,
         private readonly logger: PinoLogger,
     ) {
@@ -32,12 +32,11 @@ export class SmsBudgetService {
     }
 
     async consume(now = new Date()): Promise<BudgetDecision> {
-        const { hourlyLimit, dailyLimit } = this.config.sms.budget;
-        const hour = await this.charge('hour', hourlyLimit, now);
+        const hour = await this.charge('hour', this.settings.get('sms.hourly_limit'), now);
 
         if (!hour.allowed) return hour;
 
-        const day = await this.charge('day', dailyLimit, now);
+        const day = await this.charge('day', this.settings.get('sms.daily_limit'), now);
 
         if (!day.allowed) {
             await this.refund('hour', now);

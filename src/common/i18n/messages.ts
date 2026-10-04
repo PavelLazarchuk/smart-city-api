@@ -118,6 +118,12 @@ export const ERROR_CODES = {
     SMS_DELIVERY_FAILED: 'SMS_DELIVERY_FAILED',
     SMS_BUDGET_EXCEEDED: 'SMS_BUDGET_EXCEEDED',
     ARCHIVE_SERVICE_MISMATCH: 'ARCHIVE_SERVICE_MISMATCH',
+
+    SETTING_NOT_FOUND: 'SETTING_NOT_FOUND',
+    SETTINGS_INVALID: 'SETTINGS_INVALID',
+    SETTING_LOCKOUT_RISK: 'SETTING_LOCKOUT_RISK',
+    SETTINGS_READ_ONLY: 'SETTINGS_READ_ONLY',
+    SETTINGS_CONFLICT: 'SETTINGS_CONFLICT',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -244,6 +250,12 @@ export const errorMessages: Record<ErrorCode, string> = {
     SMS_DELIVERY_FAILED: 'The SMS could not be delivered.',
     SMS_BUDGET_EXCEEDED: 'The SMS sending budget for this period is exhausted. Try again later.',
     ARCHIVE_SERVICE_MISMATCH: 'The service belongs to a different organization.',
+
+    SETTING_NOT_FOUND: 'There is no setting with this key.',
+    SETTINGS_INVALID: 'One or more settings are invalid.',
+    SETTING_LOCKOUT_RISK: 'This change would leave administrators unable to sign in.',
+    SETTINGS_READ_ONLY: 'Settings are read-only while SETTINGS_IGNORE_DB is set.',
+    SETTINGS_CONFLICT: 'The settings were changed by someone else. Reload them and try again.',
 };
 
 const INBOX_WHEN = '{{#date}} on {{date}}{{/date}}{{#time}} at {{time}}{{/time}}';

@@ -13,6 +13,20 @@ export class SessionsRepository extends BaseRepository<Session> {
         super(model);
     }
 
+    async countUsersSince(since: Date, role: string): Promise<number> {
+        const [row] = await this.model
+            .aggregate<{ total: number }>([
+                { $match: { created_at: { $gte: since } } },
+                { $group: { _id: '$user_id' } },
+                { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+                { $match: { 'user.role': role } },
+                { $count: 'total' },
+            ])
+            .exec();
+
+        return row?.total ?? 0;
+    }
+
     async createSession(
         data: {
             _id: Types.ObjectId;

@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
-import { AppConfig } from '../../common/config/app-config';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type Role, ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
+import { SettingsService } from '../../common/settings/settings.service';
 import { type LoginMethod } from '../../common/config/env.schema';
 import { SmsService } from '../sms/sms.service';
 import { type UserEntity } from '../users/users.repository';
@@ -42,7 +42,7 @@ export class AuthService {
         private readonly otp: OtpService,
         private readonly sms: SmsService,
         private readonly phonePolicy: PhonePolicy,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly tx: TransactionRunner,
         private readonly logger: PinoLogger,
     ) {
@@ -97,7 +97,7 @@ export class AuthService {
 
     /** Client self-registration; exists only while `AUTH_CLIENT_LOGIN_METHOD=password`. */
     async register(input: RegisterInput, client: ClientInfo): Promise<TokenPairResponse> {
-        if (this.config.auth.clientLoginMethod !== 'password')
+        if (this.settings.get('auth.client_login_method') !== 'password')
             throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
         const user = await this.users.createClient(input);
@@ -110,7 +110,8 @@ export class AuthService {
      * status reveals which phones exist.
      */
     async requestOtp(phone: string): Promise<{ phone: string; expires_in: number }> {
-        const { adminLoginMethod, clientLoginMethod } = this.config.auth;
+        const adminLoginMethod = this.settings.get('auth.admin_login_method');
+        const clientLoginMethod = this.settings.get('auth.client_login_method');
 
         if (adminLoginMethod !== 'sms' && clientLoginMethod !== 'sms')
             throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
@@ -161,7 +162,7 @@ export class AuthService {
                 user = await this.users.updateSelf(user._id.toHexString(), patch);
             }
         } else {
-            if (this.config.auth.clientLoginMethod !== 'sms')
+            if (this.settings.get('auth.client_login_method') !== 'sms')
                 throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
             user = await this.users.createClient({
@@ -313,8 +314,8 @@ export class AuthService {
 
     private methodFor(role: Role): LoginMethod {
         return role === ROLES.COMMON_USER
-            ? this.config.auth.clientLoginMethod
-            : this.config.auth.adminLoginMethod;
+            ? this.settings.get('auth.client_login_method')
+            : this.settings.get('auth.admin_login_method');
     }
 
     private assertMethodEnabled(role: Role, method: LoginMethod): void {

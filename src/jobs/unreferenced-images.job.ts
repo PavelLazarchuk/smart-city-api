@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
 
-import { AppConfig } from '../common/config/app-config';
+import { SettingsService } from '../common/settings/settings.service';
 import { texts } from '../common/i18n/messages';
 import { MailService } from '../integrations/mail/mail.service';
 import { ImagesRepository } from '../modules/images/images.repository';
@@ -32,7 +32,7 @@ export class UnreferencedImagesJob {
         private readonly news: NewsService,
         private readonly services: ServicesService,
         private readonly mail: MailService,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly runner: JobRunner,
     ) {}
 
@@ -43,7 +43,7 @@ export class UnreferencedImagesJob {
     async execute(): Promise<{ rows: number; bytes: number; recipients: number }> {
         const rows = await this.collect();
         const bytes = rows.reduce((total, row) => total + row.size, 0);
-        const recipients = this.config.jobs.reportRecipients;
+        const recipients = this.settings.get('jobs.report_recipients');
 
         if (rows.length === 0 || recipients.length === 0) return { rows: rows.length, bytes, recipients: 0 };
 

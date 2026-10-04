@@ -71,8 +71,37 @@ export class UsersRepository extends BaseRepository<User> {
         return new Map(rows.map((row) => [row._id.toHexString(), row.email]));
     }
 
-    countOtherSuperAdmins(exceptId: string): Promise<number> {
-        return this.count({ role: 'super-admin', _id: { $ne: new Types.ObjectId(exceptId) } });
+    countOtherSuperAdmins(exceptId: string, phonePrefix?: string): Promise<number> {
+        return this.count({
+            role: 'super-admin',
+            _id: { $ne: new Types.ObjectId(exceptId) },
+            ...(phonePrefix === undefined ? {} : { phone: { $regex: `^${phonePrefix}` } }),
+        });
+    }
+
+    async staffIdsWithout(
+        identifier: 'phone' | 'password',
+        exceptId: string,
+        limit: number,
+    ): Promise<string[]> {
+        const missing: FilterQuery<User> =
+            identifier === 'phone'
+                ? { phone: { $not: { $type: 'string' } } }
+                : {
+                      $or: [
+                          { login: { $not: { $type: 'string' } } },
+                          { password_hash: { $not: { $type: 'string' } } },
+                      ],
+                  };
+        const rows = await this.model
+            .find({ role: { $ne: 'common-user' }, _id: { $ne: new Types.ObjectId(exceptId) }, ...missing })
+            .select('_id')
+            .sort({ _id: 1 })
+            .limit(limit)
+            .lean<{ _id: Types.ObjectId }[]>()
+            .exec();
+
+        return rows.map((row) => row._id.toHexString());
     }
 
     list(filter: FilterQuery<User>, pagination: ResolvedPagination): Promise<PaginatedResult<UserEntity>> {

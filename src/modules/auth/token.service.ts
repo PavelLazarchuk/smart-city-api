@@ -7,6 +7,7 @@ import { AppConfig } from '../../common/config/app-config';
 import { secretFor } from '../../common/config/jwt-keys';
 import { type Role, ROLE_VALUES } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
+import { SettingsService } from '../../common/settings/settings.service';
 
 export const refreshClaimsSchema = z.object({
     sub: z.string().min(1),
@@ -27,6 +28,7 @@ export class TokenService {
     constructor(
         private readonly jwt: JwtService,
         private readonly config: AppConfig,
+        private readonly settings: SettingsService,
     ) {}
 
     async issuePair(user: { id: string; role: Role }, sid: string): Promise<IssuedPair> {
@@ -38,7 +40,7 @@ export class TokenService {
                 keyid: accessKeys.kid,
                 issuer,
                 audience,
-                expiresIn: this.config.auth.accessTtlSeconds,
+                expiresIn: this.settings.get('auth.access_ttl_seconds'),
             },
         );
         const refreshToken = await this.jwt.signAsync(
@@ -48,7 +50,7 @@ export class TokenService {
                 keyid: refreshKeys.kid,
                 issuer,
                 audience,
-                expiresIn: this.config.auth.refreshTtlSeconds,
+                expiresIn: this.settings.get('auth.refresh_ttl_seconds'),
             },
         );
         const access = this.decode(accessToken);

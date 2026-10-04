@@ -105,6 +105,10 @@ inserts still hit it. Its `down` is **lossy by design**: a service in the trash 
 (it was deleted from the user's point of view), and finished bookings are removed (the old model has no such
 row and the plain unique index could not be rebuilt over them). Run it only as a real rollback.
 
+[`20261004000000-settings.js`](../migrations/20261004000000-settings.js) is the ordinary kind: it creates the
+`settings` collection with its single empty document, which means "everything from the environment", so
+neither the running version nor the new one behaves differently after it. `down` drops the collection.
+
 [`20261002100000-rename-notification-templates.js`](../migrations/20261002100000-rename-notification-templates.js)
 renames `notification_templates` to `channel_templates` (or creates the new collection with its index when there
 is nothing to rename) and leaves the earlier migration that created the old name alone. The previous version

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { AppConfig } from '../common/config/app-config';
+import { SettingsService } from '../common/settings/settings.service';
 import { ServicesService } from '../modules/services/services.service';
 import { JobRunner } from './job-runner';
 
@@ -10,7 +10,7 @@ export const TRASH_PURGE_JOB = 'trash_purge';
 export class TrashPurgeJob {
     constructor(
         private readonly services: ServicesService,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly runner: JobRunner,
     ) {}
 
@@ -19,7 +19,9 @@ export class TrashPurgeJob {
     }
 
     async execute(now: Date): Promise<{ purged: number }> {
-        const before = new Date(now.getTime() - this.config.retention.serviceTrashDays * 24 * 60 * 60 * 1000);
+        const before = new Date(
+            now.getTime() - this.settings.get('retention.service_trash_days') * 24 * 60 * 60 * 1000,
+        );
         let purged = 0;
 
         for (;;) {

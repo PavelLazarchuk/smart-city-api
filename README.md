@@ -219,6 +219,13 @@ migration that creates the index, because changing one needs a `collMod` migrati
   `DELETE` returns the key to the built-in text from `messages.ts`, and `POST …/:key/preview` renders the stored
   template or a draft with sample data. Admins of the organization and super-admins only — see
   [docs/data-model.md](docs/data-model.md#channel-templates).
+- A super-admin changes part of the configuration without a redeploy: `GET /settings` lists every runtime key
+  (login methods, account lock, token and code lifetimes, rate and SMS limits, uploads, reminders, retention,
+  currency, report recipients) with the value in force, its source (`db` or `env`) and its JSON Schema;
+  `PATCH /settings` changes several keys atomically, `DELETE /settings/:key` returns one to the environment
+  value, and `If-Match` with the `ETag` of the read refuses a write over someone else's. Other instances follow
+  within 10 seconds; `SETTINGS_IGNORE_DB=true` falls back to the environment — see
+  [docs/data-model.md](docs/data-model.md#runtime-settings).
 - Every account has an in-app feed: `GET /me/notifications` (unread first, then the newest read ones;
   `?status=`, `?organization_id=`, `?audience=`, `meta.unread`), `GET /me/notifications/unread-count`
   (`?by_organization=true` splits it), `POST /me/notifications/:id/read` and `POST /me/notifications/read-all`
@@ -245,7 +252,7 @@ src/
   main.ts, app.module.ts, app.setup.ts   bootstrap; app.setup is shared with the e2e harness
   common/        config, database (transaction runner, base repository), logging, metrics (/metrics),
                  http (errors, envelope), pagination, zod primitives, decorators, guards, cascade registry,
-                 message catalogue
+                 message catalogue, runtime settings (/settings)
   modules/       auth, users, organizations, categories, services, bookings, news, infosections,
                  images, archives, sms, analytics, health, webhooks, channel-templates,
                  notifications —

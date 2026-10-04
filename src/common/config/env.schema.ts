@@ -180,6 +180,8 @@ export const envSchema = z
         JOBS_ENABLED: z.stringbool().default(false),
         JOBS_TIMEZONE: z.string().default('UTC'),
         REPORT_RECIPIENTS: csv,
+
+        SETTINGS_IGNORE_DB: z.stringbool().default(false),
     })
     .superRefine((env, ctx) => {
         if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
@@ -262,8 +264,6 @@ export const envSchema = z
             });
         }
 
-        // A window shorter than one lock would reset the counter while the account is still locked,
-        // so the escalation — and with it AUTH_LOCKOUT_MAX_SECONDS — could never be reached.
         if (env.AUTH_FAILED_ATTEMPT_WINDOW_SECONDS < env.AUTH_LOCKOUT_SECONDS) {
             ctx.addIssue({
                 code: 'custom',

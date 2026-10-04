@@ -19,6 +19,10 @@ export class AuthStoreService {
         return this.sessions.revokeAllForUser(userId, session, exceptSid);
     }
 
+    countUsersSignedInSince(since: Date, role: string): Promise<number> {
+        return this.sessions.countUsersSince(since, role);
+    }
+
     deleteCodesForPhone(phone: string, session?: ClientSession): Promise<number> {
         return this.codes.deleteForPhone(phone, session);
     }

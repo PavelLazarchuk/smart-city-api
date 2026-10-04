@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 
-import { AppConfig } from '../../common/config/app-config';
 import { ApiError } from '../../common/http/api-error';
 import { type ErrorCode } from '../../common/i18n/messages';
+import { SettingsService } from '../../common/settings/settings.service';
 import { PasswordService } from './password.service';
 import {
     LOGIN_SCOPE,
@@ -16,23 +16,23 @@ export class OtpService {
     constructor(
         private readonly codes: VerificationCodesRepository,
         private readonly passwords: PasswordService,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
     ) {}
 
     generateCode(): string {
-        const length = this.config.otp.length;
+        const length = this.settings.get('otp.length');
         const max = 10 ** length;
 
         return randomInt(0, max).toString().padStart(length, '0');
     }
 
     get ttlSeconds(): number {
-        return this.config.otp.ttlSeconds;
+        return this.settings.get('otp.ttl_seconds');
     }
 
     async issue(phone: string, scope: OtpScope = LOGIN_SCOPE): Promise<string> {
         const code = this.generateCode();
-        const expiresAt = new Date(Date.now() + this.config.otp.ttlSeconds * 1000);
+        const expiresAt = new Date(Date.now() + this.settings.get('otp.ttl_seconds') * 1000);
         await this.codes.issue(phone, await this.passwords.hash(code), expiresAt, scope);
 
         return code;
@@ -63,7 +63,8 @@ export class OtpService {
 
         const attempts = await this.codes.registerAttempt(record._id.toHexString());
 
-        if (attempts === null || attempts > this.config.otp.maxAttempts) return 'OTP_ATTEMPTS_EXCEEDED';
+        if (attempts === null || attempts > this.settings.get('otp.max_attempts'))
+            return 'OTP_ATTEMPTS_EXCEEDED';
 
         if (!(await this.passwords.verify(record.code_hash, code))) return 'OTP_INVALID';
 

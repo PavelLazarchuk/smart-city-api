@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { AppConfig } from '../common/config/app-config';
+import { SettingsService } from '../common/settings/settings.service';
 import { texts } from '../common/i18n/messages';
 import { MailService } from '../integrations/mail/mail.service';
 import { OrganizationsService } from '../modules/organizations/organizations.service';
@@ -28,6 +29,7 @@ export class DebtorReportJob {
         private readonly slots: SlotsRepository,
         private readonly mail: MailService,
         private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly runner: JobRunner,
     ) {}
 
@@ -37,7 +39,7 @@ export class DebtorReportJob {
 
     async execute(now: Date): Promise<{ rows: number; recipients: number }> {
         const rows = await this.collect(now);
-        const recipients = this.config.jobs.reportRecipients;
+        const recipients = this.settings.get('jobs.report_recipients');
 
         if (recipients.length === 0) return { rows: rows.length, recipients: 0 };
 

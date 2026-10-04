@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { AppConfig } from '../common/config/app-config';
+import { SettingsService } from '../common/settings/settings.service';
 import { dateOnlyIn, shiftDateOnly } from '../common/time/zone';
 import { OrganizationsService } from '../modules/organizations/organizations.service';
 import { RECURRENT_SERVICE_TYPES } from '../modules/services/schemas/service.schema';
@@ -29,6 +30,7 @@ export class RecurrentSlotsJob {
         private readonly slots: SlotsRepository,
         private readonly organizations: OrganizationsService,
         private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly runner: JobRunner,
     ) {}
 
@@ -37,7 +39,7 @@ export class RecurrentSlotsJob {
     }
 
     async execute(now: Date): Promise<{ services_updated: number }> {
-        const horizon = this.config.retention.recurrentHorizonDays;
+        const horizon = this.settings.get('retention.recurrent_horizon_days');
         const [services, organizationHolidays, timezones] = await Promise.all([
             this.services.findWithRecurrentOptions(),
             this.organizations.holidays(),

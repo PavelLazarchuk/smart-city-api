@@ -161,6 +161,16 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `WEBHOOK_NOT_FOUND`          | 404    |                                                                     |
 | `CHANNEL_TEMPLATE_NOT_FOUND` | 404    | The key is not one of the e-mails or SMS an organization can reword |
 
+### Runtime settings
+
+| Code                   | Status | Meaning                                                                        |
+| ---------------------- | ------ | ------------------------------------------------------------------------------ |
+| `SETTING_NOT_FOUND`    | 404    | The key is not in the settings registry                                        |
+| `SETTINGS_INVALID`     | 422    | A value failed its schema or a cross-key rule; `details[]` names each key      |
+| `SETTING_LOCKOUT_RISK` | 409    | The staff login method would leave the super admins unable to sign in          |
+| `SETTINGS_READ_ONLY`   | 409    | `SETTINGS_IGNORE_DB=true`; the stored overrides are ignored and writes refused |
+| `SETTINGS_CONFLICT`    | 409    | `If-Match` no longer matches: someone else changed the settings in between     |
+
 ### Booking lifecycle (P3)
 
 | Code                             | Status | Meaning                                                                      |

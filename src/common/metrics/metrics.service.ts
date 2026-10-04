@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { collectDefaultMetrics, Counter, Histogram, Registry } from 'prom-client';
+import { collectDefaultMetrics, Counter, Gauge, Histogram, Registry } from 'prom-client';
 
 import { AppConfig } from '../config/app-config';
 
@@ -18,6 +18,7 @@ export class MetricsService {
     private readonly smsBudgetBlocked: Counter<'window'>;
     private readonly droppedItems: Counter<'route'>;
     private readonly outboxDeliveries: Counter<'type' | 'target' | 'result'>;
+    private settingsRefreshedAt: number | null = null;
 
     constructor(config: AppConfig) {
         this.registry.setDefaultLabels({ env: config.env, version: config.build.version });
@@ -84,6 +85,17 @@ export class MetricsService {
             labelNames: ['type', 'target', 'result'],
             registers: [this.registry],
         });
+        const refreshedAt = (): number | null => this.settingsRefreshedAt;
+        new Gauge({
+            name: 'settings_snapshot_age_seconds',
+            help: 'Seconds since runtime settings were last read from the database',
+            registers: [this.registry],
+            collect() {
+                const at = refreshedAt();
+
+                if (at !== null) this.set((Date.now() - at) / 1000);
+            },
+        });
     }
 
     observeHttp(method: string, route: string, status: number, durationMs: number): void {
@@ -122,6 +134,10 @@ export class MetricsService {
 
     countOutboxDelivery(type: string, target: string, result: 'ok' | 'failed'): void {
         this.outboxDeliveries.inc({ type, target, result });
+    }
+
+    markSettingsRefreshed(at = Date.now()): void {
+        this.settingsRefreshedAt = at;
     }
 
     render(): Promise<string> {

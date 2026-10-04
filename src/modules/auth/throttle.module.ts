@@ -3,6 +3,7 @@ import { type ExecutionContext } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerStorageService, type ThrottlerStorage } from '@nestjs/throttler';
 
 import { AppConfig } from '../../common/config/app-config';
+import { SettingsService } from '../../common/settings/settings.service';
 import { MongoThrottlerStorage } from './mongo-throttler.storage';
 import { RedisThrottlerStorage } from './redis-throttler.storage';
 import { AuthStoreModule } from './store/auth-store.module';
@@ -40,55 +41,60 @@ function storageFor(
     imports: [
         ThrottlerModule.forRootAsync({
             imports: [AuthStoreModule],
-            inject: [AppConfig, MongoThrottlerStorage, RedisThrottlerStorage],
+            inject: [AppConfig, SettingsService, MongoThrottlerStorage, RedisThrottlerStorage],
             useFactory: (
                 config: AppConfig,
+                settings: SettingsService,
                 mongoStorage: MongoThrottlerStorage,
                 redisStorage: RedisThrottlerStorage,
-            ) => ({
-                storage: storageFor(config, mongoStorage, redisStorage),
-                throttlers: [
-                    {
-                        name: 'global',
-                        ttl: config.throttle.ttlSeconds * 1000,
-                        limit: config.throttle.globalLimit,
-                    },
-                    {
-                        name: 'auth',
-                        ttl: config.throttle.ttlSeconds * 1000,
-                        limit: config.throttle.limit,
-                        skipIf: (context) => {
-                            const path = pathOf(context);
+            ) => {
+                const ttl = (): number => settings.get('throttle.ttl_seconds') * 1000;
 
-                            return !path.includes('/auth/') && !path.endsWith('/me/phone/code');
+                return {
+                    storage: storageFor(config, mongoStorage, redisStorage),
+                    throttlers: [
+                        {
+                            name: 'global',
+                            ttl,
+                            limit: () => settings.get('throttle.global_limit'),
                         },
-                    },
-                    {
-                        name: 'phone',
-                        ttl: config.throttle.ttlSeconds * 1000,
-                        limit: config.throttle.limit,
-                        skipIf: (context) => {
-                            const body = context
-                                .switchToHttp()
-                                .getRequest<{ body?: { phone?: unknown } }>().body;
+                        {
+                            name: 'auth',
+                            ttl,
+                            limit: () => settings.get('throttle.limit'),
+                            skipIf: (context) => {
+                                const path = pathOf(context);
 
-                            return typeof body?.phone !== 'string';
+                                return !path.includes('/auth/') && !path.endsWith('/me/phone/code');
+                            },
                         },
-                        getTracker: (req: Record<string, unknown>) => {
-                            const body = req['body'] as { phone?: string } | undefined;
+                        {
+                            name: 'phone',
+                            ttl,
+                            limit: () => settings.get('throttle.limit'),
+                            skipIf: (context) => {
+                                const body = context
+                                    .switchToHttp()
+                                    .getRequest<{ body?: { phone?: unknown } }>().body;
 
-                            return `phone:${body?.phone ?? ''}`;
+                                return typeof body?.phone !== 'string';
+                            },
+                            getTracker: (req: Record<string, unknown>) => {
+                                const body = req['body'] as { phone?: string } | undefined;
+
+                                return `phone:${body?.phone ?? ''}`;
+                            },
                         },
-                    },
-                    {
-                        name: 'upload',
-                        ttl: config.throttle.ttlSeconds * 1000,
-                        limit: config.throttle.uploadLimit,
-                        skipIf: (context) =>
-                            !(methodOf(context) === 'POST' && pathOf(context).endsWith('/images')),
-                    },
-                ],
-            }),
+                        {
+                            name: 'upload',
+                            ttl,
+                            limit: () => settings.get('throttle.upload_limit'),
+                            skipIf: (context) =>
+                                !(methodOf(context) === 'POST' && pathOf(context).endsWith('/images')),
+                        },
+                    ],
+                };
+            },
         }),
     ],
     exports: [ThrottlerModule],

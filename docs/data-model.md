@@ -42,6 +42,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `sms_counters`        | Global SMS budget windows                                      | `_id` = `sms:<hour\|day>:<bucket>`, `count`, `expires_at`                                                                                                                                                                                                                                                                                                                                 |
 | `idempotency_keys`    | Remembered writes per `Idempotency-Key`                        | `scope`, `key`, `user_id`, `request_hash`, `status`, `response`, `expires_at`                                                                                                                                                                                                                                                                                                             |
 | `favorites`           | A client's saved services and organizations                    | `user_id`, `type` (`service` \| `organization`), `target_id`, `organization_id`                                                                                                                                                                                                                                                                                                           |
+| `settings`            | Runtime settings overridden by a super admin                   | one document with the fixed `_id` `000000000000000000000001`: `settings` (overrides nested by group), `updated_at`                                                                                                                                                                                                                                                                        |
 
 ## The service tree and its bookings
 
@@ -219,6 +220,38 @@ template is applied when the outbox delivers the event, not when it is queued, s
 still waiting in the outbox. Should a stored template stop rendering after a catalogue change, or come out empty
 for one event (a body of only `{{reason}}` and no reason given), delivery falls back to the built-in text and
 logs a warning instead of failing.
+
+## Runtime settings
+
+Part of the configuration is editable at runtime by a super admin through `/settings`: login methods, the
+account lock, token and one-time code lifetimes, rate limits, SMS limits, upload limits, the booking reminder
+lead, retention horizons, the default currency and the report recipients. The keys, their schemas and
+descriptions live in [settings.registry.ts](../src/common/settings/settings.registry.ts); a key that is not
+there can be neither read nor written.
+
+The whole application shares one document in `settings`:
+
+```
+{
+  _id: ObjectId("000000000000000000000001"),
+  settings: { auth: { admin_login_method: "sms", lockout_seconds: 600 }, upload: { allowed_mime: ["image/png"] } },
+  updated_at: Date
+}
+```
+
+`settings` holds only the overridden keys, nested by group, so the key `auth.lockout_seconds` is the path
+`settings.auth.lockout_seconds`. A write sets or unsets only the keys it changes
+(`$set: { "settings.auth.lockout_seconds": 600 }`, and `$unset` of the whole group once it is empty), so every
+other key is left as it is. A missing key falls back to the
+environment variable and then to the default in `env.schema.ts`. Every instance keeps the values in memory and
+reads `updated_at` every 10 seconds, rereading the document when it moved. A stored value that no longer passes
+its schema, or a path the registry no longer knows, is ignored with a warning but kept in the document: another
+instance may run a newer version or a higher `UPLOAD_MAX_BYTES` and still use it. Writing or resetting that key
+replaces or removes it; a group that is not an object at all is replaced by the next write to it.
+
+`updated_at` doubles as the ETag: `GET /settings` returns it, and a `PATCH` or `DELETE` sent with `If-Match`
+answers `409 SETTINGS_CONFLICT` when someone else wrote in between. The write itself is one `updateOne`
+conditioned on the `updated_at` it validated against, so two concurrent writes cannot both pass.
 
 ## Notifications
 

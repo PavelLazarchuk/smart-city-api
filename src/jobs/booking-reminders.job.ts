@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { AppConfig } from '../common/config/app-config';
+import { SettingsService } from '../common/settings/settings.service';
 import { OutboxService } from '../common/outbox/outbox.service';
 import { BookingsRepository } from '../modules/bookings/bookings.repository';
 import { UsersService } from '../modules/users/users.service';
@@ -16,7 +16,7 @@ export class BookingRemindersJob {
         private readonly bookings: BookingsRepository,
         private readonly users: UsersService,
         private readonly outbox: OutboxService,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly runner: JobRunner,
     ) {}
 
@@ -25,7 +25,7 @@ export class BookingRemindersJob {
     }
 
     async execute(now: Date): Promise<{ until: string; reminders: number }> {
-        const until = new Date(now.getTime() + this.config.bookings.reminderHours * 60 * 60 * 1000);
+        const until = new Date(now.getTime() + this.settings.get('bookings.reminder_hours') * 60 * 60 * 1000);
         let reminders = 0;
 
         for (;;) {

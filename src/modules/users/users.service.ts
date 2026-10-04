@@ -1,15 +1,21 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { type ClientSession, type FilterQuery, Types } from 'mongoose';
+import { PinoLogger } from 'nestjs-pino';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
-import { AppConfig } from '../../common/config/app-config';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type Role, ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
+import { type SettingsWarning } from '../../common/settings/dto/settings.schemas';
+import {
+    settingLockoutRisk,
+    type SettingsChange,
+    SettingsService,
+} from '../../common/settings/settings.service';
 import { AuthStoreService } from '../auth/store/auth-store.service';
 import { BookingsRepository } from '../bookings/bookings.repository';
 import { PasswordService } from '../auth/password.service';
@@ -27,6 +33,8 @@ import { type User } from './schemas/user.schema';
 const LOGIN_MIN_LENGTH = 6;
 const DUPLICATE_KEY = 11000;
 const CALENDAR_TOKEN_BYTES = 32;
+const WARNING_USER_LIMIT = 50;
+const ACTIVE_CLIENTS_WINDOW_MS = 24 * 3600_000;
 
 function calendarTokenHash(token: string): string {
     return createHash('sha256').update(token).digest('hex');
@@ -58,16 +66,90 @@ export class UsersService implements OnModuleInit {
         private readonly phonePolicy: PhonePolicy,
         private readonly authStore: AuthStoreService,
         private readonly organizations: OrganizationsService,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly pagination: PaginationService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
-    ) {}
+        private readonly logger: PinoLogger,
+    ) {
+        this.logger.setContext(UsersService.name);
+    }
 
     onModuleInit(): void {
         this.cascade.register('organization', 'users.detach_organization', async (organizationId, ctx) => {
             await this.users.detachOrganization(organizationId, ctx.session);
         });
+        this.settings.registerWriteCheck('users.sign_in_access', (change, actor) =>
+            this.checkSignInAccess(change, actor),
+        );
+    }
+
+    private async checkSignInAccess(change: SettingsChange, actor: AuthUser): Promise<SettingsWarning[]> {
+        const warnings: SettingsWarning[] = [];
+        const adminMethod = change.after['auth.admin_login_method'];
+
+        if (adminMethod !== change.before['auth.admin_login_method']) {
+            const self = await this.users.findByIdWithPassword(actor.id);
+
+            if (adminMethod === 'sms') {
+                if (!self?.phone || !this.phonePolicy.isSupported(self.phone))
+                    throw settingLockoutRisk([
+                        {
+                            path: 'auth.admin_login_method',
+                            message: 'You have no phone number that can receive codes',
+                        },
+                    ]);
+
+                const others = await this.users.countOtherSuperAdmins(actor.id);
+
+                if (
+                    others > 0 &&
+                    (await this.users.countOtherSuperAdmins(actor.id, this.phonePolicy.countryCode)) === 0
+                )
+                    throw settingLockoutRisk([
+                        {
+                            path: 'auth.admin_login_method',
+                            message: 'No other super admin has a phone number that can receive codes',
+                        },
+                    ]);
+            } else if (!self?.login || !self.password_hash) {
+                throw settingLockoutRisk([
+                    { path: 'auth.admin_login_method', message: 'You have no login and password' },
+                ]);
+            }
+
+            const stranded = await this.users.staffIdsWithout(
+                adminMethod === 'sms' ? 'phone' : 'password',
+                actor.id,
+                WARNING_USER_LIMIT,
+            );
+
+            if (stranded.length > 0)
+                warnings.push({
+                    code: 'STAFF_CANNOT_SIGN_IN',
+                    message:
+                        adminMethod === 'sms'
+                            ? 'These staff members have no phone number and cannot sign in'
+                            : 'These staff members have no login and password and cannot sign in',
+                    user_ids: stranded,
+                });
+        }
+
+        const clientMethod = change.after['auth.client_login_method'];
+        const dailyLimit = change.after['sms.daily_limit'];
+
+        if (clientMethod === 'sms' && change.before['auth.client_login_method'] !== 'sms' && dailyLimit > 0) {
+            const since = new Date(Date.now() - ACTIVE_CLIENTS_WINDOW_MS);
+            const activeClients = await this.authStore.countUsersSignedInSince(since, ROLES.COMMON_USER);
+
+            if (activeClients > dailyLimit)
+                this.logger.warn(
+                    { active_clients: activeClients, sms_daily_limit: dailyLimit },
+                    'sms client login enabled with a daily sms limit below the active clients of the last day',
+                );
+        }
+
+        return warnings;
     }
 
     async resolveAuthUser(userId: string, sid: string): Promise<AuthUser | null> {
@@ -409,7 +491,7 @@ export class UsersService implements OnModuleInit {
             return;
         }
 
-        if (this.config.auth.adminLoginMethod === 'sms') {
+        if (this.settings.get('auth.admin_login_method') === 'sms') {
             if (!phone) throw ApiError.unprocessable('ADMIN_PHONE_REQUIRED');
 
             return;

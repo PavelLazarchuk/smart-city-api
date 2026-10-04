@@ -6,6 +6,7 @@ import sharp from 'sharp';
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
+import { SettingsService } from '../../common/settings/settings.service';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { ScopeResolverRegistry } from '../../common/guards/scope-resolver.registry';
 import { ApiError } from '../../common/http/api-error';
@@ -71,6 +72,7 @@ export class ImagesService implements OnModuleInit {
         private readonly organizations: OrganizationsService,
         private readonly pagination: PaginationService,
         private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
         private readonly scopes: ScopeResolverRegistry,
@@ -123,10 +125,10 @@ export class ImagesService implements OnModuleInit {
     async upload(organizationId: string, file: UploadedFile | undefined): Promise<ImageEntity> {
         if (!file) throw ApiError.badRequest('FILE_REQUIRED');
 
-        if (!this.config.upload.allowedMime.includes(file.mimetype))
+        if (!this.settings.get('upload.allowed_mime').includes(file.mimetype))
             throw ApiError.badRequest('FILE_TYPE_NOT_ALLOWED');
 
-        if (file.size > this.config.upload.maxBytes) throw ApiError.badRequest('FILE_TOO_LARGE');
+        if (file.size > this.settings.get('upload.max_bytes')) throw ApiError.badRequest('FILE_TOO_LARGE');
 
         await this.organizations.assertExists(organizationId);
 

@@ -7,6 +7,10 @@ import { ApiError } from '../../common/http/api-error';
 export class PhonePolicy {
     constructor(private readonly config: AppConfig) {}
 
+    get countryCode(): string {
+        return this.config.phone.countryCode;
+    }
+
     isSupported(phone: string): boolean {
         return phone.startsWith(this.config.phone.countryCode);
     }

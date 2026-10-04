@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { setTimeout as delay } from 'node:timers/promises';
 import { PinoLogger } from 'nestjs-pino';
 
-import { AppConfig } from '../../common/config/app-config';
+import { SettingsService } from '../../common/settings/settings.service';
 import { UsersService } from '../users/users.service';
 
 const DELAY_STEP_MS = 100;
@@ -17,7 +17,7 @@ const DELAY_CAP_MS = 2000;
 export class LoginAttemptsService {
     constructor(
         private readonly users: UsersService,
-        private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(LoginAttemptsService.name);
@@ -28,8 +28,10 @@ export class LoginAttemptsService {
     }
 
     async registerFailure(userId: string, now = new Date()): Promise<void> {
-        const { maxFailedAttempts, lockoutSeconds, lockoutMaxSeconds, failedAttemptWindowSeconds } =
-            this.config.auth;
+        const maxFailedAttempts = this.settings.get('auth.max_failed_attempts');
+        const lockoutSeconds = this.settings.get('auth.lockout_seconds');
+        const lockoutMaxSeconds = this.settings.get('auth.lockout_max_seconds');
+        const failedAttemptWindowSeconds = this.settings.get('auth.failed_attempt_window_seconds');
         const windowStart = new Date(now.getTime() - failedAttemptWindowSeconds * 1000);
         const attempts = await this.users.registerFailedLogin(userId, windowStart, now);
 

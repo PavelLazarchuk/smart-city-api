@@ -4,6 +4,7 @@ import { MulterModule } from '@nestjs/platform-express';
 
 import { AppConfig } from '../../common/config/app-config';
 import { ApiError } from '../../common/http/api-error';
+import { SettingsService } from '../../common/settings/settings.service';
 import { StorageModule } from '../../integrations/storage/storage.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { ImagesController } from './images.controller';
@@ -19,15 +20,15 @@ import { Image, ImageSchema } from './schemas/image.schema';
          * The magic-byte check in the service still has the final word on the type.
          */
         MulterModule.registerAsync({
-            inject: [AppConfig],
-            useFactory: (config: AppConfig) => ({
+            inject: [AppConfig, SettingsService],
+            useFactory: (config: AppConfig, settings: SettingsService) => ({
                 limits: { fileSize: config.upload.maxBytes, files: 1, fields: 8 },
                 fileFilter: (
                     _request: unknown,
                     file: { mimetype: string },
                     callback: (error: Error | null, acceptFile: boolean) => void,
                 ) => {
-                    const allowed = config.upload.allowedMime.includes(file.mimetype);
+                    const allowed = settings.get('upload.allowed_mime').includes(file.mimetype);
                     callback(allowed ? null : ApiError.badRequest('FILE_TYPE_NOT_ALLOWED'), allowed);
                 },
             }),

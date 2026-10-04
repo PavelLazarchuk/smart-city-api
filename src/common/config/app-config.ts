@@ -167,6 +167,8 @@ export class AppConfig {
         reportRecipients: string[];
     };
 
+    readonly settings: { ignoreDb: boolean };
+
     constructor(env: Env) {
         this.env = env.NODE_ENV;
         this.isProduction = env.NODE_ENV === 'production';
@@ -293,5 +295,6 @@ export class AppConfig {
             storageGcMinAgeSeconds: STORAGE_GC_MIN_AGE_SECONDS,
             reportRecipients: env.REPORT_RECIPIENTS,
         };
+        this.settings = { ignoreDb: env.SETTINGS_IGNORE_DB };
     }
 }

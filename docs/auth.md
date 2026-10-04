@@ -31,10 +31,18 @@ or demoted (`409 LAST_SUPER_ADMIN`), and nobody may change their own role (`422 
 
 ## Login methods
 
-Each audience has its own deployment-time method, `password` or `sms`:
+Each audience has its own method, `password` or `sms`, set by the environment and changeable at runtime by a
+super admin through `PATCH /settings` (no restart; the other instances follow within 10 seconds):
 
-- `AUTH_ADMIN_LOGIN_METHOD` — default `password`
-- `AUTH_CLIENT_LOGIN_METHOD` — default `sms`
+- `auth.admin_login_method` — `AUTH_ADMIN_LOGIN_METHOD`, default `password`
+- `auth.client_login_method` — `AUTH_CLIENT_LOGIN_METHOD`, default `sms`
+
+A switch of the staff method that would lock out the super admins is refused with `409 SETTING_LOCKOUT_RISK`:
+to `sms` the acting super admin needs a phone, and so does at least one other super admin if there are any; to
+`password` the acting super admin needs a login and a password. Other staff members left without the needed
+identifier do not block the switch; the response lists them under `warnings`. The account lock, token and
+one-time code lifetimes and the rate limits below are runtime settings as well
+([data-model.md](data-model.md#runtime-settings)); new values apply to tokens and codes issued afterwards.
 
 An account created for an audience must carry what that method needs (`ADMIN_PASSWORD_REQUIRED`,
 `ADMIN_PHONE_REQUIRED`, `CLIENT_PHONE_REQUIRED`), and using the wrong door answers

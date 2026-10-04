@@ -21,7 +21,7 @@ export function configureApp(app: INestApplication): INestApplication {
     app.enableCors({
         origin: config.http.corsOrigins.length > 0 ? config.http.corsOrigins : false,
         credentials: true,
-        exposedHeaders: ['X-Request-Id', 'Location'],
+        exposedHeaders: ['X-Request-Id', 'Location', 'ETag'],
     });
     express.useBodyParser('json', { limit: config.http.bodyLimit });
     express.useBodyParser('urlencoded', { limit: config.http.bodyLimit, extended: true });

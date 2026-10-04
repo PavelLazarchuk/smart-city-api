@@ -95,9 +95,28 @@ again once. Plan the release accordingly (it is the only such step — later **k
 see [auth.md](auth.md)). To avoid it entirely, deploy in two steps: first a release that signs with the claims
 but does not require them, then one that requires them, `JWT_REFRESH_TTL` later.
 
+## Runtime settings
+
+The variables behind the runtime settings ([data-model.md](data-model.md#runtime-settings)) — login methods,
+`AUTH_*` lock values, `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL`, `OTP_*`, `THROTTLE_*` limits, `SMS_*_LIMIT`,
+`UPLOAD_MAX_BYTES`, `UPLOAD_ALLOWED_MIME`, `BOOKING_REMINDER_HOURS`, `SERVICE_TRASH_RETENTION_DAYS`,
+`RECURRENT_HORIZON_DAYS`, `DEFAULT_CURRENCY` and `REPORT_RECIPIENTS` — are now defaults. A value a super admin
+saved through `/settings` wins over the environment; until then, and after a reset, the environment applies,
+so changing a variable still takes effect on restart for every key nobody overrode.
+
+`UPLOAD_MAX_BYTES` is also the hard ceiling: multer is configured with it once at boot, and the runtime
+`upload.max_bytes` may only lower the limit below it.
+
+`SETTINGS_IGNORE_DB=true` makes every instance ignore the stored overrides and answer writes with
+`409 SETTINGS_READ_ONLY`. It is the way back in when a setting has locked everybody out of the admin API:
+restart with it to serve the environment values, remove the broken key from the stored document
+(`db.settings.updateOne({ _id: ObjectId("000000000000000000000001") }, { $unset: { "settings.auth.admin_login_method": "" } })`),
+then restart without it. `settings_snapshot_age_seconds` is the age of the last successful settings read;
+alert when it stays above a minute.
+
 ## Login-method switches
 
-`AUTH_ADMIN_LOGIN_METHOD` and `AUTH_CLIENT_LOGIN_METHOD` are deployment-time choices. Flipping the client
+`AUTH_ADMIN_LOGIN_METHOD` and `AUTH_CLIENT_LOGIN_METHOD` (or `PATCH /settings`) are deliberate choices. Flipping the client
 method on a live system leaves `sms` clients without a password or `password` clients with an unverified
 phone; that migration flow (set password by OTP / verify phone) is out of scope.
 

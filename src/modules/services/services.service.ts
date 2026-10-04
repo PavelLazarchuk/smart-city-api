@@ -4,6 +4,7 @@ import { type ClientSession, type FilterQuery, type ProjectionType, Types } from
 
 import { CascadeRegistry } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
+import { SettingsService } from '../../common/settings/settings.service';
 import { TransactionRunner } from '../../common/database/transaction-runner';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ORGANIZATION_ROLES, ROLES } from '../../common/decorators/roles.decorator';
@@ -158,6 +159,7 @@ export class ServicesService implements OnModuleInit {
         private readonly categories: CategoriesService,
         private readonly masker: ServicesMasker,
         private readonly config: AppConfig,
+        private readonly settings: SettingsService,
         private readonly pagination: PaginationService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
@@ -419,7 +421,7 @@ export class ServicesService implements OnModuleInit {
 
         return {
             from,
-            to: query.to ?? shiftDateOnly(from, this.config.retention.recurrentHorizonDays),
+            to: query.to ?? shiftDateOnly(from, this.settings.get('retention.recurrent_horizon_days')),
         };
     }
 
@@ -904,7 +906,7 @@ export class ServicesService implements OnModuleInit {
             fields['price'] = input.price;
 
             if (input.price !== null && input.currency === undefined)
-                fields['currency'] = this.config.site.defaultCurrency;
+                fields['currency'] = this.settings.get('site.default_currency');
         }
 
         if (input.currency !== undefined) fields['currency'] = input.currency;
