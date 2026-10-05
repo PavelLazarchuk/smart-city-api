@@ -1,9 +1,9 @@
 import { type ApiErrorDetail } from '../../common/http/api-error';
-import { type FormField, type RequiredDocument } from './schemas/service.schema';
+import { dateOnlySchema } from '../../common/zod/primitives';
+import { type FormField, type RequiredDocument } from '../services/schemas/service.schema';
 
 const PHONE = /^\d{8,15}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function validateBookingFields(
     fields: FormField[],
@@ -61,9 +61,7 @@ function problemOf(field: FormField, value: unknown): string | null {
         case 'boolean':
             return typeof value === 'boolean' ? null : 'Must be true or false';
         case 'date':
-            return typeof value === 'string' && DATE.test(value) && !Number.isNaN(Date.parse(value))
-                ? null
-                : 'Must be a date (YYYY-MM-DD)';
+            return dateOnlySchema.safeParse(value).success ? null : 'Must be a date (YYYY-MM-DD)';
         case 'select':
             return typeof value === 'string' && (field.options ?? []).includes(value)
                 ? null

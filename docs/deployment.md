@@ -11,11 +11,12 @@
 - TLS terminates at the reverse proxy (nginx); the app serves plain HTTP on `PORT`. Set `TRUST_PROXY=true`
   behind a proxy so client IPs (rate limiting, session records) are correct.
 
-## Rotate the leaked credentials first
+## Issue production credentials first
 
-The previous repository committed real secrets in `.env.example` and they remain in its git history:
-the Mongo Atlas password, the SMPP password, the SMTP password and a Mapbox key. Rotate all four
-before this service is exposed; nothing in this repository contains or depends on the old values.
+Before the service is exposed, issue credentials that exist only in the production environment: the MongoDB
+user and password, the SMPP and SMTP passwords, the S3 keys, both JWT secrets and
+`METRICS_TOKEN`. Never reuse a value that has been in a development `.env`, a chat or any git history, and keep
+them in the deployment's secret store, not in a file in the repository.
 
 ## Release steps
 

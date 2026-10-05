@@ -5,7 +5,7 @@ import { Types } from 'mongoose';
 import { type OutboxEventEntity } from '../../common/outbox/outbox.repository';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { organizationOf, text } from '../services/booking-events';
+import { organizationOf, text } from '../bookings/booking-events';
 import {
     INBOX_EVENTS,
     notificationData,

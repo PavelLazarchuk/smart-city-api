@@ -9,6 +9,7 @@ export default tseslint.config(
         ignores: [
             'dist/**',
             'coverage/**',
+            '.jest-cache/**',
             'node_modules/**',
             'migrations/**',
             'migrate-mongo-config.js',

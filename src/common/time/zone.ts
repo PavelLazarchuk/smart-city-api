@@ -1,3 +1,5 @@
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
 const IANA_NAME = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();

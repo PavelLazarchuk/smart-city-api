@@ -13,30 +13,35 @@ import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { dateOnlyIn } from '../../common/time/zone';
 import { MailService } from '../../integrations/mail/mail.service';
-import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
+import { type BookingEntity, BookingsRepository } from './bookings.repository';
 import {
     type CreateSuspensionInput,
     type ListSuspensionsQuery,
     type SuspensionResource,
-} from '../bookings/dto/suspension.schemas';
-import { type BookingStatus } from '../bookings/schemas/booking.schema';
-import { type BookingSuspension } from '../bookings/schemas/suspension.schema';
-import { type BookingSuspensionEntity, SuspensionsRepository } from '../bookings/suspensions.repository';
-import { WaitlistRepository } from '../bookings/waitlist.repository';
+} from './dto/suspension.schemas';
+import { type BookingStatus } from './schemas/booking.schema';
+import { type BookingSuspension } from './schemas/suspension.schema';
+import { type BookingSuspensionEntity, SuspensionsRepository } from './suspensions.repository';
+import { WaitlistRepository } from './waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
 import { SmsService } from '../sms/sms.service';
 import { type UserEntity } from '../users/users.repository';
 import { UsersService } from '../users/users.service';
 import { organizationOf, recipientEmail, text } from './booking-events';
-import { type ServiceEntity, ServicesRepository } from './services.repository';
+import {
+    inForce,
+    liftedByCorrection,
+    manualSuspensionEnd,
+    noShowCountedSince,
+    noShowEnabled,
+    noShowSanction,
+    type SuspensionChange,
+} from './booking-policy';
+import { type ServiceEntity } from '../services/services.repository';
+import { ServicesService } from '../services/services.service';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const SUSPENSION_SORTABLE = ['suspended_at', 'until'] as const;
-
-function inForce(row: BookingSuspensionEntity | null, now: Date): row is BookingSuspensionEntity {
-    return row !== null && row.suspended && (row.until === null || row.until.getTime() > now.getTime());
-}
 
 function toResource(row: BookingSuspensionEntity, now = new Date()): SuspensionResource {
     return {
@@ -86,7 +91,7 @@ export class SuspensionsService implements OnModuleInit {
         private readonly suspensions: SuspensionsRepository,
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
-        private readonly services: ServicesRepository,
+        private readonly services: ServicesService,
         private readonly users: UsersService,
         private readonly organizations: OrganizationsService,
         private readonly outbox: OutboxService,
@@ -170,8 +175,7 @@ export class SuspensionsService implements OnModuleInit {
             ctx.session,
         );
 
-        if (inForce(row, now) && row.kind === 'no_show' && row.booking_ids.includes(booking.id))
-            await this.release(row, actor, now, ctx);
+        if (liftedByCorrection(row, booking.id, now)) await this.release(row, actor, now, ctx);
     }
 
     async onLateCancel(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
@@ -196,7 +200,7 @@ export class SuspensionsService implements OnModuleInit {
             return this.suspend(
                 subject,
                 {
-                    until: input.days ? new Date(now.getTime() + input.days * DAY_MS) : null,
+                    until: manualSuspensionEnd(input.days, now),
                     kind: 'manual',
                     reason: input.reason,
                     booking_ids: [],
@@ -262,45 +266,22 @@ export class SuspensionsService implements OnModuleInit {
     private async countNoShow(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
         const service = await this.services.findById(booking.service_id.toHexString(), ctx.session);
         const policy = service?.booking_policy;
-        const limit = policy?.no_show_limit ?? null;
-        const days = policy?.no_show_suspension_days ?? null;
 
-        if (!service || limit === null || days === null) return;
+        if (!service || !noShowEnabled(policy)) return;
 
         const now = new Date();
         const row = await this.suspensions.touch(this.subjectOf(service, booking.user_id), now, ctx.session);
-        const window = policy?.no_show_window_days ?? null;
-        const since = Math.max(
-            row.counted_from?.getTime() ?? 0,
-            window === null ? 0 : now.getTime() - window * DAY_MS,
-        );
         const missed = await this.bookings.findNoShowIds(
             booking.user_id.toHexString(),
             booking.service_id.toHexString(),
-            new Date(since),
+            noShowCountedSince(row.counted_from, policy, now),
             ctx.session,
         );
+        const change = noShowSanction(policy, row, missed, now);
 
-        if (missed.length < limit) return;
+        if (!change) return;
 
-        const active = inForce(row, now);
-
-        if (active && row.until === null) return;
-
-        const until = new Date(
-            Math.max(now.getTime() + days * DAY_MS, active ? (row.until?.getTime() ?? 0) : 0),
-        );
         const client = await this.users.findById(booking.user_id.toHexString());
-        const change =
-            active && row.kind === 'manual'
-                ? {
-                      until,
-                      kind: row.kind,
-                      reason: row.reason,
-                      booking_ids: [],
-                      suspended_by: row.suspended_by,
-                  }
-                : { until, kind: 'no_show' as const, reason: null, booking_ids: missed, suspended_by: null };
 
         await this.suspend(
             row,
@@ -314,7 +295,7 @@ export class SuspensionsService implements OnModuleInit {
 
     private async suspend(
         row: BookingSuspensionEntity,
-        change: Pick<BookingSuspension, 'until' | 'kind' | 'reason' | 'booking_ids' | 'suspended_by'>,
+        change: SuspensionChange,
         recipient: Pick<UserEntity, '_id' | 'phone' | 'email' | 'name'> | null,
         actor: AuthUser | null,
         now: Date,

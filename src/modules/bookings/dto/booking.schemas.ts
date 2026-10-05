@@ -4,9 +4,12 @@ import { z } from 'zod';
 import { paginationQuerySchema } from '../../../common/pagination/pagination.schema';
 import {
     dateOnlySchema,
+    fieldKeySchema,
     idOutputSchema,
     isoDateTimeSchema,
+    nameSchema,
     objectIdSchema,
+    phoneSchema,
     timeOfDaySchema,
     uuidSchema,
 } from '../../../common/zod/primitives';
@@ -165,3 +168,36 @@ export const listWaitlistQuerySchema = paginationQuerySchema.extend({
 });
 export type ListWaitlistQuery = z.infer<typeof listWaitlistQuerySchema>;
 export class ListWaitlistQueryDto extends createZodDto(listWaitlistQuerySchema) {}
+
+export const bookingFieldsSchema = z.record(fieldKeySchema, z.unknown());
+
+export const createBookingSchema = z.object({
+    option_id: uuidSchema,
+    slot_id: uuidSchema,
+    time: timeOfDaySchema.optional(),
+    end_time: timeOfDaySchema.optional(),
+    address: z.string().trim().min(1).max(500).optional(),
+    info: z.string().trim().max(1000).optional(),
+    fields: bookingFieldsSchema.optional(),
+    documents: z.array(fieldKeySchema).max(30).optional(),
+    on_behalf: z.object({ phone: phoneSchema, name: nameSchema }).optional(),
+});
+export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+export class CreateBookingDto extends createZodDto(createBookingSchema) {}
+
+export const bookingCreatedResponseSchema = z.object({
+    booking_id: uuidSchema,
+    service_id: idOutputSchema,
+    organization_id: idOutputSchema,
+    option_id: z.string(),
+    slot_id: z.string(),
+    child_type: z.enum(SLOT_TYPES),
+    status: z.string(),
+    date: z.string().nullish(),
+    time: z.string().nullish(),
+    end_time: z.string().nullish(),
+    user_id: idOutputSchema.optional(),
+    created_at: isoDateTimeSchema,
+});
+export type BookingCreated = z.infer<typeof bookingCreatedResponseSchema>;
+export class BookingCreatedResponseDto extends createZodDto(bookingCreatedResponseSchema) {}

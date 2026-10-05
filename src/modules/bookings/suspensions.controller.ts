@@ -8,7 +8,7 @@ import { Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
-import { SuspensionsService } from '../services/suspensions.service';
+import { SuspensionsService } from './suspensions.service';
 import {
     CreateSuspensionDto,
     ListSuspensionsQueryDto,

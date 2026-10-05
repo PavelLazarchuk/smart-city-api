@@ -27,9 +27,9 @@ import { Serialize, SerializePaginated } from '../../common/http/serialize.decor
 import { texts } from '../../common/i18n/messages';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
-import { BookingCalendarService, type CalendarToken } from '../services/booking-calendar.service';
-import { bookingsCsv } from '../services/booking-export';
-import { BookingsService } from '../services/bookings.service';
+import { BookingCalendarService, type CalendarToken } from './booking-calendar.service';
+import { bookingsCsv } from './booking-export';
+import { BookingsService } from './bookings.service';
 import {
     type BookingResource,
     BookingResourceDto,

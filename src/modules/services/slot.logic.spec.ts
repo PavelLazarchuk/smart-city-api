@@ -5,6 +5,8 @@ import { type SlotBody } from '../slots/schemas/slot.schema';
 import { ApiError } from '../../common/http/api-error';
 import {
     assertFitsRange,
+    assertRange,
+    assertRecurrenceAllowed,
     assertSlotTypesAllowed,
     attachBookings,
     freeRanges,
@@ -18,9 +20,15 @@ import {
     isEmptyPlan,
     type OptionTree,
     growTrees,
+    minutesOf,
     optionFromInput,
+    optionOf,
     planRecurrentDays,
+    rangeOf,
+    recurrentRangesFromInput,
     slotFromInput,
+    slotOf,
+    timeOf,
     timesFromWorkingHours,
 } from './slot.logic';
 
@@ -530,5 +538,157 @@ describe('slot.logic — working hours and closures', () => {
                 ),
             ),
         ).toBe(true);
+    });
+});
+
+function errorOf(run: () => unknown): { code: string; details?: unknown } | null {
+    try {
+        run();
+
+        return null;
+    } catch (error) {
+        if (error instanceof ApiError) return { code: error.code, details: error.details };
+
+        throw error;
+    }
+}
+
+describe('slot.logic — lookups, ranges and recurrence input', () => {
+    const slot: SlotBody = {
+        id: 's1',
+        label: 'S',
+        child_type: 'apply',
+        value: { limit: null, booked_count: 0 },
+    };
+    const service = { options: [{ id: 'o1', slots: [slot] }] };
+
+    it('finds an option and a slot or answers 404 with its own code', () => {
+        expect(optionOf(service, 'o1').id).toBe('o1');
+        expect(slotOf(optionOf(service, 'o1'), 's1')).toBe(slot);
+        expect(errorOf(() => optionOf(service, 'o2'))?.code).toBe('OPTION_NOT_FOUND');
+        expect(errorOf(() => slotOf(optionOf(service, 'o1'), 's2'))?.code).toBe('SLOT_NOT_FOUND');
+    });
+
+    it.each([
+        ['an empty span', { from: '10:00', to: '10:00', min_minutes: 30, max_minutes: null }],
+        ['an inverted span', { from: '11:00', to: '10:00', min_minutes: 30, max_minutes: null }],
+        [
+            'a minimum longer than the span',
+            { from: '10:00', to: '10:30', min_minutes: 45, max_minutes: null },
+        ],
+        ['a maximum below the minimum', { from: '09:00', to: '18:00', min_minutes: 60, max_minutes: 30 }],
+    ])('refuses a range with %s', (_, range) => {
+        expect(errorOf(() => assertRange({ step_minutes: 15, ...range }))?.code).toBe('SLOT_RANGE_INVALID');
+    });
+
+    it('accepts a range whose minimum fills the whole span', () => {
+        expect(
+            errorOf(() =>
+                assertRange({
+                    from: '10:00',
+                    to: '11:00',
+                    step_minutes: 15,
+                    min_minutes: 60,
+                    max_minutes: 60,
+                }),
+            ),
+        ).toBeNull();
+    });
+
+    it('allows recurrence only for the slot types of the service type', () => {
+        expect(
+            errorOf(() => assertRecurrenceAllowed('service_apply', { dates: [{}], ranges: [{}] })),
+        ).toBeNull();
+        expect(errorOf(() => assertRecurrenceAllowed('service_visit', { ranges: [{}] }))).toBeNull();
+        expect(
+            errorOf(() => assertRecurrenceAllowed('service_payment', { dates: [], ranges: null })),
+        ).toBeNull();
+        expect(errorOf(() => assertRecurrenceAllowed('service_payment', { dates: [{}] }))?.code).toBe(
+            'SLOT_TYPE_NOT_ALLOWED',
+        );
+        expect(errorOf(() => assertRecurrenceAllowed('service_delivery', { ranges: [{}] }))?.code).toBe(
+            'SLOT_TYPE_NOT_ALLOWED',
+        );
+    });
+
+    it('keeps recurrent ranges absent when none were sent', () => {
+        expect(recurrentRangesFromInput(undefined, {})).toBeUndefined();
+        expect(recurrentRangesFromInput(null, {})).toBeUndefined();
+        expect(recurrentRangesFromInput([], {})).toEqual([]);
+    });
+
+    it('stores only what was sent, so later working hours still apply', () => {
+        expect(
+            recurrentRangesFromInput(
+                [
+                    { day: 'monday', from: '09:00', to: '12:00', resources: ['Court 1'], step_minutes: 30 },
+                    { day: 'tuesday', resources: ['Court 1', 'Court 2'] },
+                ],
+                { working_hours: [{ day: 'tuesday', from: '10:00', to: '14:00' }] },
+            ),
+        ).toEqual([
+            {
+                day: 'monday',
+                from: '09:00',
+                to: '12:00',
+                resources: ['Court 1'],
+                step_minutes: 30,
+                max_minutes: null,
+            },
+            { day: 'tuesday', resources: ['Court 1', 'Court 2'], max_minutes: null },
+        ]);
+    });
+
+    it('refuses a recurrent range with neither times nor working hours that day', () => {
+        expect(
+            errorOf(() =>
+                recurrentRangesFromInput([{ day: 'sunday', resources: ['Court 1'] }], {
+                    working_hours: [{ day: 'monday', from: '09:00', to: '18:00' }],
+                }),
+            ),
+        ).toEqual({
+            code: 'SLOT_RANGE_REQUIRED',
+            details: [{ path: 'recurrent_ranges', message: 'sunday has neither from/to nor working hours' }],
+        });
+    });
+
+    it('refuses a recurrent range whose minimum does not fit', () => {
+        expect(
+            errorOf(() =>
+                recurrentRangesFromInput(
+                    [{ day: 'monday', from: '09:00', to: '09:30', resources: ['Court 1'], min_minutes: 60 }],
+                    {},
+                ),
+            )?.code,
+        ).toBe('SLOT_RANGE_INVALID');
+    });
+
+    it('fills a stored range with the defaults', () => {
+        expect(rangeOf({ value: {} })).toEqual({
+            from: '00:00',
+            to: '00:00',
+            step_minutes: 30,
+            min_minutes: 30,
+            max_minutes: null,
+        });
+        expect(rangeOf({ value: { from: '09:00', to: '12:00', step_minutes: 15 } })).toMatchObject({
+            step_minutes: 15,
+            min_minutes: 15,
+        });
+        expect(rangeOf({ value: { step_minutes: 15, min_minutes: 60, max_minutes: 120 } })).toMatchObject({
+            min_minutes: 60,
+            max_minutes: 120,
+        });
+    });
+
+    it('converts between HH:mm and minutes of the day', () => {
+        expect(minutesOf('00:00')).toBe(0);
+        expect(minutesOf('09:05')).toBe(545);
+        expect(minutesOf('23:59')).toBe(1439);
+        expect(timeOf(0)).toBe('00:00');
+        expect(timeOf(545)).toBe('09:05');
+        expect(timeOf(1440)).toBe('24:00');
+
+        for (const time of ['00:00', '07:30', '12:45', '23:59']) expect(timeOf(minutesOf(time))).toBe(time);
     });
 });

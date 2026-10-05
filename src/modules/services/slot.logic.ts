@@ -5,7 +5,8 @@ import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
 import { shiftDateOnly, weekdayOfDateOnly } from '../../common/time/zone';
 import { type BookingEntity } from '../bookings/bookings.repository';
-import { type RecurrentRangeInput, type ServiceOptionInput, type SlotInput } from './dto/service.schemas';
+import { type RecurrentRangeInput, type ServiceOptionInput } from './dto/option.schemas';
+import { type SlotInput } from './dto/slot.schemas';
 import { type SlotBody, type SlotValue, type TimeEntry } from '../slots/schemas/slot.schema';
 import {
     ALLOWED_SLOT_TYPES,

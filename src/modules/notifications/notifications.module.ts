@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
-import { BookingsModule } from '../bookings/bookings.module';
+import { BookingsDataModule } from '../bookings/bookings-data.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationDispatcher } from './notification-dispatcher.service';
@@ -15,7 +15,7 @@ import { Notification, NotificationSchema } from './schemas/notification.schema'
 @Module({
     imports: [
         MongooseModule.forFeature([{ name: Notification.name, schema: NotificationSchema }]),
-        BookingsModule,
+        BookingsDataModule,
         OrganizationsModule,
         UsersModule,
     ],

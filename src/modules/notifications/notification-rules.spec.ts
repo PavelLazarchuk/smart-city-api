@@ -2,6 +2,7 @@ import { texts } from '../../common/i18n/messages';
 import { compileTemplate } from '../../common/i18n/template';
 import { type OutboxEventType } from '../../common/outbox/schemas/outbox-event.schema';
 import {
+    actorOf,
     INBOX_VARIABLES,
     type InboxEvent,
     NOTIFICATION_TYPES,
@@ -78,6 +79,99 @@ describe('notification rules', () => {
         expect(
             notificationsFor(event(type, payload, internal)).map((rule) => [rule.audience, rule.type]),
         ).toEqual(expected);
+    });
+
+    it.each([
+        ['an unknown canceller', { cancelled_by: 'system' }, null, []],
+        [
+            'an actor that outranks cancelled_by',
+            { cancelled_by: 'admin' },
+            by(CLIENT),
+            [['staff', 'client_cancelled']],
+        ],
+        ['a bulk cancel by a client', { bulk: true }, by(CLIENT), [['client', 'slot_cancelled']]],
+    ] as const)('booking.cancelled with %s', (_, payload, internal, expected) => {
+        expect(
+            notificationsFor(event('booking.cancelled', payload, internal)).map((rule) => [
+                rule.audience,
+                rule.type,
+            ]),
+        ).toEqual(expected);
+    });
+
+    it('tells staff about a no-show suspension only when the system imposed it', () => {
+        expect(
+            notificationsFor(event('booking.suspended', { kind: 'no_show' }, by(STAFF))).map(
+                (rule) => rule.type,
+            ),
+        ).toEqual(['booking_suspended']);
+    });
+
+    it.each([
+        [{ actor: { id: 'a', kind: 'client' } }, { id: 'a', kind: 'client' }],
+        [{ actor: { id: '', kind: 'staff' } }, null],
+        [{ actor: { id: 5, kind: 'staff' } }, null],
+        [{ actor: ['a', 'staff'] }, null],
+        [{ actor: 'staff' }, null],
+        [null, null],
+    ])('reads the actor out of %j', (internal, expected) => {
+        expect(actorOf(event('booking.created', {}, internal))).toEqual(expected);
+    });
+
+    it('drops values that are not non-empty strings', () => {
+        expect(
+            notificationData(
+                event('booking.cancelled', {
+                    booking_id: 7,
+                    date: '',
+                    time: null,
+                    reason: 'Ill.',
+                    previous: 'x',
+                }),
+                { audience: 'client', type: 'booking_cancelled' },
+            ),
+        ).toEqual({ reason: 'Ill.' });
+    });
+
+    it('asks for action only on a pending booking and counts no missed visits for a manual suspension', () => {
+        expect(
+            notificationData(event('booking.created', { status: 'confirmed' }), {
+                audience: 'staff',
+                type: 'client_booked',
+            }),
+        ).toEqual({ requires_action: false });
+        expect(
+            notificationData(event('booking.created', { status: 'pending' }), {
+                audience: 'client',
+                type: 'booking_created_for_you',
+            }),
+        ).toEqual({});
+        expect(
+            notificationData(event('booking.suspended', { kind: 'manual', booking_ids: ['a'] }), {
+                audience: 'client',
+                type: 'booking_suspended',
+            }),
+        ).toEqual({});
+        expect(
+            notificationData(event('booking.suspended', { kind: 'no_show', booking_ids: [] }), {
+                audience: 'client',
+                type: 'booking_suspended',
+            }),
+        ).toEqual({});
+    });
+
+    it('lets an explicit end date win over the one in the data', () => {
+        expect(templateData({ until: '2026-10-10' }, 'Org').until).toBe('2026-10-10');
+        expect(templateData({ until: '2026-10-10' }, 'Org', '2026-12-01').until).toBe('2026-12-01');
+    });
+
+    it('keeps a one-line title when an optional part is missing', () => {
+        const { title } = renderInbox(
+            'booking_cancelled',
+            templateData({ service_label: 'Massage' }, 'City Clinic'),
+        );
+
+        expect(title).not.toMatch(/\s{2}|\n/);
     });
 
     it('ignores a malformed actor', () => {

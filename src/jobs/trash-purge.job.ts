@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SettingsService } from '../common/settings/settings.service';
+import { DAY_MS } from '../common/time/zone';
 import { ServicesService } from '../modules/services/services.service';
 import { JobRunner } from './job-runner';
 
@@ -19,9 +20,7 @@ export class TrashPurgeJob {
     }
 
     async execute(now: Date): Promise<{ purged: number }> {
-        const before = new Date(
-            now.getTime() - this.settings.get('retention.service_trash_days') * 24 * 60 * 60 * 1000,
-        );
+        const before = new Date(now.getTime() - this.settings.get('retention.service_trash_days') * DAY_MS);
         let purged = 0;
 
         for (;;) {

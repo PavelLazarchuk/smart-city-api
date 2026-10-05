@@ -5,7 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { MailModule } from '../integrations/mail/mail.module';
 import { StorageModule } from '../integrations/storage/storage.module';
 import { ArchivesModule } from '../modules/archives/archives.module';
-import { BookingsModule } from '../modules/bookings/bookings.module';
+import { BookingsDataModule } from '../modules/bookings/bookings-data.module';
 import { ImagesModule } from '../modules/images/images.module';
 import { NewsModule } from '../modules/news/news.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
@@ -34,7 +34,7 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         MongooseModule.forFeature([{ name: JobLock.name, schema: JobLockSchema }]),
         ServicesModule,
         SlotsModule,
-        BookingsModule,
+        BookingsDataModule,
         NewsModule,
         ArchivesModule,
         ImagesModule,

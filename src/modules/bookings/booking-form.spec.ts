@@ -1,5 +1,5 @@
 import { validateBookingFields, validateDocuments } from './booking-form';
-import { type FormField } from './schemas/service.schema';
+import { type FormField } from '../services/schemas/service.schema';
 
 function field(overrides: Partial<FormField> & Pick<FormField, 'key' | 'type'>): FormField {
     return { label: overrides.key, required: false, max_length: null, ...overrides };
@@ -65,6 +65,9 @@ describe('validateBookingFields', () => {
         ['boolean', 'true', 'Must be true or false'],
         ['date', '03.10.2026', 'Must be a date (YYYY-MM-DD)'],
         ['date', '2026-13-45', 'Must be a date (YYYY-MM-DD)'],
+        ['date', '2026-02-30', 'Must be a date (YYYY-MM-DD)'],
+        ['date', '2025-02-29', 'Must be a date (YYYY-MM-DD)'],
+        ['date', 20261003, 'Must be a date (YYYY-MM-DD)'],
         ['select', 'c', 'Must be one of the options'],
     ] as const)('rejects a %s answer of %j', (type, value, message) => {
         const { details, values } = validateBookingFields([field({ key: 'x', type, options: ['a'] })], {
@@ -87,6 +90,42 @@ describe('validateBookingFields', () => {
 
         expect(validateBookingFields(unlimited, { x: 'a'.repeat(1000) }).details).toEqual([]);
         expect(validateBookingFields(unlimited, { x: 'a'.repeat(1001) }).details).toHaveLength(1);
+    });
+
+    it('accepts a leap day only in a leap year', () => {
+        const fields = [field({ key: 'x', type: 'date' })];
+
+        expect(validateBookingFields(fields, { x: '2028-02-29' }).details).toEqual([]);
+        expect(validateBookingFields(fields, { x: '2026-02-29' }).details).toHaveLength(1);
+    });
+
+    it('counts false and 0 as answers of a required field', () => {
+        const fields = [
+            field({ key: 'agree', type: 'boolean', required: true }),
+            field({ key: 'count', type: 'number', required: true }),
+        ];
+
+        expect(validateBookingFields(fields, { agree: false, count: 0 })).toEqual({
+            details: [],
+            values: { agree: false, count: 0 },
+        });
+    });
+
+    it('reports every problem at once and keeps only the valid answers', () => {
+        const fields = [
+            field({ key: 'a', type: 'number' }),
+            field({ key: 'b', type: 'email', required: true }),
+            field({ key: 'c', type: 'text' }),
+        ];
+
+        expect(validateBookingFields(fields, { a: 'x', c: 'ok', d: 1 })).toEqual({
+            details: [
+                { path: 'fields.d', message: 'Unknown field' },
+                { path: 'fields.a', message: 'Must be a number' },
+                { path: 'fields.b', message: 'Required' },
+            ],
+            values: { c: 'ok' },
+        });
     });
 
     it('rejects a select without options and an unsupported type', () => {

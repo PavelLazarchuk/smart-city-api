@@ -1,7 +1,7 @@
 # Scheduled jobs
 
 Eleven background jobs keep booking data, published content, uploaded files, notifications and the operational
-reports in shape. They live in [`src/jobs`](../src/jobs) and are the rewrite of the old `services/cron.js`.
+reports in shape. They live in [`src/jobs`](../src/jobs).
 
 ## How they run
 

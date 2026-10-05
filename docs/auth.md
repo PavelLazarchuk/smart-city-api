@@ -40,7 +40,11 @@ super admin through `PATCH /settings` (no restart; the other instances follow wi
 A switch of the staff method that would lock out the super admins is refused with `409 SETTING_LOCKOUT_RISK`:
 to `sms` the acting super admin needs a phone, and so does at least one other super admin if there are any; to
 `password` the acting super admin needs a login and a password. Other staff members left without the needed
-identifier do not block the switch; the response lists them under `warnings`. The account lock, token and
+identifier do not block the switch; the response lists them under `warnings`. While staff sign in by SMS, the
+same `409` refuses an `sms.hourly_limit` or `sms.daily_limit` (lowered, or set where there was none) that the
+messages already sent in the current hour or day have used up, and a switch to `sms` while either budget is
+spent: sign-in codes share the budget with every other SMS, so nobody could receive one until the window ends.
+Raising a limit or setting it to `0` is always accepted. The account lock, token and
 one-time code lifetimes and the rate limits below are runtime settings as well
 ([data-model.md](data-model.md#runtime-settings)); new values apply to tokens and codes issued afterwards.
 

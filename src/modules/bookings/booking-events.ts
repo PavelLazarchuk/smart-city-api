@@ -2,8 +2,8 @@ import { type Types } from 'mongoose';
 
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type OutboxEventEntity } from '../../common/outbox/outbox.repository';
-import { type BookingEntity } from '../bookings/bookings.repository';
-import { type Booking } from '../bookings/schemas/booking.schema';
+import { type BookingEntity } from './bookings.repository';
+import { type Booking } from './schemas/booking.schema';
 
 export function text(value: unknown): string {
     return typeof value === 'string' ? value : '';

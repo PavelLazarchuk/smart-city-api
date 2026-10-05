@@ -36,7 +36,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `sessions`            | Refresh-token sessions                                         | `user_id`, `family_id`, `refresh_token_hash`, `replaced_by`, `revoked_at`, `expires_at`                                                                                                                                                                                                                                                                                                   |
 | `verification_codes`  | One-time codes                                                 | `phone`, `code_hash`, `purpose`, `user_id`, `attempts`, `consumed_at`, `expires_at`                                                                                                                                                                                                                                                                                                       |
 | `sms`                 | Delivery log                                                   | `phone`, `purpose`, `body`, `status`                                                                                                                                                                                                                                                                                                                                                      |
-| `analytics_events`    | Business events (old `Statistics`)                             | `type` + denormalised actor/organization/service labels                                                                                                                                                                                                                                                                                                                                   |
+| `analytics_events`    | Business events                                                | `type` + denormalised actor/organization/service labels                                                                                                                                                                                                                                                                                                                                   |
 | `job_locks`           | Scheduler lease and last run                                   | one document per job name; lease plus `last_status`, `last_error`, `last_duration_ms` ([jobs.md](jobs.md))                                                                                                                                                                                                                                                                                |
 | `rate_limits`         | Throttler counters when `THROTTLE_STORAGE=mongo`               | `key`, `count`, `expires_at`                                                                                                                                                                                                                                                                                                                                                              |
 | `sms_counters`        | Global SMS budget windows                                      | `_id` = `sms:<hour\|day>:<bucket>`, `count`, `expires_at`                                                                                                                                                                                                                                                                                                                                 |
@@ -139,7 +139,7 @@ the account that made the booking — the client, or the admin who booked `on_be
 `favorites.organization_id` is the organization of the target, so deleting an organization removes its services'
 entries in one statement.
 
-## The service as a catalogue entity (P3)
+## The service as a catalogue entity
 
 - **`status` is the source of truth**, `enabled` its shadow: every write sets `enabled = status === 'published'`,
   so the `{ organization_id, enabled, position }` index and `?enabled=` keep working, and a client that still
@@ -171,7 +171,7 @@ entries in one statement.
   (validated per type, unknown keys refused) and `documents` (keys the client confirms); both are stored on
   the booking row.
 
-## Booking lifecycle (P3)
+## Booking lifecycle
 
 ```
 pending ──confirmed──▶ confirmed ──▶ completed ⇄ no_show

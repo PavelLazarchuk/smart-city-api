@@ -12,9 +12,9 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
-import { dateOnlyIn, instantIn, shiftDateOnly } from '../../common/time/zone';
+import { dateOnlyIn, instantIn } from '../../common/time/zone';
 import { MailService } from '../../integrations/mail/mail.service';
-import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
+import { type BookingEntity, BookingsRepository } from './bookings.repository';
 import {
     type BookingResource,
     type BookingStats,
@@ -27,14 +27,10 @@ import {
     type ListWaitlistQuery,
     type RescheduleBookingInput,
     type WaitlistEntryResource,
-} from '../bookings/dto/booking.schemas';
-import {
-    ACTIVE_BOOKING_STATUSES,
-    type Booking,
-    type BookingStatus,
-} from '../bookings/schemas/booking.schema';
-import { type WaitlistEntry } from '../bookings/schemas/waitlist.schema';
-import { type WaitlistEntryEntity, WaitlistRepository } from '../bookings/waitlist.repository';
+} from './dto/booking.schemas';
+import { ACTIVE_BOOKING_STATUSES, type Booking, type BookingStatus } from './schemas/booking.schema';
+import { type WaitlistEntry } from './schemas/waitlist.schema';
+import { type WaitlistEntryEntity, WaitlistRepository } from './waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
 import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
@@ -42,18 +38,20 @@ import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import { BookingCalendarService } from './booking-calendar.service';
+import { assertBookingWindow, assertCancelDeadline, resolveCancel } from './booking-policy';
 import { eventActor, eventPayload, notice, organizationOf, recipientEmail, text } from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
-import { type BookingCreated, type CreateBookingInput } from './dto/service.schemas';
+import { type BookingCreated, type CreateBookingInput } from './dto/booking.schemas';
 import {
     ADDRESS_SERVICE_TYPES,
     BOOKABLE_SLOT_TYPES,
     type ServiceOption,
     TIMED_SLOT_TYPES,
-} from './schemas/service.schema';
-import { ServicesMasker } from './services.masker';
-import { type ServiceEntity, ServicesRepository } from './services.repository';
-import { assertFitsRange, minutesOf, rangeOf, timeOf } from './slot.logic';
+} from '../services/schemas/service.schema';
+import { ServicesMasker } from '../services/services.masker';
+import { type ServiceEntity } from '../services/services.repository';
+import { ServicesService } from '../services/services.service';
+import { assertFitsRange, minutesOf, rangeOf, timeOf } from '../services/slot.logic';
 import { SuspensionsService } from './suspensions.service';
 
 const DUPLICATE_KEY = 11000;
@@ -187,7 +185,7 @@ function slotStart(
 @Injectable()
 export class BookingsService implements OnModuleInit {
     constructor(
-        private readonly repository: ServicesRepository,
+        private readonly services: ServicesService,
         private readonly slots: SlotsRepository,
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
@@ -270,7 +268,7 @@ export class BookingsService implements OnModuleInit {
             );
         });
         this.outbox.registerHandler('booking.callback_due', 'mail', async (event) => {
-            const service = await this.repository.findById(text(event.payload['service_id']));
+            const service = await this.services.findById(text(event.payload['service_id']));
             const subscribe = service?.value.subscribe;
 
             if (!subscribe) return;
@@ -529,7 +527,7 @@ export class BookingsService implements OnModuleInit {
             defaultSort: 'created_at',
         });
         const result = await this.bookings.list(scoped(filter, query), pagination);
-        const deadlines = await this.repository.cancelDeadlines([
+        const deadlines = await this.services.cancelDeadlines([
             ...new Set(result.items.map((booking) => booking.service_id.toHexString())),
         ]);
 
@@ -559,7 +557,6 @@ export class BookingsService implements OnModuleInit {
         return this.remove(bookingId, actor);
     }
 
-    /** The booking row carries its organization, so neither the owner nor the admin check needs the service. */
     async cancel(serviceId: string, bookingId: string, actor: AuthUser): Promise<Cancelled> {
         return this.remove(bookingId, actor, serviceId);
     }
@@ -575,7 +572,7 @@ export class BookingsService implements OnModuleInit {
 
             if (!booking.active) throw ApiError.unprocessable('BOOKING_NOT_ACTIVE');
 
-            const late = !this.isAdminOf(booking, actor) && (await this.isLateCancel(booking, ctx.session));
+            const late = !this.isAdminOf(booking, actor) && (await this.lateCancel(booking, ctx.session));
             const cancelled = await this.finish(booking, 'cancelled', actor, ctx, late);
 
             if (late) await this.suspensions.onLateCancel(cancelled, ctx);
@@ -675,7 +672,7 @@ export class BookingsService implements OnModuleInit {
             const bookable = await this.loadBookable(booking.service_id.toHexString(), actor, ctx.session);
             const { service, timeZone } = bookable;
 
-            if (!admin) this.assertDeadline(service, booking, now);
+            if (!admin) assertCancelDeadline(service.booking_policy, booking.starts_at, now);
 
             const target = await this.resolveTarget(
                 bookable,
@@ -745,7 +742,7 @@ export class BookingsService implements OnModuleInit {
     }
 
     private async asResource(booking: BookingEntity): Promise<BookingResource> {
-        const deadlines = await this.repository.cancelDeadlines([booking.service_id.toHexString()]);
+        const deadlines = await this.services.cancelDeadlines([booking.service_id.toHexString()]);
 
         return toResource(booking, deadlines.get(booking.service_id.toHexString()) ?? null);
     }
@@ -923,7 +920,7 @@ export class BookingsService implements OnModuleInit {
         actor: AuthUser,
         session: ClientSession,
     ): Promise<Bookable> {
-        const service = await this.repository.findById(serviceId, session);
+        const service = await this.services.findById(serviceId, session);
 
         if (!service || service.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
@@ -1010,17 +1007,7 @@ export class BookingsService implements OnModuleInit {
 
         if (!policy || !start) return;
 
-        if (policy.lead_time_minutes !== null && policy.lead_time_minutes !== undefined) {
-            if (start.getTime() - now.getTime() < policy.lead_time_minutes * 60_000)
-                throw ApiError.unprocessable('BOOKING_LEAD_TIME');
-        }
-
-        if (policy.max_advance_days !== null && policy.max_advance_days !== undefined) {
-            const last = shiftDateOnly(dateOnlyIn(now, timeZone), policy.max_advance_days);
-            const horizon = instantIn(last, '23:59', timeZone);
-
-            if (start.getTime() > horizon.getTime()) throw ApiError.unprocessable('BOOKING_TOO_FAR_AHEAD');
-        }
+        assertBookingWindow(policy, start, now, timeZone);
     }
 
     private async assertActiveLimit(
@@ -1041,32 +1028,13 @@ export class BookingsService implements OnModuleInit {
         if (active >= max) throw ApiError.unprocessable('BOOKING_LIMIT_REACHED');
     }
 
-    private async isLateCancel(booking: BookingEntity, session: ClientSession): Promise<boolean> {
-        const service = await this.repository.findById(booking.service_id.toHexString(), session);
+    private async lateCancel(booking: BookingEntity, session: ClientSession): Promise<boolean> {
+        const service = await this.services.findById(booking.service_id.toHexString(), session);
 
-        const now = new Date();
-
-        if (!service || !this.deadlinePassed(service, booking, now)) return false;
-
-        const upcoming = booking.starts_at !== null && booking.starts_at.getTime() > now.getTime();
-
-        if (upcoming && service.booking_policy?.late_cancel === 'no_show') return true;
-
-        throw ApiError.unprocessable('BOOKING_CANCEL_DEADLINE_PASSED');
-    }
-
-    private assertDeadline(service: ServiceEntity, booking: BookingEntity, now: Date): void {
-        if (this.deadlinePassed(service, booking, now))
-            throw ApiError.unprocessable('BOOKING_CANCEL_DEADLINE_PASSED');
-    }
-
-    private deadlinePassed(service: ServiceEntity, booking: BookingEntity, now: Date): boolean {
-        const deadline = service.booking_policy?.cancel_deadline_minutes;
-        const start = booking.starts_at;
-
-        if (deadline === null || deadline === undefined || !start) return false;
-
-        return start.getTime() - now.getTime() < deadline * 60_000;
+        return (
+            service !== null &&
+            resolveCancel(service.booking_policy, booking.starts_at, new Date()) === 'late'
+        );
     }
 
     private validateForm(

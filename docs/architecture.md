@@ -42,6 +42,11 @@ import the parent. Two registries invert those dependencies:
   find the organization behind one of its entities, so `OrganizationScopeGuard` can authorise
   `PATCH /services/:id` without importing the services module.
 
+The catalogue and the bookings need each other, so their data lives in modules of its own. `SlotsModule` and
+`BookingsDataModule` hold only schemas and repositories. `ServicesModule` (the catalogue) imports them,
+`BookingsModule` (booking lifecycle, suspensions, calendar, bulk slot cancel/move) imports `ServicesModule`, and
+`ServicesHttpModule` / `BookingsHttpModule` on top hold the controllers.
+
 ## Transactions and after-commit effects
 
 Every multi-document write goes through [`TransactionRunner`](../src/common/database/transaction-runner.ts),

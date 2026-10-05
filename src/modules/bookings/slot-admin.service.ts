@@ -10,8 +10,8 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { type EnqueueRequest, OutboxService } from '../../common/outbox/outbox.service';
 import { dateOnlyIn, instantIn } from '../../common/time/zone';
 import { MailService } from '../../integrations/mail/mail.service';
-import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
-import { WaitlistRepository } from '../bookings/waitlist.repository';
+import { type BookingEntity, BookingsRepository } from './bookings.repository';
+import { WaitlistRepository } from './waitlist.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
 import { SlotsRepository } from '../slots/slots.repository';
@@ -33,11 +33,10 @@ import {
     type CloseSlotResult,
     type MoveSlotInput,
     type MoveSlotResult,
-} from './dto/service.schemas';
-import { BOOKABLE_SLOT_TYPES, DATED_SLOT_TYPES, TIMED_SLOT_TYPES } from './schemas/service.schema';
-import { ServicesRepository } from './services.repository';
-import { ServicesService, type ServiceTreeEntity } from './services.service';
-import { minutesOf, optionOf, slotOf, timeOf } from './slot.logic';
+} from '../services/dto/slot.schemas';
+import { BOOKABLE_SLOT_TYPES, DATED_SLOT_TYPES, TIMED_SLOT_TYPES } from '../services/schemas/service.schema';
+import { ServicesService, type ServiceTreeEntity } from '../services/services.service';
+import { minutesOf, optionOf, slotOf, timeOf } from '../services/slot.logic';
 
 const DAY_MINUTES = 24 * 60;
 
@@ -59,7 +58,6 @@ export class SlotAdminService implements OnModuleInit {
     constructor(
         private readonly services: ServicesService,
         private readonly lifecycle: BookingsService,
-        private readonly repository: ServicesRepository,
         private readonly slots: SlotsRepository,
         private readonly bookings: BookingsRepository,
         private readonly waitlist: WaitlistRepository,
@@ -201,7 +199,7 @@ export class SlotAdminService implements OnModuleInit {
                 }),
             }));
 
-            if (closing) await this.repository.touch(serviceId, ctx.session);
+            if (closing) await this.services.touch(serviceId, ctx.session);
 
             const after = await this.services.load(serviceId, ctx.session);
             const removed = this.gone(after, optionId, slotId, time);
@@ -310,7 +308,7 @@ export class SlotAdminService implements OnModuleInit {
                     },
                 }),
             }));
-            await this.repository.touch(serviceId, ctx.session);
+            await this.services.touch(serviceId, ctx.session);
             const after = await this.services.load(serviceId, ctx.session);
             await this.services.recordSlotChange(before, after, actor, ctx.session);
 

@@ -291,6 +291,96 @@ describe('runtime settings (e2e)', () => {
 
             expectError(await patch({ 'auth.admin_login_method': 'password' }), 409, 'SETTING_LOCKOUT_RISK');
         });
+
+        describe('sms limits', () => {
+            const sent = async (count: number) => {
+                const now = Date.now();
+                const keys = new Set(
+                    [now, now + 5_000].flatMap((at) => {
+                        const iso = new Date(at).toISOString();
+
+                        return [`sms:hour:${iso.slice(0, 13)}`, `sms:day:${iso.slice(0, 10)}`];
+                    }),
+                );
+
+                await t.connection.collection<{ _id: string }>('sms_counters').insertMany(
+                    [...keys].map((key) => ({
+                        _id: key,
+                        count,
+                        expires_at: new Date(now + 3_600_000),
+                    })),
+                );
+            };
+            const staffBySms = async () => {
+                const self = await fx.user({ role: 'super-admin', phone: '4915290000001' });
+                await fx.user({ role: 'super-admin', phone: '4915290000002' });
+                bearer = await fx.bearer(self);
+                await t.connection.collection('settings').insertOne({
+                    _id: SETTINGS_DOCUMENT_ID,
+                    settings: { auth: { admin_login_method: 'sms' } },
+                    updated_at: new Date(),
+                });
+                await t.app.get(SettingsService).refresh();
+            };
+
+            it('refuses a limit already used up while staff sign in by SMS', async () => {
+                await staffBySms();
+                await sent(5);
+
+                const res = await patch({ 'sms.hourly_limit': 5 });
+
+                expectError(res, 409, 'SETTING_LOCKOUT_RISK');
+                expect(res.body.error.details).toEqual([
+                    { path: 'sms.hourly_limit', message: expect.any(String) },
+                ]);
+                expect(t.app.get(SettingsService).get('sms.hourly_limit')).toBe(200);
+            });
+
+            it('accepts a lower limit that still leaves codes this hour', async () => {
+                await staffBySms();
+                await sent(5);
+
+                const res = await patch({ 'sms.hourly_limit': 6, 'sms.daily_limit': 50 });
+
+                expect(res.status).toBe(200);
+                expect(t.app.get(SettingsService).get('sms.hourly_limit')).toBe(6);
+            });
+
+            it('leaves the limits alone while staff sign in by password', async () => {
+                await sent(5);
+
+                expect((await patch({ 'sms.hourly_limit': 1 })).status).toBe(200);
+            });
+
+            it('refuses switching staff to SMS while the budget of the day is spent', async () => {
+                await t.connection.collection('settings').insertOne({
+                    _id: SETTINGS_DOCUMENT_ID,
+                    settings: { sms: { hourly_limit: 3, daily_limit: 3 } },
+                    updated_at: new Date(),
+                });
+                await t.app.get(SettingsService).refresh();
+                const self = await fx.user({ role: 'super-admin', phone: '4915290000001' });
+                await fx.user({ role: 'super-admin', phone: '4915290000002' });
+                bearer = await fx.bearer(self);
+                await sent(3);
+
+                const res = await patch({ 'auth.admin_login_method': 'sms' });
+
+                expectError(res, 409, 'SETTING_LOCKOUT_RISK');
+                expect(res.body.error.details.map((detail: { path: string }) => detail.path)).toEqual([
+                    'sms.hourly_limit',
+                    'sms.daily_limit',
+                ]);
+            });
+
+            it('lets the limit be lifted or raised at any time', async () => {
+                await staffBySms();
+                await sent(500);
+
+                expect((await patch({ 'sms.hourly_limit': 0 })).status).toBe(200);
+                expect((await patch({ 'sms.daily_limit': 2000 })).status).toBe(200);
+            });
+        });
     });
 });
 

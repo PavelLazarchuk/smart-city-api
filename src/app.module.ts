@@ -37,6 +37,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { ChannelTemplatesModule } from './modules/channel-templates/channel-templates.module';
 import { OrganizationsHttpModule } from './modules/organizations/organizations-http.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { ServicesHttpModule } from './modules/services/services-http.module';
 import { ServicesModule } from './modules/services/services.module';
 import { SmsHttpModule } from './modules/sms/sms-http.module';
 import { SmsModule } from './modules/sms/sms.module';
@@ -64,6 +65,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
         CategoriesModule,
         CategoriesHttpModule,
         ServicesModule,
+        ServicesHttpModule,
         BookingsHttpModule,
         FavoritesModule,
         NewsModule,

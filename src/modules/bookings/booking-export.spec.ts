@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 
-import { type BookingEntity } from '../bookings/bookings.repository';
+import { type BookingEntity } from './bookings.repository';
 import { bookingsCsv } from './booking-export';
 
 function from<T>(items: T[]): AsyncIterable<T> {

@@ -1,13 +1,24 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PinoLogger } from 'nestjs-pino';
 
 import { MetricsService } from '../../common/metrics/metrics.service';
-import { SettingsService } from '../../common/settings/settings.service';
+import { type ApiErrorDetail } from '../../common/http/api-error';
+import { type SettingsWarning } from '../../common/settings/dto/settings.schemas';
+import {
+    type SettingsChange,
+    SettingsService,
+    settingLockoutRisk,
+} from '../../common/settings/settings.service';
 import { SmsCounter } from './schemas/sms-counter.schema';
 
 export type BudgetWindow = 'hour' | 'day';
+
+const LIMIT_WINDOWS = [
+    ['sms.hourly_limit', 'hour'],
+    ['sms.daily_limit', 'day'],
+] as const;
 
 export interface BudgetDecision {
     allowed: boolean;
@@ -21,7 +32,7 @@ export interface BudgetDecision {
  * window is rolled back when the daily one refuses, so a refusal costs no budget.
  */
 @Injectable()
-export class SmsBudgetService {
+export class SmsBudgetService implements OnModuleInit {
     constructor(
         @InjectModel(SmsCounter.name) private readonly counters: Model<SmsCounter>,
         private readonly settings: SettingsService,
@@ -29,6 +40,12 @@ export class SmsBudgetService {
         private readonly logger: PinoLogger,
     ) {
         this.logger.setContext(SmsBudgetService.name);
+    }
+
+    onModuleInit(): void {
+        this.settings.registerWriteCheck('sms.staff_sign_in_codes', (change) =>
+            this.checkStaffSignIn(change),
+        );
     }
 
     async consume(now = new Date()): Promise<BudgetDecision> {
@@ -45,6 +62,39 @@ export class SmsBudgetService {
         }
 
         return { allowed: true };
+    }
+
+    private async checkStaffSignIn(change: SettingsChange): Promise<SettingsWarning[]> {
+        if (change.after['auth.admin_login_method'] !== 'sms') return [];
+
+        const switched = change.before['auth.admin_login_method'] !== 'sms';
+        const now = new Date();
+        const details: ApiErrorDetail[] = [];
+
+        for (const [key, window] of LIMIT_WINDOWS) {
+            const limit = change.after[key];
+            const before = change.before[key];
+
+            if (limit === 0 || (!switched && before !== 0 && limit >= before)) continue;
+
+            const used = await this.used(window, now);
+
+            if (used >= limit)
+                details.push({
+                    path: key,
+                    message: `${used} SMS were already sent this ${window}; a limit of ${limit} leaves no sign-in code for staff until it ends`,
+                });
+        }
+
+        if (details.length > 0) throw settingLockoutRisk(details);
+
+        return [];
+    }
+
+    private async used(window: BudgetWindow, now: Date): Promise<number> {
+        const record = await this.counters.findById(this.keyFor(window, now)).lean<SmsCounter>().exec();
+
+        return record?.count ?? 0;
     }
 
     private async charge(window: BudgetWindow, limit: number, now: Date): Promise<BudgetDecision> {

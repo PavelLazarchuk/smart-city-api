@@ -1,25 +1,16 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
-import { MailModule } from '../../integrations/mail/mail.module';
-import { BookingsModule } from '../bookings/bookings.module';
+import { BookingsDataModule } from '../bookings/bookings-data.module';
 import { CategoriesModule } from '../categories/categories.module';
-import { ChannelTemplatesModule } from '../channel-templates/channel-templates.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { SlotsModule } from '../slots/slots.module';
-import { SmsModule } from '../sms/sms.module';
-import { UsersModule } from '../users/users.module';
-import { BookingCalendarService } from './booking-calendar.service';
-import { BookingsService } from './bookings.service';
 import { ServiceRevision, ServiceRevisionSchema } from './schemas/service-revision.schema';
 import { Service, ServiceSchema } from './schemas/service.schema';
 import { ServiceRevisionsRepository } from './service-revisions.repository';
-import { ServicesController } from './services.controller';
 import { ServicesMasker } from './services.masker';
 import { ServicesRepository } from './services.repository';
 import { ServicesService } from './services.service';
-import { SlotAdminService } from './slot-admin.service';
-import { SuspensionsService } from './suspensions.service';
 
 @Module({
     imports: [
@@ -27,26 +18,12 @@ import { SuspensionsService } from './suspensions.service';
             { name: Service.name, schema: ServiceSchema },
             { name: ServiceRevision.name, schema: ServiceRevisionSchema },
         ]),
-        BookingsModule,
+        BookingsDataModule,
         SlotsModule,
         OrganizationsModule,
         CategoriesModule,
-        MailModule,
-        SmsModule,
-        UsersModule,
-        ChannelTemplatesModule,
     ],
-    controllers: [ServicesController],
-    providers: [
-        ServicesRepository,
-        ServiceRevisionsRepository,
-        ServicesMasker,
-        ServicesService,
-        BookingsService,
-        BookingCalendarService,
-        SlotAdminService,
-        SuspensionsService,
-    ],
-    exports: [ServicesService, BookingsService, BookingCalendarService, SuspensionsService],
+    providers: [ServicesRepository, ServiceRevisionsRepository, ServicesMasker, ServicesService],
+    exports: [ServicesService, ServicesMasker],
 })
 export class ServicesModule {}

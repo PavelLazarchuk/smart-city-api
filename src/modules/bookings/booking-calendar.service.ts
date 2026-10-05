@@ -6,13 +6,14 @@ import { CALENDAR_FEED } from '../../common/config/constants';
 import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { texts } from '../../common/i18n/messages';
+import { DAY_MS } from '../../common/time/zone';
 import { type MailAttachment } from '../../integrations/mail/mail.provider';
-import { type BookingEntity, BookingsRepository } from '../bookings/bookings.repository';
-import { type BookingStatus } from '../bookings/schemas/booking.schema';
+import { type BookingEntity, BookingsRepository } from './bookings.repository';
+import { type BookingStatus } from './schemas/booking.schema';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UsersService } from '../users/users.service';
-import { ServicesMasker } from './services.masker';
-import { ServicesRepository } from './services.repository';
+import { ServicesMasker } from '../services/services.masker';
+import { ServicesService } from '../services/services.service';
 
 const STATUS: Record<BookingStatus, CalendarEventStatus> = {
     pending: 'TENTATIVE',
@@ -31,7 +32,7 @@ export interface CalendarToken {
 export class BookingCalendarService {
     constructor(
         private readonly bookings: BookingsRepository,
-        private readonly services: ServicesRepository,
+        private readonly services: ServicesService,
         private readonly organizations: OrganizationsService,
         private readonly users: UsersService,
         private readonly masker: ServicesMasker,
@@ -71,7 +72,7 @@ export class BookingCalendarService {
         if (!user) throw ApiError.unauthorized('TOKEN_INVALID');
 
         const now = new Date();
-        const since = new Date(now.getTime() - CALENDAR_FEED.pastDays * 24 * 60 * 60 * 1000);
+        const since = new Date(now.getTime() - CALENDAR_FEED.pastDays * DAY_MS);
         const bookings = await this.bookings.findScheduledByUser(
             user._id,
             since,

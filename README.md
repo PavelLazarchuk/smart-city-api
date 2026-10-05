@@ -1,6 +1,6 @@
 # Smart City API
 
-NestJS 11 + TypeScript (strict) + MongoDB/Mongoose rewrite of the Smart City backend.
+NestJS 11 + TypeScript (strict) + MongoDB/Mongoose backend of the Smart City platform.
 This file is the operational guide.
 The rest of the documentation is indexed in [docs/README.md](docs/README.md).
 
@@ -95,9 +95,6 @@ Values that are part of the API contract or of how the service is built rather t
 pagination limits, job schedules, outbox and upload ceilings, argon2 parameters, the Mongo write concern —
 live in [src/common/config/constants.ts](src/common/config/constants.ts). TTL retention windows live in the
 migration that creates the index, because changing one needs a `collMod` migration anyway.
-
-> The old repository's `.env.example` and git history contain live credentials (Mongo Atlas, SMPP, SMTP,
-> Mapbox). Rotate them before this service reaches production — see [docs/deployment.md](docs/deployment.md).
 
 ## API conventions
 

@@ -32,6 +32,8 @@ export const labelSchema = z.string().trim().min(1).max(LABEL_MAX_LENGTH);
 
 export const enabledSchema = z.boolean();
 
+export const fieldKeySchema = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, 'Must be snake_case');
+
 export const dateOnlySchema = z.iso.date();
 
 export const timeOfDaySchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:mm');

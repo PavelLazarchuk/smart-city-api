@@ -1,5 +1,5 @@
 import { CSV_BOM, csvLine, type CsvValue } from '../../common/csv';
-import { type BookingEntity } from '../bookings/bookings.repository';
+import { type BookingEntity } from './bookings.repository';
 
 const COLUMNS: readonly [string, (booking: BookingEntity) => CsvValue][] = [
     ['id', (booking) => booking.id],

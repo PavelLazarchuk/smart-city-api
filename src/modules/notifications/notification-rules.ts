@@ -1,7 +1,7 @@
 import { texts } from '../../common/i18n/messages';
 import { renderTemplate, type TemplateData } from '../../common/i18n/template';
 import { type OutboxEventType } from '../../common/outbox/schemas/outbox-event.schema';
-import { type EventActor } from '../services/booking-events';
+import { type EventActor } from '../bookings/booking-events';
 
 export const NOTIFICATION_AUDIENCES = ['client', 'staff'] as const;
 export type NotificationAudience = (typeof NOTIFICATION_AUDIENCES)[number];

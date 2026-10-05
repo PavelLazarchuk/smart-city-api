@@ -19,25 +19,25 @@ import { dateOnlyIn, instantIn, isoAtIn, isoIn, shiftDateOnly, timeOfDayIn } fro
 import { BookingsRepository } from '../bookings/bookings.repository';
 import { CategoriesService } from '../categories/categories.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { type RecurrenceInput, type ServiceOptionInput, type UpdateOptionInput } from './dto/option.schemas';
 import {
-    type AvailabilityQuery,
-    type AvailabilityResponse,
     type CloneServiceInput,
     type CreateServiceInput,
     type GetServiceQuery,
     type ListServicesQuery,
     type NearbyQuery,
-    type RecurrenceInput,
     type ServiceInclude,
-    type ServiceOptionInput,
+    type UpdateServiceInput,
+} from './dto/service.schemas';
+import {
+    type AvailabilityQuery,
+    type AvailabilityResponse,
     type ServiceSlotsQuery,
     type ServiceSlotsResponse,
     type SlotCandidate,
     type SlotInput,
-    type UpdateOptionInput,
-    type UpdateServiceInput,
     type UpdateSlotInput,
-} from './dto/service.schemas';
+} from './dto/slot.schemas';
 import { type SlotBody, type TimeEntry } from '../slots/schemas/slot.schema';
 import { SlotsRepository } from '../slots/slots.repository';
 import { type RevisionAction } from './schemas/service-revision.schema';
@@ -1403,5 +1403,23 @@ export class ServicesService implements OnModuleInit {
 
     findManyByIds(ids: string[]): Promise<ServiceEntity[]> {
         return this.services.findManyByIds(ids);
+    }
+
+    findById(id: string, session?: ClientSession): Promise<ServiceEntity | null> {
+        return this.services.findById(id, session);
+    }
+
+    cancelDeadlines(ids: string[]): Promise<Map<string, number | null>> {
+        return this.services.cancelDeadlines(ids);
+    }
+
+    findCalendarDetails(
+        ids: string[],
+    ): Promise<Pick<ServiceEntity, '_id' | 'duration_minutes' | 'address' | 'location'>[]> {
+        return this.services.findCalendarDetails(ids);
+    }
+
+    touch(id: string, session: ClientSession): Promise<void> {
+        return this.services.touch(id, session);
     }
 }

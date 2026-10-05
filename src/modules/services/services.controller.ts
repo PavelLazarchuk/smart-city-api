@@ -41,53 +41,55 @@ import {
     WaitlistEntryResponseDto,
     waitlistEntryResponseSchema,
 } from '../bookings/dto/booking.schemas';
-import { BookingsService } from './bookings.service';
+import { BookingsService } from '../bookings/bookings.service';
 import {
-    AvailabilityQueryDto,
-    type AvailabilityResponse,
-    AvailabilityResponseDto,
-    availabilityResponseSchema,
     type BookingCreated,
     BookingCreatedResponseDto,
     bookingCreatedResponseSchema,
+    CreateBookingDto,
+} from '../bookings/dto/booking.schemas';
+import { CreateOptionDto, RecurrenceDto, UpdateOptionDto } from './dto/option.schemas';
+import {
     CloneServiceDto,
     cloneServiceSchema,
-    CloseSlotDto,
-    CloseSlotResponseDto,
-    closeSlotResponseSchema,
-    type CloseSlotResult,
-    CreateBookingDto,
-    CreateOptionDto,
     CreateServiceDto,
-    createSlotSchema,
     DeleteServiceQueryDto,
     GetServiceQueryDto,
     ListServicesQueryDto,
     MaskedServiceResponseDto,
     maskedServiceResponseSchema,
-    MoveSlotDto,
-    MoveSlotResponseDto,
-    moveSlotResponseSchema,
-    type MoveSlotResult,
     NearbyQueryDto,
-    RecurrenceDto,
     ServiceResponseDto,
     serviceResponseSchema,
     ServiceRevisionResponseDto,
     serviceRevisionResponseSchema,
     serviceSchemaForViewer,
+    SetServiceStatusDto,
+    UpdateServiceDto,
+} from './dto/service.schemas';
+import {
+    AvailabilityQueryDto,
+    type AvailabilityResponse,
+    AvailabilityResponseDto,
+    availabilityResponseSchema,
+    CloseSlotDto,
+    CloseSlotResponseDto,
+    closeSlotResponseSchema,
+    type CloseSlotResult,
+    createSlotSchema,
+    MoveSlotDto,
+    MoveSlotResponseDto,
+    moveSlotResponseSchema,
+    type MoveSlotResult,
     ServiceSlotsQueryDto,
     type ServiceSlotsResponse,
     ServiceSlotsResponseDto,
     serviceSlotsResponseSchema,
-    SetServiceStatusDto,
-    UpdateOptionDto,
-    UpdateServiceDto,
     UpdateSlotDto,
-} from './dto/service.schemas';
+} from './dto/slot.schemas';
 import { type ServiceRevisionEntity } from './service-revisions.repository';
 import { type ServiceListItem, ServicesService, type ServiceTreeEntity } from './services.service';
-import { SlotAdminService } from './slot-admin.service';
+import { SlotAdminService } from '../bookings/slot-admin.service';
 
 const BOOKING_ERRORS = [
     'SERVICE_NOT_FOUND',
