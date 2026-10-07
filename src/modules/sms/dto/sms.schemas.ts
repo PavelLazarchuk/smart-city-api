@@ -8,7 +8,7 @@ import {
     phoneSchema,
     timestampsOutputSchema,
 } from '../../../common/zod/primitives';
-import { SMS_PURPOSES, SMS_STATUSES } from '../schemas/sms.schema';
+import { PHONE_CHANNELS, SMS_CHANNELS, SMS_PURPOSES, SMS_STATUSES } from '../schemas/sms.schema';
 
 export const smsResponseSchema = z.object({
     id: idOutputSchema,
@@ -16,6 +16,7 @@ export const smsResponseSchema = z.object({
     purpose: z.enum(SMS_PURPOSES),
     provider: z.string(),
     status: z.enum(SMS_STATUSES),
+    channel: z.enum(SMS_CHANNELS).catch('sms'),
     ...timestampsOutputSchema,
 });
 export class SmsResponseDto extends createZodDto(smsResponseSchema) {}
@@ -26,11 +27,12 @@ export const listSmsQuerySchema = paginationQuerySchema.extend(cursorQuerySchema
     to: isoDateTimeSchema.optional(),
     period: z.enum(['this_month', 'last_month']).optional(),
     phone: phoneSchema.optional(),
+    channel: z.enum(SMS_CHANNELS).optional(),
 });
 export type ListSmsQuery = z.infer<typeof listSmsQuerySchema>;
 export class ListSmsQueryDto extends createZodDto(listSmsQuerySchema) {}
 
-export const sendTestSmsSchema = z.object({ phone: phoneSchema });
+export const sendTestSmsSchema = z.object({ phone: phoneSchema, channel: z.enum(PHONE_CHANNELS).optional() });
 export class SendTestSmsDto extends createZodDto(sendTestSmsSchema) {}
 
 export const testSmsResponseSchema = z.object({ phone: z.string(), status: z.enum(SMS_STATUSES) });

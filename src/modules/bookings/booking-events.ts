@@ -63,6 +63,14 @@ export function notice(event: OutboxEventEntity): BookingNotice {
     };
 }
 
+export function remindersMuted(event: OutboxEventEntity): boolean {
+    return event.internal?.['reminders'] === false;
+}
+
+export function checkinCodeOf(event: OutboxEventEntity): string | undefined {
+    return optional(event.internal?.['checkin_code']);
+}
+
 export function previousOf(event: OutboxEventEntity): {
     previous_date?: string;
     previous_time?: string;

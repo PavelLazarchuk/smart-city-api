@@ -16,7 +16,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 
 | Collection            | Owns                                                           | Key fields                                                                                                                                                                                                                                                                                                                                                                                |
 | --------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `organizations`       | The tenant                                                     | `main_label`, `main_category`, `main_image`, `status` (`active` \| `temporarily_closed`), `closed_reason`, `closed_until`, `address`, `location`, `working_hours[]`, `holidays[]`, `timezone`, `version`                                                                                                                                                                                  |
+| `organizations`       | The tenant                                                     | `main_label`, `main_category`, `main_image`, `status` (`active` \| `temporarily_closed`), `closed_reason`, `closed_until`, `address`, `location`, `working_hours[]`, `holidays[]`, `timezone`, `booking_policy` (`max_active_per_user`, `min_interval_days`), `version`                                                                                                                   |
 | `categories`          | Grouping inside an organization                                | `organization_id`, `position`, `label`, `enabled`                                                                                                                                                                                                                                                                                                                                         |
 | `services`            | The bookable/"apply" unit                                      | `organization_id`, `category_id` (`null` = direct child), `position`, `label`, `slug`, `status`, `published_at`, `enabled`, `description`, `tags[]`, `duration_minutes`, `buffer_minutes`, `price`, `currency`, `address`, `location`, `working_hours[]`, `holidays[]`, `blackout_dates[]`, `booking_policy`, `form_fields[]`, `required_documents[]`, `value`, `options[]`, `deleted_at` |
 | `slots`               | One slot of one service option                                 | `service_id`, `organization_id`, `option_id`, `id` (uuid, unique per option), `label`, `child_type`, `value` (`date`, `time[]`, `limit`, `booked_count`, …)                                                                                                                                                                                                                               |
@@ -25,7 +25,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `infosections`        | Static info blocks                                             | `organization_id`, `position`, `label`, `enabled`, `control`, `value`                                                                                                                                                                                                                                                                                                                     |
 | `images`              | Uploaded files                                                 | `organization_id`, storage key, mime, size                                                                                                                                                                                                                                                                                                                                                |
 | `archives`            | Snapshots of finished bookings                                 | `organization_id`, `service_id`, `type`, `payload` (Mixed)                                                                                                                                                                                                                                                                                                                                |
-| `bookings`            | One booking of one slot                                        | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `starts_at`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `finished_at`, `late_cancel`, `reminder_sent_at`, `created_by`                                                                                                       |
+| `bookings`            | One booking of one slot                                        | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `starts_at`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `arrived_at`, `finished_at`, `late_cancel`, `checkin_code`, `reminder_sent_at`, `created_by`                                                                         |
 | `booking_suspensions` | No-show and manual suspensions, one row per client and service | `id`, `user_id`, `service_id`, `organization_id`, `suspended`, `until` (`null` = until lifted), `kind` (`no_show` \| `manual`), `reason`, `booking_ids[]`, `counted_from`, `suspended_at`/`_by`, `lifted_at`/`_by`                                                                                                                                                                        |
 | `waitlist`            | Clients waiting for a full slot                                | `id`, slot coordinates, `user_id`, `person`, `phone`, `status` (`waiting` \| `notified`), `notified_at`                                                                                                                                                                                                                                                                                   |
 | `outbox_events`       | Transactional outbox                                           | `id`, `type`, `organization_id`, `payload`, `internal`, `status`, `attempts`, `next_attempt_at`, `claimed_until`, `deliveries[]`, `request_id`, `trace`                                                                                                                                                                                                                                   |
@@ -35,7 +35,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `users`               | Accounts                                                       | `login`, `password_hash`, `phone`, `email`, `name`, `role`, `organization_ids[]`, `failed_login_attempts`, `last_failed_login_at`, `locked_until`, `calendar_token_hash`                                                                                                                                                                                                                  |
 | `sessions`            | Refresh-token sessions                                         | `user_id`, `family_id`, `refresh_token_hash`, `replaced_by`, `revoked_at`, `expires_at`                                                                                                                                                                                                                                                                                                   |
 | `verification_codes`  | One-time codes                                                 | `phone`, `code_hash`, `purpose`, `user_id`, `attempts`, `consumed_at`, `expires_at`                                                                                                                                                                                                                                                                                                       |
-| `sms`                 | Delivery log                                                   | `phone`, `purpose`, `body`, `status`                                                                                                                                                                                                                                                                                                                                                      |
+| `sms`                 | Delivery log                                                   | `phone`, `purpose`, `provider`, `channel` (`sms` \| `viber` \| `viber_sms`), `status`                                                                                                                                                                                                                                                                                                     |
 | `analytics_events`    | Business events                                                | `type` + denormalised actor/organization/service labels                                                                                                                                                                                                                                                                                                                                   |
 | `job_locks`           | Scheduler lease and last run                                   | one document per job name; lease plus `last_status`, `last_error`, `last_duration_ms` ([jobs.md](jobs.md))                                                                                                                                                                                                                                                                                |
 | `rate_limits`         | Throttler counters when `THROTTLE_STORAGE=mongo`               | `key`, `count`, `expires_at`                                                                                                                                                                                                                                                                                                                                                              |
@@ -156,9 +156,9 @@ entries in one statement.
 - **Working hours, duration and holidays** feed the recurrence: a `recurrent_dates` weekday with an empty `time`
   list is cut from the service's `working_hours` into `duration_minutes + buffer_minutes` steps, and dates in
   the service's `blackout_dates`, its `holidays` (`MM-DD`, yearly) or the organization's `holidays` are skipped.
-- **`booking_policy`** — `max_active_per_user`, `lead_time_minutes`, `max_advance_days`,
-  `cancel_deadline_minutes`, `late_cancel`, `requires_confirmation` — is enforced by the booking service for
-  clients; the organization's admins are exempt from the client-facing rules. `late_cancel` decides what a
+- **`booking_policy`** — `max_active_per_user`, `min_interval_days`, `lead_time_minutes`, `max_advance_days`,
+  `cancel_deadline_minutes`, `late_cancel`, `requires_confirmation`, `no_show_after_minutes` — is enforced by
+  the booking service for clients; the organization's admins are exempt from the client-facing rules. `late_cancel` decides what a
   client's cancellation inside `cancel_deadline_minutes` does: `forbid` (the default) refuses it, `no_show`
   lets it through until the booking starts, marks it `late_cancel: true` and counts it as a no-show (see
   below). Once the booking has started, and for a late reschedule, the answer is the 422 either way.
@@ -174,10 +174,13 @@ entries in one statement.
 ## Booking lifecycle
 
 ```
-pending ──confirmed──▶ confirmed ──▶ completed ⇄ no_show
+pending ──confirmed──▶ confirmed ──check-in──▶ arrived ──▶ completed ⇄ no_show
    │                       │
    └────── cancelled ◀─────┘
 ```
+
+Staff may also finish a `confirmed` booking as `completed` or `no_show` without a check-in, and an `arrived`
+one as `no_show`; a `no_show` checked in on its own day becomes `arrived`.
 
 `active` is `true` for `pending` and `confirmed` and is what the partial unique index
 `{ service_id, option_id, slot_id, slot_time, user_id }` keys on: a cancelled or finished row keeps its place in
@@ -186,6 +189,40 @@ capacity, appear in the default listings (`?status=all` lifts the filter) and ar
 its admins. `finished_at` is set on every terminal status and carries the history TTL
 (365 days). Deleting an account deletes its active bookings (capacity released) and
 anonymises the finished ones — the outcome survives, the person does not.
+
+## Check-in
+
+Every booking except a `callback` gets a `checkin_code` when it is made: six characters from an alphabet
+without look-alikes (`0/O`, `1/I/L`), unique among active bookings (partial unique index
+`unique_active_checkin_code`). The client sees it in the booking and in the reminder (`{{code}}` in the
+reminder templates); the client app may render it as a QR code, whose content is the code itself.
+
+Staff check a client in with `POST /bookings/check-in` (`{ code }`, case, spaces and dashes ignored) or
+`POST /bookings/:id/check-in`. Only the booking's day in the organization's time zone is open (an undated
+booking any day), `confirmed` and `no_show` move to `arrived` with `arrived_at`, and checking in an `arrived`
+booking again answers the same booking, so a second scan is harmless. `arrived` is not active: the client can
+no longer cancel or move it, the place stays taken, and staff finish it with `PATCH /bookings/:id/status`
+(`completed`, or `no_show` for a mistaken check-in). A code that matches no booking of the caller's
+organizations is a `404`, the same as an unknown one.
+
+With `booking_policy.no_show_after_minutes` the `auto_no_show` job ([jobs.md](jobs.md))
+marks a `confirmed` booking nobody checked in as `no_show` once that many minutes have passed since its start
+— for a date-only booking, once its day is over. The mark counts toward the sanctions below exactly like a
+staff one; a late client checked in the same day turns it into `arrived` and lifts the suspension it caused.
+
+## Client limits
+
+- `booking_policy.max_active_per_user` caps a client's active bookings of one service
+  (`BOOKING_LIMIT_REACHED`), the organization's `booking_policy.max_active_per_user` those across all its
+  services (`BOOKING_ORGANIZATION_LIMIT_REACHED`).
+- `booking_policy.min_interval_days` keeps a client's bookings of one service that many days apart, the
+  organization's `min_interval_days` those of any of its services (`BOOKING_TOO_FREQUENT`, with the clashing
+  date in `details[0].message`). A booking's day is its slot date, or the day it was made for an undated one;
+  every status except `cancelled` counts, so a no-show uses up the interval too. The check runs on booking and
+  on a client's reschedule, which ignores the booking being moved.
+- Staff booking `on_behalf` and staff rescheduling are exempt from both. Like the existing per-service cap, the
+  limits are read and then written in one transaction without a lock, so two simultaneous bookings by the same
+  client may both pass.
 
 ## No-show sanctions
 
@@ -213,7 +250,8 @@ booking and on joining a waitlist; a reschedule, existing bookings and staff boo
 ## Channel templates
 
 The client and staff e-mails and SMS that belong to an organization — booking created, reminder, freed place,
-cancellation, move, suspension, call-back due; twelve keys in all, one per event and channel — are rendered
+cancellation, move, suspension, call-back due; seventeen keys in all, one per event and channel (`mail`,
+`sms`, `viber`) — are rendered
 from templates. The built-in wording lives in `texts.channels` in
 [messages.ts](../src/common/i18n/messages.ts); a row in `channel_templates` replaces it for one
 organization and one key, and deleting the row brings the built-in text back. One-time codes, the SMS test
@@ -229,10 +267,26 @@ still waiting in the outbox. Should a stored template stop rendering after a cat
 for one event (a body of only `{{reason}}` and no reason given), delivery falls back to the built-in text and
 logs a warning instead of failing.
 
+## Viber
+
+Viber is a third channel next to e-mail and SMS, for the client notices that would otherwise go by SMS:
+reminder, freed place, cancellation, move and suspension. A client with an e-mail keeps getting e-mail. Two
+switches turn it on: `VIBER_PROVIDER` picks the provider (`none` by default, `console` for development,
+`turbosms` for the TurboSMS HTTP API with `TURBOSMS_TOKEN`, `VIBER_SENDER`, `TURBOSMS_SMS_SENDER`), and the
+runtime setting `viber.enabled` sends through it; it cannot be switched on while the provider is `none`.
+
+With `viber.sms_fallback` on (the default) each message is sent as a hybrid: the Viber text from the
+`*_viber` template and the SMS text from the `*_sms` one, and the provider delivers the SMS when the Viber
+message does not arrive (no Viber account, not read in time). Because that SMS may go out, a hybrid message is
+charged to the SMS budget; when the budget is spent the message still goes, Viber only. Every send is logged
+in `sms` with `channel` `viber` or `viber_sms` and the provider's name; a failed send is retried by the outbox
+like an SMS. One-time codes always go by SMS. `POST /sms/test` with `channel: "viber"` sends a test message
+through the provider without the fallback, whether or not `viber.enabled` is on.
+
 ## Runtime settings
 
 Part of the configuration is editable at runtime by a super admin through `/settings`: login methods, the
-account lock, token and one-time code lifetimes, rate limits, SMS limits, upload limits, the booking reminder
+account lock, token and one-time code lifetimes, rate limits, SMS limits, the Viber channel, upload limits, the booking reminder
 lead, retention horizons, the default currency and the report recipients. The keys, their schemas and
 descriptions live in [settings.registry.ts](../src/common/settings/settings.registry.ts); a key that is not
 there can be neither read nor written.
@@ -319,7 +373,8 @@ Shape of the set:
   `organizations` has `{ status }` and its own `2dsphere`; `news` has `{ rubric, date }`, `{ publish_at }` and
   `{ organization_id, publish_at }` (the tree's tag).
 - **Lifecycle** — `bookings` adds `{ active, slot_date, reminder_sent_at }` (the reminder job's scan) and
-  `{ organization_id, status, slot_date }` (statistics); `waitlist` is unique per slot and user and indexed by
+  `{ organization_id, status, slot_date }` (statistics), `{ checkin_code }` (partial unique on active rows)
+  and `{ checkin_code, created_at }` (the check-in lookup), `{ service_id, status, starts_at }` (`auto_no_show`); `waitlist` is unique per slot and user and indexed by
   slot + status + `created_at` (first in line); `outbox_events` by `{ status, next_attempt_at }` (the claim);
   `webhooks` by `{ enabled, events }` (the fan-out); `service_revisions` by `{ service_id, created_at }`;
   `booking_suspensions` is unique on `{ user_id, service_id }` and indexed by `{ service_id }` (cascade) and

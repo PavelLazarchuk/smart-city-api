@@ -97,10 +97,8 @@ export class SlotAdminService implements OnModuleInit {
 
             if (!announced(event) || recipientEmail(event) || !phone) return;
 
-            await this.sms.send(
-                phone,
-                await this.templates.sms(organizationOf(event), 'booking_cancelled_sms', data),
-                'cancellation',
+            await this.sms.notify(phone, 'cancellation', (channel) =>
+                this.templates.text(organizationOf(event), `booking_cancelled_${channel}`, data),
             );
         });
         this.outbox.registerHandler('booking.rescheduled', 'mail', async (event) => {
@@ -119,13 +117,11 @@ export class SlotAdminService implements OnModuleInit {
 
             if (!announced(event) || recipientEmail(event) || !phone) return;
 
-            await this.sms.send(
-                phone,
-                await this.templates.sms(organizationOf(event), 'booking_moved_sms', {
+            await this.sms.notify(phone, 'reschedule', (channel) =>
+                this.templates.text(organizationOf(event), `booking_moved_${channel}`, {
                     ...data,
                     ...previousOf(event),
                 }),
-                'reschedule',
             );
         });
     }

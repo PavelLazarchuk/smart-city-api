@@ -8,7 +8,7 @@ describe('channel template catalogue', () => {
         const template = texts.channels[key];
 
         expect(() => compileTemplate(template.body, variables)).not.toThrow();
-        expect(template.subject === null).toBe(channel === 'sms');
+        expect(template.subject === null).toBe(channel !== 'mail');
 
         if (template.subject) expect(() => compileTemplate(template.subject, variables)).not.toThrow();
     });

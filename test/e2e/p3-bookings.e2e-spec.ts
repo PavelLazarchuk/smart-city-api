@@ -169,7 +169,7 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             expect(stats.status).toBe(200);
             expect(stats.body.data).toEqual({
                 total: 3,
-                by_status: { pending: 1, confirmed: 0, completed: 1, no_show: 0, cancelled: 1 },
+                by_status: { pending: 1, confirmed: 0, arrived: 0, completed: 1, no_show: 0, cancelled: 1 },
                 no_show_rate: 0,
                 cancellation_rate: 0.5,
             });
@@ -575,6 +575,37 @@ describe('booking lifecycle, policies, waitlist and outbox (e2e)', () => {
             );
             const sms = await fx.collection<{ phone: string }>('Sms').findOne({ purpose: 'reminder' }).lean();
             expect(sms?.phone).toBe('4915291234567');
+        });
+
+        it('skips the SMS reminder for a client who turned reminders off, keeping the in-app one', async () => {
+            const muted = await t.http
+                .patch(`${t.prefix}/me`)
+                .set('Authorization', bearer)
+                .send({ reminders: false });
+            expect(muted.status).toBe(200);
+            expect(muted.body.data.reminders).toBe(false);
+
+            const service = await serviceWith({}, 1);
+            await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' });
+            const now = hourBefore(dateOnly(1), '10:00');
+            expect(await t.app.get(BookingRemindersJob).execute(now)).toEqual({
+                until: remindedUntil(now),
+                reminders: 1,
+            });
+            await waitFor(
+                async () =>
+                    (await fx
+                        .collection('OutboxEvent')
+                        .countDocuments({ type: 'booking.reminder', status: 'delivered' })) === 1,
+            );
+            expect(await fx.collection('Sms').countDocuments({ purpose: 'reminder' })).toBe(0);
+            expect(await fx.collection('Notification').countDocuments({ type: 'booking_reminder' })).toBe(1);
+
+            const back = await t.http
+                .patch(`${t.prefix}/me`)
+                .set('Authorization', bearer)
+                .send({ reminders: true });
+            expect(back.body.data.reminders).toBe(true);
         });
 
         it('sends the reminder by e-mail when the account has one, naming the booking phone', async () => {

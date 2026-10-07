@@ -282,6 +282,8 @@ export class UsersService implements OnModuleInit {
 
         if (input.name !== undefined) set['name'] = input.name;
 
+        if (input.reminders !== undefined) set['reminders'] = input.reminders;
+
         if (input.email !== undefined) {
             if (input.email === null) unset.push('email');
             else set['email'] = input.email;
@@ -481,6 +483,10 @@ export class UsersService implements OnModuleInit {
 
     findEmailsByIds(ids: string[]): Promise<Map<string, string>> {
         return this.users.findEmailsByIds(ids);
+    }
+
+    findWithoutReminders(ids: string[]): Promise<Set<string>> {
+        return this.users.findWithoutReminders(ids);
     }
 
     /** Under `admin=password` an admin without a login and a password could sign in by neither method. */

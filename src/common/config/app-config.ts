@@ -114,6 +114,12 @@ export class AppConfig {
         budget: { hourlyLimit: number; dailyLimit: number };
     };
 
+    readonly viber: {
+        provider: Env['VIBER_PROVIDER'];
+        sender: string;
+        turbosms: { url: string; token?: string; smsSender: string };
+    };
+
     readonly mail: {
         provider: Env['MAIL_PROVIDER'];
         from: { name: string; address: string };
@@ -160,6 +166,7 @@ export class AppConfig {
             unreferencedImages: string;
             outboxDispatch: string;
             bookingReminders: string;
+            autoNoShow: string;
             trashPurge: string;
         };
         cascadeReconcileLimit: number;
@@ -250,6 +257,15 @@ export class AppConfig {
                 sourceAddr: env.SMPP_SOURCE_ADDR,
             },
             budget: { hourlyLimit: env.SMS_HOURLY_LIMIT, dailyLimit: env.SMS_DAILY_LIMIT },
+        };
+        this.viber = {
+            provider: env.VIBER_PROVIDER,
+            sender: env.VIBER_SENDER,
+            turbosms: {
+                url: env.TURBOSMS_URL,
+                token: env.TURBOSMS_TOKEN,
+                smsSender: env.TURBOSMS_SMS_SENDER,
+            },
         };
         this.mail = {
             provider: env.MAIL_PROVIDER,

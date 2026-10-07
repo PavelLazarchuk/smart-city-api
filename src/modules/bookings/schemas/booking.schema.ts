@@ -3,7 +3,14 @@ import { type HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 import { baseSchemaOptions } from '../../../common/database/schema-options';
 
-export const BOOKING_STATUSES = ['pending', 'confirmed', 'completed', 'no_show', 'cancelled'] as const;
+export const BOOKING_STATUSES = [
+    'pending',
+    'confirmed',
+    'arrived',
+    'completed',
+    'no_show',
+    'cancelled',
+] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
 export const ACTIVE_BOOKING_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed'];
@@ -83,6 +90,9 @@ export class Booking {
     confirmed_at!: Date | null;
 
     @Prop({ type: Date, default: null })
+    arrived_at?: Date | null;
+
+    @Prop({ type: Date, default: null })
     finished_at!: Date | null;
 
     @Prop({ type: Boolean, default: false })
@@ -99,6 +109,9 @@ export class Booking {
 
     @Prop({ type: Date, default: null })
     reminder_sent_at!: Date | null;
+
+    @Prop({ type: String, default: null })
+    checkin_code?: string | null;
 }
 
 export type BookingDocument = HydratedDocument<Booking>;
@@ -118,3 +131,13 @@ BookingSchema.index({ organization_id: 1, slot_date: 1 });
 BookingSchema.index({ active: 1, slot_date: 1, reminder_sent_at: 1 });
 BookingSchema.index({ active: 1, starts_at: 1, reminder_sent_at: 1 });
 BookingSchema.index({ organization_id: 1, status: 1, slot_date: 1 });
+BookingSchema.index(
+    { checkin_code: 1 },
+    {
+        unique: true,
+        name: 'unique_active_checkin_code',
+        partialFilterExpression: { active: true, checkin_code: { $type: 'string' } },
+    },
+);
+BookingSchema.index({ checkin_code: 1, created_at: -1 });
+BookingSchema.index({ service_id: 1, status: 1, starts_at: 1 });

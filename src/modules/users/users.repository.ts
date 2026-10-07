@@ -71,6 +71,18 @@ export class UsersRepository extends BaseRepository<User> {
         return new Map(rows.map((row) => [row._id.toHexString(), row.email]));
     }
 
+    async findWithoutReminders(ids: string[]): Promise<Set<string>> {
+        if (ids.length === 0) return new Set();
+
+        const rows = await this.model
+            .find({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) }, reminders: false })
+            .select('_id')
+            .lean<{ _id: Types.ObjectId }[]>()
+            .exec();
+
+        return new Set(rows.map((row) => row._id.toHexString()));
+    }
+
     countOtherSuperAdmins(exceptId: string, phonePrefix?: string): Promise<number> {
         return this.count({
             role: 'super-admin',

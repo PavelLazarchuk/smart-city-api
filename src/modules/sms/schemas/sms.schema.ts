@@ -17,6 +17,12 @@ export type SmsPurpose = (typeof SMS_PURPOSES)[number];
 export const SMS_STATUSES = ['sent', 'failed', 'blocked'] as const;
 export type SmsStatus = (typeof SMS_STATUSES)[number];
 
+export const SMS_CHANNELS = ['sms', 'viber', 'viber_sms'] as const;
+export type SmsChannel = (typeof SMS_CHANNELS)[number];
+
+export const PHONE_CHANNELS = ['sms', 'viber'] as const;
+export type PhoneChannel = (typeof PHONE_CHANNELS)[number];
+
 @Schema(baseSchemaOptions('sms'))
 export class Sms {
     @Prop({ type: String, required: true })
@@ -30,6 +36,9 @@ export class Sms {
 
     @Prop({ type: String, enum: SMS_STATUSES, required: true })
     status!: SmsStatus;
+
+    @Prop({ type: String, enum: SMS_CHANNELS, required: true, default: 'sms' })
+    channel!: SmsChannel;
 }
 
 export type SmsDocument = HydratedDocument<Sms>;

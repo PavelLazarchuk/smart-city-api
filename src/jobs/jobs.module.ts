@@ -6,12 +6,14 @@ import { MailModule } from '../integrations/mail/mail.module';
 import { StorageModule } from '../integrations/storage/storage.module';
 import { ArchivesModule } from '../modules/archives/archives.module';
 import { BookingsDataModule } from '../modules/bookings/bookings-data.module';
+import { BookingsModule } from '../modules/bookings/bookings.module';
 import { ImagesModule } from '../modules/images/images.module';
 import { NewsModule } from '../modules/news/news.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
 import { ServicesModule } from '../modules/services/services.module';
 import { SlotsModule } from '../modules/slots/slots.module';
 import { UsersModule } from '../modules/users/users.module';
+import { AutoNoShowJob } from './auto-no-show.job';
 import { BookingRemindersJob } from './booking-reminders.job';
 import { CascadeReconcileJob } from './cascade-reconcile.job';
 import { DebtorReportJob } from './debtor-report.job';
@@ -35,6 +37,7 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         ServicesModule,
         SlotsModule,
         BookingsDataModule,
+        BookingsModule,
         NewsModule,
         ArchivesModule,
         ImagesModule,
@@ -55,6 +58,7 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         DebtorReportJob,
         UnreferencedImagesJob,
         BookingRemindersJob,
+        AutoNoShowJob,
         OutboxDispatchJob,
         TrashPurgeJob,
         JobsScheduler,
@@ -71,8 +75,10 @@ import { UnreferencedImagesJob } from './unreferenced-images.job';
         DebtorReportJob,
         UnreferencedImagesJob,
         BookingRemindersJob,
+        AutoNoShowJob,
         OutboxDispatchJob,
         TrashPurgeJob,
+        JobsScheduler,
     ],
 })
 export class JobsModule {}

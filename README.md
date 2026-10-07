@@ -73,7 +73,8 @@ on a missing or malformed value. [.env.example](.env.example) lists every variab
 Notable switches:
 
 - `AUTH_ADMIN_LOGIN_METHOD` / `AUTH_CLIENT_LOGIN_METHOD` — `password` or `sms`, independently per audience.
-- `SMS_PROVIDER` (`console` | `smpp`), `MAIL_PROVIDER` (`console` | `smtp`), `STORAGE_PROVIDER` (`local` | `s3`).
+- `SMS_PROVIDER` (`console` | `smpp`), `MAIL_PROVIDER` (`console` | `smtp`), `STORAGE_PROVIDER` (`local` | `s3`),
+  `VIBER_PROVIDER` (`none` | `console` | `turbosms`, the last with `TURBOSMS_TOKEN`).
 - `THROTTLE_STORAGE` (`mongo` | `redis` | `memory`) — Mongo and Redis are shared by every replica, `memory`
   is per process. `redis` needs `REDIS_URL` and keeps the counter writes off the database.
 - `THROTTLE_LIMIT` / `THROTTLE_GLOBAL_LIMIT` / `THROTTLE_UPLOAD_LIMIT` — strict limit for `/auth/*` and per
@@ -184,7 +185,7 @@ migration that creates the index, because changing one needs a `collMod` migrati
   `POST /services/:id/clone` (optional `label`, `slug`) copies the settings and options into a new draft with
   fresh option ids; bookable slots and bookings stay behind, info-only `pickup` / `courier` / `paycard` slots
   are copied, and recurrence rules start generating slots for the copy on their own.
-- Bookings have a lifecycle: `pending → confirmed → completed | no_show`, or `cancelled`
+- Bookings have a lifecycle: `pending → confirmed → arrived → completed | no_show`, or `cancelled`
   (`PATCH /bookings/:id/status`, admins); `GET /bookings/:id`; `POST /bookings/:id/confirm` is the owner's half
   of `requires_confirmation`, moving their own `pending` booking to `confirmed` without an admin;
   `POST /bookings/:id/reschedule` moves one in a single transaction; `GET /bookings/stats` gives no-show and cancellation rates;
@@ -193,6 +194,17 @@ migration that creates the index, because changing one needs a `collMod` migrati
   stay as history (`?status=all|cancelled|…`, default `active`). A full slot has a waitlist
   (`POST /services/:id/waitlist`, `GET /me/waitlist`, `DELETE /waitlist/:id`): the first in line is told when a
   place frees up. Reminders go out `BOOKING_REMINDER_HOURS` before the slot.
+- Check-in: every booking except a call-back gets a six-character `checkin_code` (in the booking and in the
+  reminder; the client app shows it as text or a QR code). On the day of the visit staff scan or type it
+  into `POST /bookings/check-in` (`{ code }`) or press `POST /bookings/:id/check-in`, and the booking becomes
+  `arrived`. With `booking_policy.no_show_after_minutes` set, the `auto_no_show` job marks a confirmed booking
+  that nobody checked in `no_show` that many minutes after its start (a date-only booking after its day), which
+  counts toward the no-show sanctions; checking in the same day afterwards corrects it.
+- Client limits: `booking_policy.max_active_per_user` (per service) and `booking_policy.min_interval_days`
+  (bookings of one service at least that many days apart), plus the organization's
+  `booking_policy.max_active_per_user` and `min_interval_days` across all its services —
+  `422 BOOKING_LIMIT_REACHED`, `BOOKING_ORGANIZATION_LIMIT_REACHED`, `BOOKING_TOO_FREQUENT`. Staff booking
+  `on_behalf` are exempt.
 - No-show sanctions: with `booking_policy.no_show_limit` and `no_show_suspension_days` set (optionally
   `no_show_window_days`), the client's n-th `no_show` on a service suspends booking it — `422 BOOKING_SUSPENDED`
   on booking and on the waitlist, while staff may still book `on_behalf`. Staff list suspensions with
@@ -204,14 +216,17 @@ migration that creates the index, because changing one needs a `collMod` migrati
   not the catalogue — see [docs/auth.md](docs/auth.md#roles).
 - A client may keep an `email` on the account (at registration or later via `PATCH /me`, `null` clears
   it); `PATCH /me` also renames the account and changes the phone after a code sent to the new number
-  (`POST /me/phone/code`) — see [docs/auth.md](docs/auth.md#own-profile). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
+  (`POST /me/phone/code`) and with `reminders: false` stops SMS and Viber reminders — see [docs/auth.md](docs/auth.md#own-profile). Reminders and freed-place notices then go to that address instead of by SMS; the letter names the phone
   the booking was made with, since one mailbox may serve several accounts.
 - Notifications leave through a transactional outbox: the `subscribe` e-mail, reminders, freed-place notices and
   webhooks (`/webhooks`, HMAC-signed `POST`s for `booking.*` and `waitlist.*` events; `GET /outbox/events`,
   `POST /outbox/events/:id/replay`) are delivered after the commit with retries — see
   [docs/architecture.md](docs/architecture.md#outbox-and-webhooks).
-- An organization may reword its e-mails and SMS: `GET /organizations/:id/channel-templates` lists the twelve
-  keys with the text in force, the built-in text and the variables each one accepts;
+- Viber is a third channel: with `VIBER_PROVIDER` set and the `viber.enabled` setting on, the client notices
+  that would go by SMS go by Viber instead, with the provider falling back to SMS (`viber.sms_fallback`) — see
+  [docs/data-model.md](docs/data-model.md#viber).
+- An organization may reword its e-mails, SMS and Viber messages: `GET /organizations/:id/channel-templates`
+  lists the seventeen keys with the text in force, the built-in text and the variables each one accepts;
   `PUT /organizations/:id/channel-templates/:key` saves `{ subject, body }` (`subject` for e-mail only),
   `DELETE` returns the key to the built-in text from `messages.ts`, and `POST …/:key/preview` renders the stored
   template or a draft with sample data. Admins of the organization and super-admins only — see

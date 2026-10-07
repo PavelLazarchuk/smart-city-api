@@ -152,6 +152,14 @@ describe('runtime settings (e2e)', () => {
         expect(t.app.get(SettingsService).get('otp.length')).toBe(6);
     });
 
+    it('keeps Viber off while no provider is configured', async () => {
+        const res = await patch({ 'viber.enabled': true });
+
+        expectError(res, 422, 'SETTINGS_INVALID');
+        expect(res.body.error.details).toEqual([{ path: 'viber.enabled', message: expect.any(String) }]);
+        expect((await patch({ 'viber.enabled': false, 'viber.sms_fallback': false })).status).toBe(200);
+    });
+
     it('checks cross-key rules on the resulting values', async () => {
         expect((await patch({ 'auth.lockout_max_seconds': 600 })).status).toBe(200);
 

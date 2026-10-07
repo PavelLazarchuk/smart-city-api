@@ -9,17 +9,29 @@ import { MetricsService } from '../../common/metrics/metrics.service';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { usesCursorMode } from '../../common/pagination/pagination.schema';
 import { PaginationService } from '../../common/pagination/pagination.service';
+import { SettingsService } from '../../common/settings/settings.service';
 import { inSpan } from '../../common/tracing/spans';
 import { SMS_PROVIDER, type SmsProvider } from '../../integrations/sms/sms.provider';
+import { VIBER_PROVIDER, type ViberProvider } from '../../integrations/viber/viber.provider';
 import { type ListSmsQuery } from './dto/sms.schemas';
-import { type Sms, type SmsPurpose, type SmsStatus } from './schemas/sms.schema';
+import {
+    type PhoneChannel,
+    type Sms,
+    type SmsChannel,
+    type SmsPurpose,
+    type SmsStatus,
+} from './schemas/sms.schema';
 import { SmsBudgetService } from './sms-budget.service';
 import { type SmsEntity, SmsRepository } from './sms.repository';
+
+export type PhoneRender = (channel: PhoneChannel) => Promise<string>;
 
 @Injectable()
 export class SmsService {
     constructor(
         @Inject(SMS_PROVIDER) private readonly provider: SmsProvider,
+        @Inject(VIBER_PROVIDER) private readonly viber: ViberProvider | null,
+        private readonly settings: SettingsService,
         private readonly sms: SmsRepository,
         private readonly budget: SmsBudgetService,
         private readonly pagination: PaginationService,
@@ -57,6 +69,50 @@ export class SmsService {
         }
     }
 
+    async notify(phone: string, purpose: SmsPurpose, render: PhoneRender): Promise<SmsStatus> {
+        if (!this.viber || !this.settings.get('viber.enabled'))
+            return this.send(phone, await render('sms'), purpose);
+
+        const fallback = this.settings.get('viber.sms_fallback') && (await this.budget.consume()).allowed;
+
+        return this.sendViber(phone, await render('viber'), fallback ? await render('sms') : null, purpose);
+    }
+
+    async sendViber(
+        phone: string,
+        text: string,
+        fallbackSms: string | null,
+        purpose: SmsPurpose,
+    ): Promise<SmsStatus> {
+        const viber = this.viber;
+
+        if (!viber) throw ApiError.unprocessable('VIBER_NOT_CONFIGURED');
+
+        const channel: SmsChannel = fallbackSms === null ? 'viber' : 'viber_sms';
+
+        try {
+            await inSpan(
+                'viber send',
+                {
+                    kind: SpanKind.CLIENT,
+                    attributes: {
+                        'viber.provider': viber.name,
+                        'sms.purpose': purpose,
+                        'viber.sms_fallback': fallbackSms !== null,
+                    },
+                },
+                () => viber.send({ phone, text, fallbackSms }),
+            );
+            await this.record(phone, purpose, 'sent', viber.name, channel);
+
+            return 'sent';
+        } catch (error) {
+            this.logger.error({ err: error, purpose }, 'viber delivery failed');
+            await this.record(phone, purpose, 'failed', viber.name, channel);
+            throw ApiError.unprocessable('VIBER_DELIVERY_FAILED');
+        }
+    }
+
     async list(query: ListSmsQuery): Promise<PaginatedResult<SmsEntity>> {
         const { from, to } = this.range(query);
         const filter: FilterQuery<Sms> = {};
@@ -65,6 +121,8 @@ export class SmsService {
             filter['created_at'] = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
 
         if (query.phone) filter['phone'] = query.phone;
+
+        if (query.channel) filter['channel'] = query.channel;
 
         const summary = { from: from?.toISOString() ?? null, to: to?.toISOString() ?? null };
 
@@ -92,9 +150,15 @@ export class SmsService {
         return { ...result, meta_extra: { summary: { ...summary, total: result.total } } };
     }
 
-    private async record(phone: string, purpose: SmsPurpose, status: SmsStatus): Promise<void> {
-        this.metrics.countSms(this.provider.name, purpose, status);
-        await this.sms.create({ phone, purpose, provider: this.provider.name, status });
+    private async record(
+        phone: string,
+        purpose: SmsPurpose,
+        status: SmsStatus,
+        provider = this.provider.name,
+        channel: SmsChannel = 'sms',
+    ): Promise<void> {
+        this.metrics.countSms(provider, purpose, status);
+        await this.sms.create({ phone, purpose, provider, status, channel });
     }
 
     private range(query: ListSmsQuery): { from?: Date; to?: Date } {

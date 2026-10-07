@@ -30,6 +30,17 @@ import { ORGANIZATION_STATUSES } from '../schemas/organization.schema';
 
 const monthDaySchema = z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Must be MM-DD');
 
+export const organizationBookingPolicySchema = z.object({
+    max_active_per_user: z.number().int().min(1).max(1000).nullable().optional(),
+    min_interval_days: z.number().int().min(1).max(3650).nullable().optional(),
+});
+export type OrganizationBookingPolicyInput = z.infer<typeof organizationBookingPolicySchema>;
+
+const organizationBookingPolicyOutputSchema = z.object({
+    max_active_per_user: z.number().int().nullable().catch(null),
+    min_interval_days: z.number().int().nullable().catch(null),
+});
+
 export const ORGANIZATION_INCLUDES = ['news', 'infosections', 'categories', 'services', 'images'] as const;
 export type OrganizationInclude = (typeof ORGANIZATION_INCLUDES)[number];
 
@@ -47,6 +58,10 @@ export const organizationBaseResponseSchema = z.object({
     working_hours: z.array(z.object({ day: z.enum(WEEKDAYS), from: z.string(), to: z.string() })).catch([]),
     holidays: z.array(z.string()).catch([]),
     timezone: z.string().catch('UTC'),
+    booking_policy: organizationBookingPolicyOutputSchema.catch({
+        max_active_per_user: null,
+        min_interval_days: null,
+    }),
     distance_m: z.number().optional(),
     ...timestampsOutputSchema,
 });
@@ -100,6 +115,7 @@ const organizationExtras = {
     working_hours: z.array(workingHoursSchema).max(28),
     holidays: z.array(monthDaySchema).max(100),
     timezone: timeZoneSchema,
+    booking_policy: organizationBookingPolicySchema,
 };
 
 export const createOrganizationSchema = z.object({
@@ -115,6 +131,7 @@ export const createOrganizationSchema = z.object({
     working_hours: organizationExtras.working_hours.optional(),
     holidays: organizationExtras.holidays.optional(),
     timezone: timeZoneSchema.optional(),
+    booking_policy: organizationBookingPolicySchema.optional(),
 });
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export class CreateOrganizationDto extends createZodDto(createOrganizationSchema) {}

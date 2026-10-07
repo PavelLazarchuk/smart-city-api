@@ -60,6 +60,8 @@ export const bookingPolicySchema = z
         no_show_limit: z.number().int().min(1).max(100).nullable().optional(),
         no_show_window_days: z.number().int().min(1).max(3650).nullable().optional(),
         no_show_suspension_days: z.number().int().min(1).max(3650).nullable().optional(),
+        min_interval_days: z.number().int().min(1).max(3650).nullable().optional(),
+        no_show_after_minutes: z.number().int().min(1).max(1440).nullable().optional(),
     })
     .superRefine((policy, ctx) => {
         const limit = policy.no_show_limit ?? null;
@@ -84,6 +86,8 @@ const bookingPolicyOutputSchema = z.object({
     no_show_limit: z.number().int().nullable().catch(null),
     no_show_window_days: z.number().int().nullable().catch(null),
     no_show_suspension_days: z.number().int().nullable().catch(null),
+    min_interval_days: z.number().int().nullable().catch(null),
+    no_show_after_minutes: z.number().int().nullable().catch(null),
 });
 
 export const formFieldSchema = z
@@ -205,6 +209,8 @@ const serviceResponseSchemaFor = (bookings: z.ZodType) =>
             no_show_limit: null,
             no_show_window_days: null,
             no_show_suspension_days: null,
+            min_interval_days: null,
+            no_show_after_minutes: null,
         }),
         form_fields: z.array(formFieldOutputSchema).catch([]),
         required_documents: z.array(requiredDocumentOutputSchema).catch([]),

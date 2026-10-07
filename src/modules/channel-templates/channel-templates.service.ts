@@ -123,7 +123,7 @@ export class ChannelTemplatesService implements OnModuleInit {
         return { subject: rendered.subject ?? '', text: rendered.body };
     }
 
-    async sms(organizationId: string | null, key: ChannelTemplateKey, data: TemplateData): Promise<string> {
+    async text(organizationId: string | null, key: ChannelTemplateKey, data: TemplateData): Promise<string> {
         return (await this.compose(organizationId, key, data)).body;
     }
 
@@ -184,10 +184,19 @@ export class ChannelTemplatesService implements OnModuleInit {
         if (channel === 'sms' && template.subject !== null)
             details.push({ path: 'subject', message: 'An SMS template has no subject' });
 
+        if (channel === 'viber' && template.subject !== null)
+            details.push({ path: 'subject', message: 'A Viber template has no subject' });
+
         if (channel === 'sms' && template.body.length > CHANNEL_TEMPLATE_LIMITS.smsBody)
             details.push({
                 path: 'body',
                 message: `An SMS template is limited to ${CHANNEL_TEMPLATE_LIMITS.smsBody} characters`,
+            });
+
+        if (channel === 'viber' && template.body.length > CHANNEL_TEMPLATE_LIMITS.viberBody)
+            details.push({
+                path: 'body',
+                message: `A Viber template is limited to ${CHANNEL_TEMPLATE_LIMITS.viberBody} characters`,
             });
 
         for (const field of ['subject', 'body'] as const) {

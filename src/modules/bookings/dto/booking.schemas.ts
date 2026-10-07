@@ -14,6 +14,7 @@ import {
     uuidSchema,
 } from '../../../common/zod/primitives';
 import { SLOT_TYPES } from '../../services/schemas/service.schema';
+import { CHECKIN_CODE_PATTERN, normalizeCheckinCode } from '../checkin-code';
 import { BOOKING_STATUSES } from '../schemas/booking.schema';
 import { WAITLIST_STATUSES } from '../schemas/waitlist.schema';
 
@@ -40,6 +41,8 @@ export const bookingResourceSchema = z.object({
     documents: z.array(z.string()).catch([]),
     status: z.enum(BOOKING_STATUSES).catch('confirmed'),
     confirmed_at: isoDateTimeSchema.nullable().catch(null),
+    arrived_at: isoDateTimeSchema.nullable().catch(null),
+    checkin_code: z.string().nullable().catch(null),
     finished_at: isoDateTimeSchema.nullable().catch(null),
     late_cancel: z.boolean().catch(false),
     created_by: idOutputSchema.nullable().catch(null),
@@ -96,6 +99,17 @@ export const setBookingStatusSchema = z.object({
 export type SetBookingStatusInput = z.infer<typeof setBookingStatusSchema>;
 export class SetBookingStatusDto extends createZodDto(setBookingStatusSchema) {}
 
+export const checkInByCodeSchema = z.object({
+    code: z
+        .string()
+        .trim()
+        .max(32)
+        .transform(normalizeCheckinCode)
+        .pipe(z.string().regex(CHECKIN_CODE_PATTERN, 'Must be a check-in code')),
+});
+export type CheckInByCodeInput = z.infer<typeof checkInByCodeSchema>;
+export class CheckInByCodeDto extends createZodDto(checkInByCodeSchema) {}
+
 export const rescheduleBookingSchema = z.object({
     option_id: uuidSchema.optional(),
     slot_id: uuidSchema,
@@ -119,6 +133,7 @@ export const bookingStatsResponseSchema = z.object({
     by_status: z.object({
         pending: z.number().int(),
         confirmed: z.number().int(),
+        arrived: z.number().int(),
         completed: z.number().int(),
         no_show: z.number().int(),
         cancelled: z.number().int(),

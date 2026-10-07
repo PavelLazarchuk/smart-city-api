@@ -91,6 +91,11 @@ code. A successful change revokes every other session of the account and drops t
 `POST /me/phone/code` sits under the strict `THROTTLE_LIMIT` like `/auth/*`, and `PATCH /me` with a `phone`
 under the per-phone limit.
 
+`PATCH /me` with `{ "reminders": false }` stops the booking reminders that would reach the client by SMS or
+Viber; `true` turns them back on, and accounts start with them on. The reminder still arrives in the app and, for
+an account with an e-mail, by e-mail; cancellations, moves, freed places and suspensions are not reminders and
+still go out. The value is returned as `reminders` in the user.
+
 ## Tokens and sessions
 
 A successful login returns an access/refresh pair:

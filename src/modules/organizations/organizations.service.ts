@@ -18,6 +18,7 @@ import {
     type CreateOrganizationInput,
     type ListOrganizationsQuery,
     type NearbyOrganizationsQuery,
+    type OrganizationBookingPolicyInput,
     type UpdateOrganizationInput,
 } from './dto/organization.schemas';
 import {
@@ -25,7 +26,7 @@ import {
     type OrganizationListRow,
     OrganizationsRepository,
 } from './organizations.repository';
-import { type Organization } from './schemas/organization.schema';
+import { type Organization, type OrganizationBookingPolicy } from './schemas/organization.schema';
 
 const ORGANIZATION_SORTABLE = ['created_at', 'main_label', 'main_category'] as const;
 
@@ -35,6 +36,13 @@ export type ServiceCardRow = Record<string, unknown> & {
     _id: Types.ObjectId;
     category_id?: Types.ObjectId | null;
 };
+
+function bookingPolicyOf(input: OrganizationBookingPolicyInput | undefined): OrganizationBookingPolicy {
+    return {
+        max_active_per_user: input?.max_active_per_user ?? null,
+        min_interval_days: input?.min_interval_days ?? null,
+    };
+}
 
 export interface OrganizationTree extends OrganizationEntity {
     news: unknown[];
@@ -188,6 +196,7 @@ export class OrganizationsService {
             working_hours: input.working_hours ?? [],
             holidays: [...new Set(input.holidays ?? [])],
             timezone: input.timezone ?? this.config.jobs.timezone,
+            booking_policy: bookingPolicyOf(input.booking_policy),
         });
     }
 
@@ -211,6 +220,11 @@ export class OrganizationsService {
 
             if (key === 'closed_until') {
                 set[key] = value === null ? null : new Date(value as string);
+                continue;
+            }
+
+            if (key === 'booking_policy') {
+                set[key] = bookingPolicyOf(value as OrganizationBookingPolicyInput);
                 continue;
             }
 

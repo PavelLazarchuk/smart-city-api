@@ -94,6 +94,7 @@ export const updateProfileSchema = z
     .object({
         name: nameSchema,
         email: emailSchema.nullable(),
+        reminders: z.boolean(),
         phone: phoneSchema,
         code: otpCodeSchema,
     })

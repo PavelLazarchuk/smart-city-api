@@ -1,6 +1,6 @@
 # Scheduled jobs
 
-Eleven background jobs keep booking data, published content, uploaded files, notifications and the operational
+Twelve background jobs keep booking data, published content, uploaded files, notifications and the operational
 reports in shape. They live in [`src/jobs`](../src/jobs).
 
 ## How they run
@@ -22,7 +22,10 @@ reports in shape. They live in [`src/jobs`](../src/jobs).
   and `consecutive_failures`. A run skipped for a held lease writes nothing, because it did not run.
   `GET /api/v1/health/jobs` (super-admin) serves those rows, so "the nightly job has been throwing for a
   week" is a question anyone can answer without a log search. Alert on `job_runs_total{result="failed"}`,
-  then read the route for the reason.
+  then read the route for the reason. Every job of the schedule is listed even before its first run, with
+  its `cron` expression and `next_run_at` computed in `JOBS_TIMEZONE`; `scheduled` says whether the process
+  that answered schedules jobs itself (`JOBS_ENABLED`), so an API replica answers `false` while a worker runs
+  them. Rows of names no longer in the schedule are kept with `cron` and `next_run_at` as `null`.
 - **Writes.** Jobs insert and delete slot documents and update times with targeted `$push` / `$pull` on one
   slot, never a whole array, so a booking made while a job runs cannot be overwritten.
 
@@ -43,6 +46,7 @@ jobs are ordered relative to each other, so a per-deployment override would be a
 | `unreferenced_images` | `30 12 * * *` | E-mails the list of images nothing refers to          |
 | `outbox_dispatch`     | `* * * * *`   | Delivers queued events: mail, SMS, webhooks, retries  |
 | `booking_reminders`   | `0 * * * *`   | Emits `booking.reminder` for tomorrow's bookings      |
+| `auto_no_show`        | `*/5 * * * *` | Marks confirmed bookings nobody checked in `no_show`  |
 | `trash_purge`         | `0 6 * * *`   | Permanently deletes services long enough in the trash |
 
 ### `recurrent_slots` — [recurrent-slots.job.ts](../src/jobs/recurrent-slots.job.ts)
@@ -179,6 +183,16 @@ does not repeat them. An account with an e-mail is reminded by e-mail, one witho
 booking is not a reminder to the client but a task for the organization: it is emitted as
 `booking.callback_due` with the client's name and phone and mailed to the service's `subscribe` address. Reports `date`
 and `reminders`.
+
+### `auto_no_show` — [auto-no-show.job.ts](../src/jobs/auto-no-show.job.ts)
+
+Every five minutes. For each service with `booking_policy.no_show_after_minutes`, finds the `confirmed`
+bookings that started more than that many minutes ago (a booking with a date but no time: once its day is
+over) and moves each to `no_show` in its own transaction, the way staff would: a `booking.status_changed`
+event with `automatic: true`, and the no-show sanctions count it. `pending` bookings, call-backs and undated
+bookings are left alone. A booking checked in by then is `arrived` and is never touched; one checked in later
+the same day goes `no_show → arrived`, which lifts a suspension it caused. A booking that fails is logged and
+skipped, so it cannot hold up the others. Reports `services`, `marked` and `failed`.
 
 ### `trash_purge` — [trash-purge.job.ts](../src/jobs/trash-purge.job.ts)
 

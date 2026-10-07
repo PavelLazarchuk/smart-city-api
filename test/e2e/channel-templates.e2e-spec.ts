@@ -32,7 +32,7 @@ describe('channel templates (e2e)', () => {
         const res = await t.http.get(path()).set('Authorization', admin);
 
         expect(res.status).toBe(200);
-        expect(res.body.data).toHaveLength(12);
+        expect(res.body.data).toHaveLength(17);
         const reminder = res.body.data.find((row: { key: string }) => row.key === 'booking_reminder_sms');
         expect(reminder).toMatchObject({
             event: 'booking.reminder',
@@ -44,7 +44,7 @@ describe('channel templates (e2e)', () => {
             updated_by: null,
         });
         expect(reminder.body).toBe(reminder.default_body);
-        expect(reminder.variables).toEqual(['service', 'date', 'time', 'end_time']);
+        expect(reminder.variables).toEqual(['service', 'date', 'time', 'end_time', 'code']);
     });
 
     it('saves, reads back and resets a template', async () => {
@@ -85,13 +85,20 @@ describe('channel templates (e2e)', () => {
         expect(unknown.body.error.details[0]).toMatchObject({
             path: 'body',
             message: 'Unknown variable "password"',
-            variables: ['service', 'date', 'time', 'end_time'],
+            variables: ['service', 'date', 'time', 'end_time', 'code'],
         });
 
         expectError(await put('booking_reminder_sms', { body: '{{#date}}x' }), 400, 'VALIDATION_ERROR');
         expectError(await put('booking_reminder_sms', { body: 'x', subject: 'y' }), 400, 'VALIDATION_ERROR');
         expectError(await put('booking_reminder_sms', { body: 'x'.repeat(641) }), 400, 'VALIDATION_ERROR');
         expectError(await put('booking_reminder_mail', { body: 'x' }), 400, 'VALIDATION_ERROR');
+        expectError(
+            await put('booking_reminder_viber', { body: 'x', subject: 'y' }),
+            400,
+            'VALIDATION_ERROR',
+        );
+        expectError(await put('booking_reminder_viber', { body: 'x'.repeat(1001) }), 400, 'VALIDATION_ERROR');
+        expect((await put('booking_reminder_viber', { body: 'x'.repeat(1000) })).status).toBe(200);
         expectError(
             await put('booking_reminder_mail', { subject: 'a\nb', body: 'x' }),
             400,

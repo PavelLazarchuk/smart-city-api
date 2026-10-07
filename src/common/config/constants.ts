@@ -26,7 +26,14 @@ export const SLOT_BULK_MAX_BOOKINGS = 500;
 
 export const FAVORITES_MAX_PER_USER = 100;
 
-export const CHANNEL_TEMPLATE_LIMITS = { subject: 200, mailBody: 5000, smsBody: 640 } as const;
+export const CHANNEL_TEMPLATE_LIMITS = {
+    subject: 200,
+    mailBody: 5000,
+    smsBody: 640,
+    viberBody: 1000,
+} as const;
+
+export const VIBER_TIMEOUT_MS = 10_000;
 
 export const NOTIFICATIONS = { keepRead: 30, maxUnread: 400, titleMax: 120, bodyMax: 1000 } as const;
 
@@ -63,6 +70,7 @@ export const JOB_CRON = {
     unreferencedImages: '30 12 * * *',
     outboxDispatch: '* * * * *',
     bookingReminders: '0 * * * *',
+    autoNoShow: '*/5 * * * *',
     trashPurge: '0 6 * * *',
 } as const;
 

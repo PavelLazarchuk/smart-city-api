@@ -5,6 +5,7 @@ import { type ClientSession, type FilterQuery, Model, Types } from 'mongoose';
 import { BaseRepository, type Lean } from '../../common/database/base.repository';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { type ResolvedPagination } from '../../common/pagination/pagination.service';
+import { type IntervalWindow } from './booking-policy';
 import { Booking, type BookingStatus } from './schemas/booking.schema';
 
 export type BookingEntity = Lean<Booking>;
@@ -15,6 +16,11 @@ export interface OrganizationClientRow {
     phone: string;
     bookings: number;
     last_booking_at: Date;
+}
+
+export interface IntervalScope {
+    service_id?: Types.ObjectId;
+    organization_id?: Types.ObjectId;
 }
 
 export interface BookingStatusCounts {
@@ -266,6 +272,82 @@ export class BookingsRepository extends BaseRepository<Booking> {
         );
     }
 
+    countActiveByUserAndOrganization(
+        userId: string,
+        organizationId: Types.ObjectId,
+        session?: ClientSession,
+    ): Promise<number> {
+        return this.count(
+            { user_id: new Types.ObjectId(userId), organization_id: organizationId, active: true },
+            session,
+        );
+    }
+
+    findWithinInterval(
+        userId: Types.ObjectId,
+        scope: IntervalScope,
+        window: IntervalWindow,
+        excludeId: string | null,
+        session?: ClientSession,
+    ): Promise<BookingEntity | null> {
+        return this.model
+            .findOne({
+                user_id: userId,
+                ...scope,
+                status: { $ne: 'cancelled' },
+                ...(excludeId ? { id: { $ne: excludeId } } : {}),
+                $or: [
+                    { slot_date: { $gte: window.from, $lte: window.to } },
+                    { slot_date: null, created_at: { $gte: window.since, $lt: window.until } },
+                ],
+            })
+            .sort({ slot_date: 1, created_at: 1 })
+            .session(session ?? null)
+            .lean<BookingEntity>()
+            .exec();
+    }
+
+    async checkinCodeTaken(code: string, session?: ClientSession): Promise<boolean> {
+        return (await this.count({ checkin_code: code, active: true }, session)) > 0;
+    }
+
+    findByCheckinCode(code: string, session?: ClientSession): Promise<BookingEntity[]> {
+        return this.model
+            .find({ checkin_code: code })
+            .sort({ created_at: -1 })
+            .limit(10)
+            .session(session ?? null)
+            .lean<BookingEntity[]>()
+            .exec();
+    }
+
+    async findOverdue(
+        serviceId: Types.ObjectId,
+        timedBefore: Date,
+        untimedBefore: Date,
+        limit: number,
+    ): Promise<string[]> {
+        const rows = await this.model
+            .find(
+                {
+                    service_id: serviceId,
+                    status: 'confirmed',
+                    child_type: { $ne: 'callback' },
+                    $or: [
+                        { slot_time: { $type: 'string' }, starts_at: { $lte: timedBefore } },
+                        { slot_time: null, starts_at: { $lte: untimedBefore } },
+                    ],
+                },
+                { id: 1 },
+            )
+            .sort({ starts_at: 1 })
+            .limit(limit)
+            .lean<{ id: string }[]>()
+            .exec();
+
+        return rows.map((row) => row.id);
+    }
+
     async findNoShowIds(
         userId: string,
         serviceId: string,
@@ -302,6 +384,8 @@ export class BookingsRepository extends BaseRepository<Booking> {
         const set: Record<string, unknown> = { ...extra, status: to, active, status_changed_by: by };
 
         if (to === 'confirmed') set['confirmed_at'] = now;
+
+        if (to === 'arrived') set['arrived_at'] = now;
 
         if (!active) set['finished_at'] = now;
 
@@ -496,6 +580,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
         const byStatus: Record<BookingStatus, number> = {
             pending: 0,
             confirmed: 0,
+            arrived: 0,
             completed: 0,
             no_show: 0,
             cancelled: 0,

@@ -146,6 +146,12 @@ export const envSchema = z
         SMS_HOURLY_LIMIT: z.coerce.number().int().min(0).default(200),
         SMS_DAILY_LIMIT: z.coerce.number().int().min(0).default(1000),
 
+        VIBER_PROVIDER: z.enum(['none', 'console', 'turbosms']).default('none'),
+        VIBER_SENDER: z.string().default('SmartCity'),
+        TURBOSMS_URL: z.url().default('https://api.turbosms.ua'),
+        TURBOSMS_TOKEN: optionalString,
+        TURBOSMS_SMS_SENDER: z.string().default('SmartCity'),
+
         MAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
         SMTP_HOST: optionalString,
         SMTP_PORT: positiveInt(587),
@@ -221,6 +227,14 @@ export const envSchema = z
             }
         }
 
+        if (env.VIBER_PROVIDER === 'turbosms' && !env.TURBOSMS_TOKEN) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['TURBOSMS_TOKEN'],
+                message: 'TURBOSMS_TOKEN is required when VIBER_PROVIDER=turbosms',
+            });
+        }
+
         if (env.MAIL_PROVIDER === 'smtp' && !env.SMTP_HOST) {
             ctx.addIssue({
                 code: 'custom',
@@ -286,6 +300,14 @@ export const envSchema = z
                     code: 'custom',
                     path: ['SMS_PROVIDER'],
                     message: 'SMS_PROVIDER must not be "console" in production',
+                });
+            }
+
+            if (env.VIBER_PROVIDER === 'console') {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['VIBER_PROVIDER'],
+                    message: 'VIBER_PROVIDER must not be "console" in production',
                 });
             }
 

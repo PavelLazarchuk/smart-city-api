@@ -108,6 +108,20 @@ export const SETTINGS = {
         schema: () => z.number().int().min(0),
         fromConfig: (config) => config.sms.budget.dailyLimit,
     }),
+    'viber.enabled': define({
+        description:
+            'Send client notifications that would go by SMS through Viber instead; needs VIBER_PROVIDER.',
+        schema: (config) =>
+            config.viber.provider === 'none'
+                ? z.literal(false, { error: 'VIBER_PROVIDER is not configured' })
+                : z.boolean(),
+        fromConfig: () => false,
+    }),
+    'viber.sms_fallback': define({
+        description: 'Let the provider fall back to SMS when a Viber message is not delivered.',
+        schema: () => z.boolean(),
+        fromConfig: () => true,
+    }),
     'upload.max_bytes': define({
         description: 'Largest accepted image in bytes; UPLOAD_MAX_BYTES in the environment is the ceiling.',
         schema: (config) => int(UPLOAD_MIN_BYTES, config.upload.maxBytes),

@@ -355,6 +355,18 @@ export class ServicesRepository extends BaseRepository<Service> {
         );
     }
 
+    async findAutoNoShowPolicies(): Promise<{ id: Types.ObjectId; minutes: number }[]> {
+        const rows = await this.model
+            .find(
+                { 'booking_policy.no_show_after_minutes': { $type: 'number' }, deleted_at: null },
+                { 'booking_policy.no_show_after_minutes': 1 },
+            )
+            .lean<{ _id: Types.ObjectId; booking_policy: { no_show_after_minutes: number } }[]>()
+            .exec();
+
+        return rows.map((row) => ({ id: row._id, minutes: row.booking_policy.no_show_after_minutes }));
+    }
+
     findAllForDebtorReport(): Promise<ServiceEntity[]> {
         return this.projected({
             organization_id: 1,

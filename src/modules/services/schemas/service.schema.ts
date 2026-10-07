@@ -125,6 +125,8 @@ export class BookingPolicy {
     @Prop({ type: Number, default: null }) no_show_limit!: number | null;
     @Prop({ type: Number, default: null }) no_show_window_days!: number | null;
     @Prop({ type: Number, default: null }) no_show_suspension_days!: number | null;
+    @Prop({ type: Number, default: null }) min_interval_days?: number | null;
+    @Prop({ type: Number, default: null }) no_show_after_minutes?: number | null;
 }
 export const BookingPolicySchema = SchemaFactory.createForClass(BookingPolicy);
 

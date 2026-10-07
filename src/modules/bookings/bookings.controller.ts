@@ -39,6 +39,7 @@ import {
     BookingStatsResponseDto,
     bookingStatsResponseSchema,
     CalendarFeedQueryDto,
+    CheckInByCodeDto,
     CalendarTokenResponseDto,
     calendarTokenResponseSchema,
     ExportBookingsQueryDto,
@@ -107,6 +108,21 @@ export class BookingsController {
             if ((error as { code?: string }).code !== 'ERR_STREAM_PREMATURE_CLOSE')
                 this.logger.error({ err: error }, 'bookings export aborted');
         }
+    }
+
+    @Post('bookings/check-in')
+    @HttpCode(HttpStatus.OK)
+    @Roles(...STAFF_ROLES)
+    @ApiData(BookingResourceDto)
+    @ApiErrors(
+        'BOOKING_NOT_FOUND',
+        'BOOKING_STATUS_TRANSITION',
+        'BOOKING_CHECK_IN_NOT_SUPPORTED',
+        'BOOKING_CHECK_IN_NOT_TODAY',
+    )
+    @Serialize(bookingResourceSchema)
+    checkInByCode(@Body() body: CheckInByCodeDto, @CurrentUser() user: AuthUser): Promise<BookingResource> {
+        return this.bookings.checkInByCode(body.code, user);
     }
 
     @Get('me/bookings')
@@ -220,6 +236,21 @@ export class BookingsController {
         return this.bookings.confirm(bookingId, user);
     }
 
+    @Post('bookings/:booking_id/check-in')
+    @HttpCode(HttpStatus.OK)
+    @Roles(...STAFF_ROLES)
+    @ApiData(BookingResourceDto)
+    @ApiErrors(
+        'BOOKING_NOT_FOUND',
+        'BOOKING_STATUS_TRANSITION',
+        'BOOKING_CHECK_IN_NOT_SUPPORTED',
+        'BOOKING_CHECK_IN_NOT_TODAY',
+    )
+    @Serialize(bookingResourceSchema)
+    checkIn(@Param('booking_id') bookingId: string, @CurrentUser() user: AuthUser): Promise<BookingResource> {
+        return this.bookings.checkIn(bookingId, user);
+    }
+
     @Post('bookings/:booking_id/reschedule')
     @HttpCode(HttpStatus.OK)
     @ApiData(BookingResourceDto)
@@ -237,6 +268,7 @@ export class BookingsController {
         'BOOKING_TOO_FAR_AHEAD',
         'BOOKING_ALREADY_EXISTS',
         'BOOKING_ADDRESS_REQUIRED',
+        'BOOKING_TOO_FREQUENT',
         'SLOT_RANGE_INVALID',
     )
     @Serialize(bookingResourceSchema)

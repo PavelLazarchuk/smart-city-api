@@ -937,6 +937,8 @@ export class ServicesService implements OnModuleInit {
                 no_show_limit: input.booking_policy.no_show_limit ?? null,
                 no_show_window_days: input.booking_policy.no_show_window_days ?? null,
                 no_show_suspension_days: input.booking_policy.no_show_suspension_days ?? null,
+                min_interval_days: input.booking_policy.min_interval_days ?? null,
+                no_show_after_minutes: input.booking_policy.no_show_after_minutes ?? null,
             };
             fields['booking_policy'] = policy;
         }
@@ -1391,6 +1393,10 @@ export class ServicesService implements OnModuleInit {
 
     findWithRecurrentOptions(): Promise<ServiceEntity[]> {
         return this.services.findWithRecurrentOptions();
+    }
+
+    findAutoNoShowPolicies(): Promise<{ id: Types.ObjectId; minutes: number }[]> {
+        return this.services.findAutoNoShowPolicies();
     }
 
     findAllForDebtorReport(): Promise<ServiceEntity[]> {

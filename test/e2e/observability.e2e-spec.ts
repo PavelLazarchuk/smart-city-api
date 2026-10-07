@@ -112,6 +112,14 @@ describe('observability (e2e)', () => {
                 last_error: 'smtp.internal refused',
                 consecutive_failures: 1,
             });
+            expect(failing).toMatchObject({ scheduled: false, cron: null, next_run_at: null });
+
+            const autoNoShow = res.body.data.find((row: { _id: string }) => row._id === 'auto_no_show');
+            expect(autoNoShow).toMatchObject({ scheduled: false, cron: '*/5 * * * *' });
+            const next = new Date(autoNoShow.next_run_at as string).getTime();
+            expect(next).toBeGreaterThan(Date.now() - 1000);
+            expect(next).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+            expect(new Date(next).getUTCMinutes() % 5).toBe(0);
         });
     });
 

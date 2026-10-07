@@ -35,7 +35,8 @@ them in the deployment's secret store, not in a file in the repository.
 
 See `.env.example`. Minimum for production: `NODE_ENV=production`, `MONGO_URI`, `JWT_ACCESS_SECRET`,
 `JWT_REFRESH_SECRET` (32+ characters each, different values), `CORS_ORIGINS`, provider settings
-(`SMS_PROVIDER=smpp` + `SMPP_*`, `MAIL_PROVIDER=smtp` + `SMTP_*`, `STORAGE_PROVIDER` + its settings),
+(`SMS_PROVIDER=smpp` + `SMPP_*`, `MAIL_PROVIDER=smtp` + `SMTP_*`, `STORAGE_PROVIDER` + its settings,
+`VIBER_PROVIDER=turbosms` + `TURBOSMS_TOKEN` when Viber is wanted, otherwise `none`),
 `REPORT_RECIPIENTS`, `JOBS_TIMEZONE`, and `METRICS_TOKEN` unless `METRICS_ENABLED=false`.
 
 The console providers are **refused** under `NODE_ENV=production`: `ConsoleSmsProvider` writes the message

@@ -21,6 +21,7 @@ export const userResponseSchema = z.object({
     name: z.string().optional(),
     phone: z.string().optional(),
     email: z.string().optional(),
+    reminders: z.boolean().catch(true),
     role: z.enum(ROLE_VALUES),
     organization_ids: z.array(idOutputSchema),
     ...timestampsOutputSchema,
@@ -56,7 +57,9 @@ export const createUserSchema = z.object({
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export class CreateUserDto extends createZodDto(createUserSchema) {}
 
-export const updateSelfSchema = z.object({ name: nameSchema, email: emailSchema.nullable() }).partial();
+export const updateSelfSchema = z
+    .object({ name: nameSchema, email: emailSchema.nullable(), reminders: z.boolean() })
+    .partial();
 export type UpdateSelfInput = z.infer<typeof updateSelfSchema>;
 export class UpdateSelfDto extends createZodDto(updateSelfSchema) {}
 

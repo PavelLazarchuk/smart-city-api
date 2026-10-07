@@ -14,7 +14,7 @@ import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { dateOnlyIn, instantIn } from '../../common/time/zone';
 import { MailService } from '../../integrations/mail/mail.service';
-import { type BookingEntity, BookingsRepository } from './bookings.repository';
+import { type BookingEntity, BookingsRepository, type IntervalScope } from './bookings.repository';
 import {
     type BookingResource,
     type BookingStats,
@@ -31,6 +31,7 @@ import {
 import { ACTIVE_BOOKING_STATUSES, type Booking, type BookingStatus } from './schemas/booking.schema';
 import { type WaitlistEntry } from './schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from './waitlist.repository';
+import { type OrganizationEntity } from '../organizations/organizations.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
 import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
@@ -38,8 +39,24 @@ import { SlotsRepository } from '../slots/slots.repository';
 import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import { BookingCalendarService } from './booking-calendar.service';
-import { assertBookingWindow, assertCancelDeadline, resolveCancel } from './booking-policy';
-import { eventActor, eventPayload, notice, organizationOf, recipientEmail, text } from './booking-events';
+import {
+    assertBookingWindow,
+    assertCancelDeadline,
+    checkInOpen,
+    intervalWindow,
+    resolveCancel,
+} from './booking-policy';
+import { generateCheckinCode, normalizeCheckinCode } from './checkin-code';
+import {
+    checkinCodeOf,
+    eventActor,
+    eventPayload,
+    notice,
+    organizationOf,
+    recipientEmail,
+    remindersMuted,
+    text,
+} from './booking-events';
 import { validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/booking.schemas';
 import {
@@ -55,11 +72,13 @@ import { assertFitsRange, minutesOf, rangeOf, timeOf } from '../services/slot.lo
 import { SuspensionsService } from './suspensions.service';
 
 const DUPLICATE_KEY = 11000;
+const CHECKIN_CODE_ATTEMPTS = 5;
 const BOOKING_SORTABLE = ['created_at', 'slot_date'] as const;
 
 const TRANSITIONS: Record<BookingStatus, readonly BookingStatus[]> = {
     pending: ['confirmed', 'cancelled'],
     confirmed: ['completed', 'no_show', 'cancelled'],
+    arrived: ['completed', 'no_show'],
     completed: ['no_show'],
     no_show: ['completed'],
     cancelled: [],
@@ -84,7 +103,14 @@ interface Target {
 
 interface Bookable {
     service: ServiceEntity;
+    organization: OrganizationEntity;
     timeZone: string;
+}
+
+interface IntervalRule {
+    days: number | null | undefined;
+    scope: IntervalScope;
+    path: string;
 }
 
 interface Booker {
@@ -130,6 +156,8 @@ function toResource(booking: BookingEntity, cancelDeadlineMinutes?: number | nul
         documents: booking.documents ?? [],
         status: booking.status,
         confirmed_at: booking.confirmed_at ? booking.confirmed_at.toISOString() : null,
+        arrived_at: booking.arrived_at ? booking.arrived_at.toISOString() : null,
+        checkin_code: booking.checkin_code ?? null,
         finished_at: booking.finished_at ? booking.finished_at.toISOString() : null,
         late_cancel: booking.late_cancel ?? false,
         created_by: booking.created_by ? booking.created_by.toHexString() : null,
@@ -248,6 +276,7 @@ export class BookingsService implements OnModuleInit {
             const calendar = await this.calendar.attachment(text(event.payload['booking_id']));
             const message = await this.templates.mail(organizationOf(event), 'booking_reminder_mail', {
                 ...notice(event),
+                code: checkinCodeOf(event),
                 calendar: Boolean(calendar),
             });
             await this.mail.send({
@@ -259,12 +288,13 @@ export class BookingsService implements OnModuleInit {
         this.outbox.registerHandler('booking.reminder', 'sms', async (event) => {
             const { phone, ...data } = notice(event);
 
-            if (recipientEmail(event) || !phone) return;
+            if (recipientEmail(event) || !phone || remindersMuted(event)) return;
 
-            await this.sms.send(
-                phone,
-                await this.templates.sms(organizationOf(event), 'booking_reminder_sms', data),
-                'reminder',
+            await this.sms.notify(phone, 'reminder', (channel) =>
+                this.templates.text(organizationOf(event), `booking_reminder_${channel}`, {
+                    ...data,
+                    code: checkinCodeOf(event),
+                }),
             );
         });
         this.outbox.registerHandler('booking.callback_due', 'mail', async (event) => {
@@ -297,10 +327,8 @@ export class BookingsService implements OnModuleInit {
 
             if (recipientEmail(event) || !phone) return;
 
-            await this.sms.send(
-                phone,
-                await this.templates.sms(organizationOf(event), 'waitlist_available_sms', data),
-                'waitlist',
+            await this.sms.notify(phone, 'waitlist', (channel) =>
+                this.templates.text(organizationOf(event), `waitlist_available_${channel}`, data),
             );
         });
     }
@@ -359,7 +387,8 @@ export class BookingsService implements OnModuleInit {
                     ctx.session,
                 );
                 this.assertPolicy(bookable, target, actor, createdAt);
-                await this.assertActiveLimit(service, actor, ctx.session);
+                await this.assertActiveLimits(bookable, actor, ctx.session);
+                await this.assertInterval(bookable, booker.id, target, createdAt, null, ctx.session);
             }
 
             const { fields, documents } = this.validateForm(service, input);
@@ -392,6 +421,8 @@ export class BookingsService implements OnModuleInit {
                 status_changed_by: null,
                 created_by: new Types.ObjectId(actor.id),
                 reminder_sent_at: null,
+                checkin_code:
+                    target.slot.child_type === 'callback' ? null : await this.freshCheckinCode(ctx.session),
             };
 
             await this.insert(booking, ctx.session);
@@ -506,7 +537,7 @@ export class BookingsService implements OnModuleInit {
         }
 
         const counts = await this.bookings.countByStatus(filter);
-        const outcomes = counts.by_status.completed + counts.by_status.no_show;
+        const outcomes = counts.by_status.completed + counts.by_status.arrived + counts.by_status.no_show;
         const decided = outcomes + counts.by_status.cancelled;
 
         return {
@@ -653,6 +684,101 @@ export class BookingsService implements OnModuleInit {
         return this.asResource(confirmed);
     }
 
+    async checkIn(bookingId: string, actor: AuthUser): Promise<BookingResource> {
+        const arrived = await this.tx.run(async (ctx) => {
+            const booking = await this.bookings.findByPublicId(bookingId, ctx.session);
+
+            if (!booking || !this.isAdminOf(booking, actor)) throw ApiError.notFound('BOOKING_NOT_FOUND');
+
+            return this.arrive(booking, actor, ctx);
+        });
+
+        return this.asResource(arrived);
+    }
+
+    async checkInByCode(raw: string, actor: AuthUser): Promise<BookingResource> {
+        const code = normalizeCheckinCode(raw);
+        const arrived = await this.tx.run(async (ctx) => {
+            const candidates = (await this.bookings.findByCheckinCode(code, ctx.session)).filter((booking) =>
+                this.isAdminOf(booking, actor),
+            );
+            const booking =
+                candidates.find((item) => item.active) ??
+                candidates.find((item) => item.status === 'arrived' || item.status === 'no_show');
+
+            if (!booking) throw ApiError.notFound('BOOKING_NOT_FOUND');
+
+            return this.arrive(booking, actor, ctx);
+        });
+
+        return this.asResource(arrived);
+    }
+
+    async markNoShow(bookingId: string): Promise<boolean> {
+        return this.tx.run(async (ctx) => {
+            const moved = await this.bookings.transition(
+                bookingId,
+                ['confirmed'],
+                'no_show',
+                null,
+                new Date(),
+                ctx.session,
+            );
+
+            if (!moved) return false;
+
+            await this.emit(
+                ctx,
+                'booking.status_changed',
+                moved,
+                { person: moved.person, phone: moved.phone },
+                { previous_status: 'confirmed', automatic: true },
+            );
+            await this.suspensions.onStatusChanged(moved, 'confirmed', null, ctx);
+
+            return true;
+        });
+    }
+
+    private async arrive(
+        booking: BookingEntity,
+        actor: AuthUser,
+        ctx: TransactionContext,
+    ): Promise<BookingEntity> {
+        if (booking.status === 'arrived') return booking;
+
+        if (booking.child_type === 'callback') throw ApiError.unprocessable('BOOKING_CHECK_IN_NOT_SUPPORTED');
+
+        if (booking.status !== 'confirmed' && booking.status !== 'no_show')
+            throw ApiError.unprocessable('BOOKING_STATUS_TRANSITION', [
+                { path: 'status', message: `Cannot move from ${booking.status} to arrived` },
+            ]);
+
+        const now = new Date();
+        const timeZone = await this.organizations.timezoneOf(booking.organization_id.toHexString());
+
+        if (!checkInOpen(booking.slot_date, now, timeZone))
+            throw ApiError.unprocessable('BOOKING_CHECK_IN_NOT_TODAY');
+
+        const moved = await this.bookings.transition(
+            booking.id,
+            [booking.status],
+            'arrived',
+            new Types.ObjectId(actor.id),
+            now,
+            ctx.session,
+        );
+
+        if (!moved) throw ApiError.conflict('CONFLICT');
+
+        await this.emit(ctx, 'booking.status_changed', moved, this.trail(booking, actor), {
+            previous_status: booking.status,
+        });
+        await this.suspensions.onStatusChanged(moved, booking.status, actor, ctx);
+
+        return moved;
+    }
+
     async reschedule(
         bookingId: string,
         input: RescheduleBookingInput,
@@ -692,7 +818,10 @@ export class BookingsService implements OnModuleInit {
             )
                 throw ApiError.conflict('BOOKING_ALREADY_EXISTS');
 
-            if (!admin) this.assertPolicy(bookable, target, actor, now);
+            if (!admin) {
+                this.assertPolicy(bookable, target, actor, now);
+                await this.assertInterval(bookable, booking.user_id, target, now, booking.id, ctx.session);
+            }
 
             const address = this.addressFor(target, input.address ?? booking.address ?? undefined);
 
@@ -928,7 +1057,7 @@ export class BookingsService implements OnModuleInit {
         const timeZone = organization.timezone ?? this.config.jobs.timezone;
 
         if (this.masker.canSeeDetails(actor, service.organization_id.toHexString()))
-            return { service, timeZone };
+            return { service, organization, timeZone };
 
         if (service.status !== 'published') throw ApiError.unprocessable('SERVICE_NOT_PUBLISHED');
 
@@ -938,7 +1067,7 @@ export class BookingsService implements OnModuleInit {
         if (organization.status === 'temporarily_closed' && stillClosed)
             throw ApiError.unprocessable('ORGANIZATION_CLOSED');
 
-        return { service, timeZone };
+        return { service, organization, timeZone };
     }
 
     private async resolveTarget(
@@ -1010,22 +1139,86 @@ export class BookingsService implements OnModuleInit {
         assertBookingWindow(policy, start, now, timeZone);
     }
 
-    private async assertActiveLimit(
-        service: ServiceEntity,
+    private async assertActiveLimits(
+        { service, organization }: Bookable,
         actor: AuthUser,
         session: ClientSession,
     ): Promise<void> {
         const max = service.booking_policy?.max_active_per_user;
 
-        if (max === null || max === undefined) return;
+        if (max !== null && max !== undefined) {
+            const active = await this.bookings.countActiveByUserAndService(
+                actor.id,
+                service._id.toHexString(),
+                session,
+            );
 
-        const active = await this.bookings.countActiveByUserAndService(
+            if (active >= max) throw ApiError.unprocessable('BOOKING_LIMIT_REACHED');
+        }
+
+        const organizationMax = organization.booking_policy?.max_active_per_user;
+
+        if (organizationMax === null || organizationMax === undefined) return;
+
+        const held = await this.bookings.countActiveByUserAndOrganization(
             actor.id,
-            service._id.toHexString(),
+            service.organization_id,
             session,
         );
 
-        if (active >= max) throw ApiError.unprocessable('BOOKING_LIMIT_REACHED');
+        if (held >= organizationMax) throw ApiError.unprocessable('BOOKING_ORGANIZATION_LIMIT_REACHED');
+    }
+
+    private async assertInterval(
+        { service, organization, timeZone }: Bookable,
+        userId: Types.ObjectId,
+        target: Target,
+        now: Date,
+        excludeId: string | null,
+        session: ClientSession,
+    ): Promise<void> {
+        const date = target.slot.value.date ?? dateOnlyIn(now, timeZone);
+        const rules: IntervalRule[] = [
+            {
+                days: service.booking_policy?.min_interval_days,
+                scope: { service_id: service._id },
+                path: 'booking_policy.min_interval_days',
+            },
+            {
+                days: organization.booking_policy?.min_interval_days,
+                scope: { organization_id: service.organization_id },
+                path: 'organization.booking_policy.min_interval_days',
+            },
+        ];
+
+        for (const { days, scope, path } of rules) {
+            if (!days) continue;
+
+            const clash = await this.bookings.findWithinInterval(
+                userId,
+                scope,
+                intervalWindow(days, date, timeZone),
+                excludeId,
+                session,
+            );
+
+            if (!clash) continue;
+
+            const booked = clash.slot_date ?? dateOnlyIn(clash.created_at, timeZone);
+
+            throw ApiError.unprocessable('BOOKING_TOO_FREQUENT', [
+                { path, message: `Another booking on ${booked} is less than ${days} day(s) away` },
+            ]);
+        }
+    }
+
+    private async freshCheckinCode(session: ClientSession): Promise<string> {
+        for (let attempt = 1; ; attempt += 1) {
+            const code = generateCheckinCode();
+
+            if (attempt >= CHECKIN_CODE_ATTEMPTS || !(await this.bookings.checkinCodeTaken(code, session)))
+                return code;
+        }
     }
 
     private async lateCancel(booking: BookingEntity, session: ClientSession): Promise<boolean> {
@@ -1068,8 +1261,12 @@ export class BookingsService implements OnModuleInit {
         try {
             await this.bookings.create(booking, session);
         } catch (error) {
-            if ((error as { code?: number }).code === DUPLICATE_KEY)
-                throw ApiError.conflict('BOOKING_ALREADY_EXISTS');
+            const duplicate = error as { code?: number; keyPattern?: Record<string, unknown> };
+
+            if (duplicate.code === DUPLICATE_KEY && duplicate.keyPattern?.['checkin_code'] !== undefined)
+                throw ApiError.conflict('CONFLICT');
+
+            if (duplicate.code === DUPLICATE_KEY) throw ApiError.conflict('BOOKING_ALREADY_EXISTS');
 
             throw error;
         }

@@ -41,7 +41,11 @@ export class SmsController {
     @ApiData(TestSmsResponseDto)
     @Serialize(testSmsResponseSchema)
     async sendTest(@Body() body: SendTestSmsDto): Promise<{ phone: string; status: SmsStatus }> {
-        const status = await this.sms.send(body.phone, texts.sms.test(this.otp.generateCode()), 'test');
+        const text = texts.sms.test(this.otp.generateCode());
+        const status =
+            body.channel === 'viber'
+                ? await this.sms.sendViber(body.phone, text, null, 'test')
+                : await this.sms.send(body.phone, text, 'test');
 
         return { phone: body.phone, status };
     }

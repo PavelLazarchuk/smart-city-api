@@ -304,6 +304,7 @@ export class AuthService {
                 login: user.login,
                 name: user.name,
                 phone: user.phone,
+                reminders: user.reminders !== false,
                 role: user.role,
                 organization_ids: user.organization_ids.map((id) => id.toHexString()),
                 created_at: user.created_at.toISOString(),

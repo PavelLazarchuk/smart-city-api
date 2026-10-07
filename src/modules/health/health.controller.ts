@@ -18,6 +18,14 @@ import { ApiError } from '../../common/http/api-error';
 import { MailService } from '../../integrations/mail/mail.service';
 import { STORAGE_PROVIDER, type StorageProvider } from '../../integrations/storage/storage.provider';
 import { type JobStatus, JobLockService } from '../../jobs/job-lock.service';
+import { JobsScheduler } from '../../jobs/jobs.scheduler';
+
+type ScheduledJobStatus = Partial<JobStatus> & {
+    _id: string;
+    scheduled: boolean;
+    cron: string | null;
+    next_run_at: Date | null;
+};
 
 export interface BuildInfo {
     version: string;
@@ -39,6 +47,7 @@ export class HealthController {
         @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
         private readonly mail: MailService,
         private readonly jobs: JobLockService,
+        private readonly scheduler: JobsScheduler,
         private readonly config: AppConfig,
         private readonly logger: PinoLogger,
     ) {
@@ -84,8 +93,21 @@ export class HealthController {
     @Get('jobs')
     @ApiBearerAuth()
     @Roles(ROLES.SUPER_ADMIN)
-    async jobsStatus(): Promise<{ data: JobStatus[] }> {
-        return { data: await this.jobs.statuses() };
+    async jobsStatus(): Promise<{ data: ScheduledJobStatus[] }> {
+        const rows = new Map((await this.jobs.statuses()).map((row) => [row._id, row]));
+        const scheduled: ScheduledJobStatus[] = this.scheduler.schedules().map((schedule) => ({
+            ...rows.get(schedule.name),
+            _id: schedule.name,
+            scheduled: this.config.jobs.enabled,
+            cron: schedule.cron,
+            next_run_at: schedule.next_run_at,
+        }));
+        const known = new Set(scheduled.map((row) => row._id));
+        const others: ScheduledJobStatus[] = [...rows.values()]
+            .filter((row) => !known.has(row._id))
+            .map((row) => ({ ...row, scheduled: false, cron: null, next_run_at: null }));
+
+        return { data: [...scheduled, ...others].sort((a, b) => a._id.localeCompare(b._id)) };
     }
 
     @Get('info')

@@ -131,10 +131,8 @@ export class SuspensionsService implements OnModuleInit {
 
             if (recipientEmail(event) || !phone) return;
 
-            await this.sms.send(
-                phone,
-                await this.templates.sms(organizationOf(event), 'booking_suspended_sms', data),
-                'suspension',
+            await this.sms.notify(phone, 'suspension', (channel) =>
+                this.templates.text(organizationOf(event), `booking_suspended_${channel}`, data),
             );
         });
     }
@@ -157,7 +155,7 @@ export class SuspensionsService implements OnModuleInit {
     async onStatusChanged(
         booking: BookingEntity,
         previous: BookingStatus,
-        actor: AuthUser,
+        actor: AuthUser | null,
         ctx: TransactionContext,
     ): Promise<void> {
         if (booking.status === 'no_show') {
@@ -324,13 +322,18 @@ export class SuspensionsService implements OnModuleInit {
 
     private async release(
         row: BookingSuspensionEntity,
-        actor: AuthUser,
+        actor: AuthUser | null,
         now: Date,
         ctx: TransactionContext,
     ): Promise<void> {
         const updated = await this.suspensions.update(
             row.id,
-            { suspended: false, counted_from: now, lifted_at: now, lifted_by: new Types.ObjectId(actor.id) },
+            {
+                suspended: false,
+                counted_from: now,
+                lifted_at: now,
+                lifted_by: actor ? new Types.ObjectId(actor.id) : null,
+            },
             ctx.session,
         );
 

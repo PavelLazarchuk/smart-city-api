@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { type HydratedDocument } from 'mongoose';
 
-import { baseSchemaOptions } from '../../../common/database/schema-options';
+import { baseSchemaOptions, subSchemaOptions } from '../../../common/database/schema-options';
 import {
     GeoPointSchema,
     type GeoPoint,
@@ -11,6 +11,13 @@ import {
 
 export const ORGANIZATION_STATUSES = ['active', 'temporarily_closed'] as const;
 export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
+
+@Schema(subSchemaOptions)
+export class OrganizationBookingPolicy {
+    @Prop({ type: Number, default: null }) max_active_per_user!: number | null;
+    @Prop({ type: Number, default: null }) min_interval_days!: number | null;
+}
+export const OrganizationBookingPolicySchema = SchemaFactory.createForClass(OrganizationBookingPolicy);
 
 /** An organization holds no child references — children point at it. */
 @Schema(baseSchemaOptions('organizations'))
@@ -50,6 +57,9 @@ export class Organization {
 
     @Prop({ type: String, required: true, default: 'UTC' })
     timezone!: string;
+
+    @Prop({ type: OrganizationBookingPolicySchema, default: undefined })
+    booking_policy?: OrganizationBookingPolicy;
 
     @Prop({ type: Number, required: true, default: 0 })
     version!: number;

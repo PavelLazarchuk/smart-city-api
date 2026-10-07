@@ -173,25 +173,29 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 
 ### Booking lifecycle
 
-| Code                             | Status | Meaning                                                                      |
-| -------------------------------- | ------ | ---------------------------------------------------------------------------- |
-| `BOOKING_LIMIT_REACHED`          | 422    | `booking_policy.max_active_per_user` active bookings already held            |
-| `BOOKING_LEAD_TIME`              | 422    | The slot starts sooner than `booking_policy.lead_time_minutes`               |
-| `BOOKING_TOO_FAR_AHEAD`          | 422    | The slot is beyond `booking_policy.max_advance_days`                         |
-| `BOOKING_CANCEL_DEADLINE_PASSED` | 422    | A client cancels or reschedules inside `cancel_deadline_minutes`; admins may |
-| `BOOKING_FIELDS_INVALID`         | 422    | `fields` do not match the service's `form_fields`; `details[]` per field     |
-| `BOOKING_DOCUMENTS_REQUIRED`     | 422    | A required document was not confirmed; `details[]` names it                  |
-| `BOOKING_STATUS_TRANSITION`      | 422    | Not a legal move (`pending → confirmed → completed \| no_show`, `cancelled`) |
-| `BOOKING_NOT_ACTIVE`             | 422    | Cancel or reschedule of a finished booking                                   |
-| `BOOKING_NOT_DATED`              | 422    | `GET /bookings/:id/calendar.ics` for a booking without a date                |
-| `BOOKING_SUSPENDED`              | 422    | The client is suspended for this service; `details[0]` carries `until`       |
-| `SUSPENSION_NOT_FOUND`           | 404    | Unknown id, or a suspension of another organization                          |
-| `WAITLIST_NOT_FOUND`             | 404    |                                                                              |
-| `WAITLIST_ALREADY_JOINED`        | 409    | Already queued for this slot                                                 |
-| `WAITLIST_NOT_SUPPORTED`         | 422    | A `time_range` slot has no waitlist                                          |
-| `BOOKING_ADDRESS_REQUIRED`       | 422    | A `service_visit` booking without `address`                                  |
-| `BOOKING_PHONE_REQUIRED`         | 422    | A `callback` booking for an account without a phone                          |
-| `SLOT_NOT_FULL`                  | 422    | The waitlist is only for a full slot — book it instead                       |
+| Code                                 | Status | Meaning                                                                                                        |
+| ------------------------------------ | ------ | -------------------------------------------------------------------------------------------------------------- |
+| `BOOKING_LIMIT_REACHED`              | 422    | `booking_policy.max_active_per_user` active bookings already held                                              |
+| `BOOKING_ORGANIZATION_LIMIT_REACHED` | 422    | The organization's `booking_policy.max_active_per_user` active bookings already held                           |
+| `BOOKING_TOO_FREQUENT`               | 422    | Another booking lies closer than `min_interval_days`; `details[0].path` names the service or organization rule |
+| `BOOKING_CHECK_IN_NOT_SUPPORTED`     | 422    | Check-in of a `callback` booking                                                                               |
+| `BOOKING_CHECK_IN_NOT_TODAY`         | 422    | Check-in of a booking dated another day in the organization's time zone                                        |
+| `BOOKING_LEAD_TIME`                  | 422    | The slot starts sooner than `booking_policy.lead_time_minutes`                                                 |
+| `BOOKING_TOO_FAR_AHEAD`              | 422    | The slot is beyond `booking_policy.max_advance_days`                                                           |
+| `BOOKING_CANCEL_DEADLINE_PASSED`     | 422    | A client cancels or reschedules inside `cancel_deadline_minutes`; admins may                                   |
+| `BOOKING_FIELDS_INVALID`             | 422    | `fields` do not match the service's `form_fields`; `details[]` per field                                       |
+| `BOOKING_DOCUMENTS_REQUIRED`         | 422    | A required document was not confirmed; `details[]` names it                                                    |
+| `BOOKING_STATUS_TRANSITION`          | 422    | Not a legal move (`pending → confirmed → arrived → completed \| no_show`, `cancelled`)                         |
+| `BOOKING_NOT_ACTIVE`                 | 422    | Cancel or reschedule of a finished booking                                                                     |
+| `BOOKING_NOT_DATED`                  | 422    | `GET /bookings/:id/calendar.ics` for a booking without a date                                                  |
+| `BOOKING_SUSPENDED`                  | 422    | The client is suspended for this service; `details[0]` carries `until`                                         |
+| `SUSPENSION_NOT_FOUND`               | 404    | Unknown id, or a suspension of another organization                                                            |
+| `WAITLIST_NOT_FOUND`                 | 404    |                                                                                                                |
+| `WAITLIST_ALREADY_JOINED`            | 409    | Already queued for this slot                                                                                   |
+| `WAITLIST_NOT_SUPPORTED`             | 422    | A `time_range` slot has no waitlist                                                                            |
+| `BOOKING_ADDRESS_REQUIRED`           | 422    | A `service_visit` booking without `address`                                                                    |
+| `BOOKING_PHONE_REQUIRED`             | 422    | A `callback` booking for an account without a phone                                                            |
+| `SLOT_NOT_FULL`                      | 422    | The waitlist is only for a full slot — book it instead                                                         |
 
 ### Favorites
 
@@ -215,6 +219,8 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `IMAGE_TOO_LARGE`                                          | 422    |
 | `SMS_DELIVERY_FAILED`                                      | 422    |
 | `SMS_BUDGET_EXCEEDED`                                      | 422    |
+| `VIBER_DELIVERY_FAILED`                                    | 422    |
+| `VIBER_NOT_CONFIGURED`                                     | 422    |
 
 `FILE_TOO_LARGE` also covers multer's own limits: the upload is cut off at `UPLOAD_MAX_BYTES` while it is
 still being read, so an oversized file is never buffered whole, and a type outside `UPLOAD_ALLOWED_MIME` is

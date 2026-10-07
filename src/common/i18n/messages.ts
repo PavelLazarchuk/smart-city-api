@@ -97,6 +97,10 @@ export const ERROR_CODES = {
     BOOKING_ADDRESS_REQUIRED: 'BOOKING_ADDRESS_REQUIRED',
     BOOKING_PHONE_REQUIRED: 'BOOKING_PHONE_REQUIRED',
     BOOKING_SUSPENDED: 'BOOKING_SUSPENDED',
+    BOOKING_ORGANIZATION_LIMIT_REACHED: 'BOOKING_ORGANIZATION_LIMIT_REACHED',
+    BOOKING_TOO_FREQUENT: 'BOOKING_TOO_FREQUENT',
+    BOOKING_CHECK_IN_NOT_SUPPORTED: 'BOOKING_CHECK_IN_NOT_SUPPORTED',
+    BOOKING_CHECK_IN_NOT_TODAY: 'BOOKING_CHECK_IN_NOT_TODAY',
     SUSPENSION_NOT_FOUND: 'SUSPENSION_NOT_FOUND',
     WAITLIST_NOT_FOUND: 'WAITLIST_NOT_FOUND',
     WAITLIST_ALREADY_JOINED: 'WAITLIST_ALREADY_JOINED',
@@ -117,6 +121,8 @@ export const ERROR_CODES = {
     IMAGE_UNREADABLE: 'IMAGE_UNREADABLE',
     SMS_DELIVERY_FAILED: 'SMS_DELIVERY_FAILED',
     SMS_BUDGET_EXCEEDED: 'SMS_BUDGET_EXCEEDED',
+    VIBER_DELIVERY_FAILED: 'VIBER_DELIVERY_FAILED',
+    VIBER_NOT_CONFIGURED: 'VIBER_NOT_CONFIGURED',
     ARCHIVE_SERVICE_MISMATCH: 'ARCHIVE_SERVICE_MISMATCH',
 
     SETTING_NOT_FOUND: 'SETTING_NOT_FOUND',
@@ -229,6 +235,11 @@ export const errorMessages: Record<ErrorCode, string> = {
     BOOKING_ADDRESS_REQUIRED: 'An address is required for this booking.',
     BOOKING_PHONE_REQUIRED: 'A phone number is required for a call-back request.',
     BOOKING_SUSPENDED: 'Booking this service is suspended for your account.',
+    BOOKING_ORGANIZATION_LIMIT_REACHED:
+        'You already have the maximum number of active bookings with this organization.',
+    BOOKING_TOO_FREQUENT: 'You booked too recently. Bookings must be further apart.',
+    BOOKING_CHECK_IN_NOT_SUPPORTED: 'This booking has no visit to check in to.',
+    BOOKING_CHECK_IN_NOT_TODAY: 'Check-in is open on the day of the booking only.',
     SUSPENSION_NOT_FOUND: 'Suspension not found.',
     WAITLIST_NOT_FOUND: 'Waitlist entry not found.',
     WAITLIST_ALREADY_JOINED: 'You are already on the waitlist for this slot.',
@@ -249,6 +260,8 @@ export const errorMessages: Record<ErrorCode, string> = {
     IMAGE_UNREADABLE: 'The image could not be decoded.',
     SMS_DELIVERY_FAILED: 'The SMS could not be delivered.',
     SMS_BUDGET_EXCEEDED: 'The SMS sending budget for this period is exhausted. Try again later.',
+    VIBER_DELIVERY_FAILED: 'The Viber message could not be delivered.',
+    VIBER_NOT_CONFIGURED: 'No Viber provider is configured.',
     ARCHIVE_SERVICE_MISMATCH: 'The service belongs to a different organization.',
 
     SETTING_NOT_FOUND: 'There is no setting with this key.',
@@ -314,6 +327,9 @@ export const texts = {
             subject: 'Smart City: booking reminder',
             body: [
                 'Reminder: {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}.',
+                '{{#code}}',
+                'Check-in code: {{code}}. Show it at the front desk.',
+                '{{/code}}',
                 'Booked with phone {{#phone}}{{phone}}{{/phone}}{{^phone}}not specified{{/phone}}.',
                 '{{#calendar}}',
                 'Open the attached booking.ics to add it to your calendar.',
@@ -322,7 +338,16 @@ export const texts = {
         },
         booking_reminder_sms: {
             subject: null,
-            body: 'Reminder: {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}.',
+            body: 'Reminder: {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}.{{#code}} Check-in code: {{code}}.{{/code}}',
+        },
+        booking_reminder_viber: {
+            subject: null,
+            body: [
+                'Reminder: {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{#end_time}}-{{end_time}}{{/end_time}}{{/time}}.',
+                '{{#code}}',
+                'Check-in code: {{code}}. Show it at the front desk.',
+                '{{/code}}',
+            ].join('\n'),
         },
         waitlist_available_mail: {
             subject: 'Smart City: a place is free',
@@ -334,6 +359,10 @@ export const texts = {
         waitlist_available_sms: {
             subject: null,
             body: 'A place is free for {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}. Book it now.',
+        },
+        waitlist_available_viber: {
+            subject: null,
+            body: 'A place is free for {{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}}. Book it now before someone else does.',
         },
         booking_cancelled_mail: {
             subject: 'Smart City: booking cancelled',
@@ -349,6 +378,15 @@ export const texts = {
             subject: null,
             body: '{{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}} was cancelled.{{#reason}} {{reason}}{{/reason}}',
         },
+        booking_cancelled_viber: {
+            subject: null,
+            body: [
+                '{{service}} on {{#date}}{{date}}{{/date}}{{^date}}the agreed date{{/date}}{{#time}} at {{time}}{{/time}} was cancelled by the organization.',
+                '{{#reason}}',
+                'Reason: {{reason}}',
+                '{{/reason}}',
+            ].join('\n'),
+        },
         booking_moved_mail: {
             subject: 'Smart City: booking moved',
             body: [
@@ -363,6 +401,16 @@ export const texts = {
         booking_moved_sms: {
             subject: null,
             body: '{{service}} was moved to {{#date}}{{date}}{{/date}}{{^date}}another date{{/date}}{{#time}}, {{time}}{{/time}}.{{#reason}} {{reason}}{{/reason}}',
+        },
+        booking_moved_viber: {
+            subject: null,
+            body: [
+                '{{service}} was moved to {{#date}}{{date}}{{/date}}{{^date}}another date{{/date}}{{#time}} at {{time}}{{/time}}.',
+                'It was booked for {{#previous_date}}{{previous_date}}{{/previous_date}}{{^previous_date}}the agreed date{{/previous_date}}{{#previous_time}} at {{previous_time}}{{/previous_time}}.',
+                '{{#reason}}',
+                'Reason: {{reason}}',
+                '{{/reason}}',
+            ].join('\n'),
         },
         booking_suspended_mail: {
             subject: 'Smart City: booking suspended',
@@ -380,6 +428,18 @@ export const texts = {
         booking_suspended_sms: {
             subject: null,
             body: '{{#missed}}You missed {{missed}} bookings. {{/missed}}Booking {{service}} is suspended{{#until}} until {{until}}{{/until}}.{{#reason}} {{reason}}{{/reason}}',
+        },
+        booking_suspended_viber: {
+            subject: null,
+            body: [
+                '{{#missed}}',
+                'You did not come to {{missed}} bookings of {{service}}.',
+                '{{/missed}}',
+                'Booking {{service}} is suspended {{#until}}until {{until}}{{/until}}{{^until}}until the organization lifts it{{/until}}.',
+                '{{#reason}}',
+                'Reason: {{reason}}',
+                '{{/reason}}',
+            ].join('\n'),
         },
         callback_due_mail: {
             subject: 'Smart City: call-back due',
@@ -400,6 +460,7 @@ export const texts = {
         previous_time: '09:00',
         until: '2026-11-15',
         missed: 3,
+        code: 'K7M4PX',
         reason: 'The specialist is on sick leave.',
         phone: '380501234567',
         name: 'Anna',

@@ -12,7 +12,13 @@ const config: Config = {
     cacheDirectory: '.jest-cache',
     globalSetup: '<rootDir>/test/support/global-setup.ts',
     globalTeardown: '<rootDir>/test/support/global-teardown.ts',
-    collectCoverageFrom: ['src/**/*.ts', '!src/main.ts', '!src/**/*.module.ts', '!src/**/index.ts'],
+    collectCoverageFrom: [
+        'src/**/*.ts',
+        '!src/**/*.spec.ts',
+        '!src/main.ts',
+        '!src/**/*.module.ts',
+        '!src/**/index.ts',
+    ],
     coverageDirectory: 'coverage',
     coverageReporters: ['text-summary', 'lcov'],
     coverageThreshold: {

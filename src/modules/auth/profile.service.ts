@@ -66,7 +66,12 @@ export class ProfileService {
                 throw ApiError.unprocessable('PHONE_CODE_INVALID');
         }
 
-        const updated = await this.users.updateSelf(user.id, { name: input.name, email: input.email, phone });
+        const updated = await this.users.updateSelf(user.id, {
+            name: input.name,
+            email: input.email,
+            reminders: input.reminders,
+            phone,
+        });
 
         if (phone !== undefined) {
             await this.authStore.revokeAllSessions(user.id, undefined, user.sid);

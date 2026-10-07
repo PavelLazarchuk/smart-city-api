@@ -33,9 +33,9 @@ export class BookingRemindersJob {
 
             if (due.length === 0) break;
 
-            const emails = await this.users.findEmailsByIds(
-                due.map((booking) => booking.user_id.toHexString()),
-            );
+            const userIds = due.map((booking) => booking.user_id.toHexString());
+            const emails = await this.users.findEmailsByIds(userIds);
+            const muted = await this.users.findWithoutReminders(userIds);
 
             for (const booking of due) {
                 const callback = booking.child_type === 'callback';
@@ -61,6 +61,8 @@ export class BookingRemindersJob {
                             : {
                                   phone: booking.phone,
                                   email: emails.get(booking.user_id.toHexString()) ?? null,
+                                  checkin_code: booking.checkin_code ?? null,
+                                  ...(muted.has(booking.user_id.toHexString()) ? { reminders: false } : {}),
                               },
                     },
                 );

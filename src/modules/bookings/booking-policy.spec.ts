@@ -7,10 +7,13 @@ import {
     assertBookingWindow,
     assertCancelDeadline,
     cancelDeadlinePassed,
+    checkInOpen,
     inForce,
+    intervalWindow,
     liftedByCorrection,
     manualSuspensionEnd,
     noShowCountedSince,
+    noShowCutoffs,
     noShowEnabled,
     noShowSanction,
     resolveCancel,
@@ -247,5 +250,45 @@ describe('no-show sanctions', () => {
         expect(liftedByCorrection({ ...counted, kind: 'manual' }, 'a', NOW)).toBe(false);
         expect(liftedByCorrection({ ...counted, until: at(-MINUTE) }, 'a', NOW)).toBe(false);
         expect(liftedByCorrection(null, 'a', NOW)).toBe(false);
+    });
+});
+
+describe('intervalWindow', () => {
+    it('spans the dates closer than the interval on both sides', () => {
+        expect(intervalWindow(7, '2026-10-10', 'UTC')).toEqual({
+            from: '2026-10-04',
+            to: '2026-10-16',
+            since: new Date('2026-10-04T00:00:00Z'),
+            until: new Date('2026-10-17T00:00:00Z'),
+        });
+    });
+
+    it('limits one booking per day with an interval of one', () => {
+        expect(intervalWindow(1, '2026-10-10', 'Europe/Kyiv')).toEqual({
+            from: '2026-10-10',
+            to: '2026-10-10',
+            since: new Date('2026-10-09T21:00:00Z'),
+            until: new Date('2026-10-10T21:00:00Z'),
+        });
+    });
+});
+
+describe('checkInOpen', () => {
+    it('opens on the booking day in the organization zone and for undated bookings', () => {
+        const late = new Date('2026-10-05T22:30:00Z');
+
+        expect(checkInOpen('2026-10-06', late, 'Europe/Kyiv')).toBe(true);
+        expect(checkInOpen('2026-10-05', late, 'Europe/Kyiv')).toBe(false);
+        expect(checkInOpen('2026-10-05', late, 'UTC')).toBe(true);
+        expect(checkInOpen(null, late, 'UTC')).toBe(true);
+    });
+});
+
+describe('noShowCutoffs', () => {
+    it('waits the grace minutes for timed bookings and the whole day otherwise', () => {
+        expect(noShowCutoffs(15, NOW)).toEqual({
+            timedBefore: at(-15 * MINUTE),
+            untimedBefore: at(-DAY_MS),
+        });
     });
 });

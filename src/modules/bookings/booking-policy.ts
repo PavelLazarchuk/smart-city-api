@@ -54,6 +54,36 @@ export function resolveCancel(policy: Policy, startsAt: Date | null, now: Date):
     throw ApiError.unprocessable('BOOKING_CANCEL_DEADLINE_PASSED');
 }
 
+export interface IntervalWindow {
+    from: string;
+    to: string;
+    since: Date;
+    until: Date;
+}
+
+export function intervalWindow(days: number, date: string, timeZone: string): IntervalWindow {
+    const from = shiftDateOnly(date, 1 - days);
+    const to = shiftDateOnly(date, days - 1);
+
+    return {
+        from,
+        to,
+        since: instantIn(from, null, timeZone),
+        until: instantIn(shiftDateOnly(to, 1), null, timeZone),
+    };
+}
+
+export function checkInOpen(slotDate: string | null, now: Date, timeZone: string): boolean {
+    return slotDate === null || slotDate === dateOnlyIn(now, timeZone);
+}
+
+export function noShowCutoffs(minutes: number, now: Date): { timedBefore: Date; untimedBefore: Date } {
+    return {
+        timedBefore: new Date(now.getTime() - minutes * MINUTE_MS),
+        untimedBefore: new Date(now.getTime() - DAY_MS),
+    };
+}
+
 export function inForce<T extends SuspensionState>(row: T | null, now: Date): row is T {
     return row !== null && row.suspended && (row.until === null || row.until.getTime() > now.getTime());
 }

@@ -24,6 +24,9 @@ export class User {
     @Prop({ type: String })
     email?: string;
 
+    @Prop({ type: Boolean, default: true })
+    reminders?: boolean;
+
     @Prop({ type: String, enum: ROLE_VALUES, required: true, default: ROLES.COMMON_USER })
     role!: Role;
 

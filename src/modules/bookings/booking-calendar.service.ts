@@ -18,6 +18,7 @@ import { ServicesService } from '../services/services.service';
 const STATUS: Record<BookingStatus, CalendarEventStatus> = {
     pending: 'TENTATIVE',
     confirmed: 'CONFIRMED',
+    arrived: 'CONFIRMED',
     completed: 'CONFIRMED',
     no_show: 'CONFIRMED',
     cancelled: 'CANCELLED',
