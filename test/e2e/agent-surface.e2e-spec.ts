@@ -91,18 +91,19 @@ describe('agent-facing surface (e2e)', () => {
     describe('flat slots', () => {
         it('flattens every bookable moment with the zone offset applied and drops what has passed', async () => {
             const today = dateOnlyIn(new Date(), ZONE);
+            const tomorrow = shiftDateOnly(today, 1);
             const option = optionWith([
                 {
                     id: randomUUID(),
                     label: 'Today',
                     child_type: 'date_time',
-                    value: {
-                        date: today,
-                        time: [
-                            { time: '00:01', limit: 1, booked_count: 0 },
-                            { time: '23:59', limit: 1, booked_count: 0 },
-                        ],
-                    },
+                    value: { date: today, time: [{ time: '00:00', limit: 1, booked_count: 0 }] },
+                },
+                {
+                    id: randomUUID(),
+                    label: 'Tomorrow',
+                    child_type: 'date_time',
+                    value: { date: tomorrow, time: [{ time: '23:59', limit: 1, booked_count: 0 }] },
                 },
                 {
                     id: randomUUID(),
@@ -136,8 +137,8 @@ describe('agent-facing surface (e2e)', () => {
 
             const timed = items[0]!;
             expect(timed.time).toBe('23:59');
-            expect(timed.starts_at).toBe(`${today}T23:59:00+09:00`);
-            expect(timed.ends_at).toBe(`${shiftDateOnly(today, 1)}T00:29:00+09:00`);
+            expect(timed.starts_at).toBe(`${tomorrow}T23:59:00+09:00`);
+            expect(timed.ends_at).toBe(`${shiftDateOnly(tomorrow, 1)}T00:29:00+09:00`);
             expect(items[1]!.starts_at).toBeNull();
         });
 
