@@ -32,6 +32,7 @@ export class ProfileService {
 
     async requestPhoneCode(user: AuthUser, phone: string): Promise<{ phone: string; expires_in: number }> {
         this.phonePolicy.assertSupported(phone);
+        await this.otp.assertCanSend(phone);
 
         const response = { phone, expires_in: this.otp.ttlSeconds };
         const owner = await this.users.findByPhone(phone);

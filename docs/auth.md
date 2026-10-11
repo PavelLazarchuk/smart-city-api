@@ -71,6 +71,11 @@ every requirement that failed at once, so a form can show them all instead of on
 for a phone that has no account still costs the same work (a dummy hash is computed) so the endpoint does not
 reveal who is registered.
 
+Each phone gets at most one code per `OTP_RESEND_COOLDOWN_SECONDS` (default 60, `0` turns it off) and at most
+`OTP_DAILY_LIMIT_PER_PHONE` codes per 24 hours (default 10), across sign-in and phone change. Going over either
+returns `429 RATE_LIMITED` before any SMS is sent. Both are editable in `/settings` as
+`otp.resend_cooldown_seconds` and `otp.daily_limit_per_phone`.
+
 `POST /auth/otp/verify` fails with `OTP_EXPIRED` past the TTL, counts attempts and fails with
 `OTP_ATTEMPTS_EXCEEDED` beyond `OTP_MAX_ATTEMPTS`, and consumes the record atomically — a code works once.
 The record is removed by a TTL index on `expires_at`.

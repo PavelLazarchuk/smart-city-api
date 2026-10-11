@@ -210,6 +210,8 @@ function slotStart(
     return date && (time || !timeRequired) ? instantIn(date, time, timeZone) : null;
 }
 
+type StaffNotice = { notify?: boolean; reason?: string };
+
 @Injectable()
 export class BookingsService implements OnModuleInit {
     constructor(
@@ -584,15 +586,25 @@ export class BookingsService implements OnModuleInit {
         return { organization_id: { $in: actor.organization_ids.map((id) => new Types.ObjectId(id)) } };
     }
 
-    cancelById(bookingId: string, actor: AuthUser): Promise<Cancelled> {
-        return this.remove(bookingId, actor);
+    cancelById(bookingId: string, actor: AuthUser, notice: StaffNotice = {}): Promise<Cancelled> {
+        return this.remove(bookingId, actor, notice);
     }
 
-    async cancel(serviceId: string, bookingId: string, actor: AuthUser): Promise<Cancelled> {
-        return this.remove(bookingId, actor, serviceId);
+    async cancel(
+        serviceId: string,
+        bookingId: string,
+        actor: AuthUser,
+        notice: StaffNotice = {},
+    ): Promise<Cancelled> {
+        return this.remove(bookingId, actor, notice, serviceId);
     }
 
-    private async remove(bookingId: string, actor: AuthUser, serviceId?: string): Promise<Cancelled> {
+    private async remove(
+        bookingId: string,
+        actor: AuthUser,
+        notice: StaffNotice,
+        serviceId?: string,
+    ): Promise<Cancelled> {
         return this.tx.run(async (ctx) => {
             const booking = await this.bookings.findByPublicId(bookingId, ctx.session);
 
@@ -604,7 +616,7 @@ export class BookingsService implements OnModuleInit {
             if (!booking.active) throw ApiError.unprocessable('BOOKING_NOT_ACTIVE');
 
             const late = !this.isAdminOf(booking, actor) && (await this.lateCancel(booking, ctx.session));
-            const cancelled = await this.finish(booking, 'cancelled', actor, ctx, late);
+            const cancelled = await this.finish(booking, 'cancelled', actor, ctx, late, notice);
 
             if (late) await this.suspensions.onLateCancel(cancelled, ctx);
 
@@ -617,7 +629,12 @@ export class BookingsService implements OnModuleInit {
         });
     }
 
-    async setStatus(bookingId: string, status: BookingStatus, actor: AuthUser): Promise<BookingResource> {
+    async setStatus(
+        bookingId: string,
+        status: BookingStatus,
+        actor: AuthUser,
+        notice: StaffNotice = {},
+    ): Promise<BookingResource> {
         const updated = await this.tx.run(async (ctx) => {
             const booking = await this.bookings.findByPublicId(bookingId, ctx.session);
 
@@ -628,7 +645,7 @@ export class BookingsService implements OnModuleInit {
                     { path: 'status', message: `Cannot move from ${booking.status} to ${status}` },
                 ]);
 
-            if (status === 'cancelled') return this.finish(booking, 'cancelled', actor, ctx);
+            if (status === 'cancelled') return this.finish(booking, 'cancelled', actor, ctx, false, notice);
 
             const moved = await this.bookings.transition(
                 booking.id,
@@ -854,15 +871,25 @@ export class BookingsService implements OnModuleInit {
             if (!updated) throw ApiError.notFound('BOOKING_NOT_FOUND');
 
             await this.notifyWaitlist(booking, ctx);
-            await this.emit(ctx, 'booking.rescheduled', updated, this.trail(booking, actor), {
-                previous: {
-                    option_id: booking.option_id,
-                    slot_id: booking.slot_id,
-                    date: booking.slot_date,
-                    time: booking.slot_time,
-                    end_time: booking.slot_end ?? null,
+            await this.emit(
+                ctx,
+                'booking.rescheduled',
+                updated,
+                {
+                    ...this.trail(booking, actor),
+                    ...(await this.staffNotice(booking, actor, input)),
                 },
-            });
+                {
+                    ...(admin && input.reason ? { reason: input.reason } : {}),
+                    previous: {
+                        option_id: booking.option_id,
+                        slot_id: booking.slot_id,
+                        date: booking.slot_date,
+                        time: booking.slot_time,
+                        end_time: booking.slot_end ?? null,
+                    },
+                },
+            );
 
             return updated;
         });
@@ -882,6 +909,7 @@ export class BookingsService implements OnModuleInit {
         actor: AuthUser,
         ctx: TransactionContext,
         late = false,
+        notice: StaffNotice = {},
     ): Promise<BookingEntity> {
         const moved = await this.bookings.transition(
             booking.id,
@@ -897,8 +925,14 @@ export class BookingsService implements OnModuleInit {
 
         await this.releaseCapacity(booking, ctx.session);
         await this.notifyWaitlist(booking, ctx);
-        await this.emit(ctx, 'booking.cancelled', moved, this.trail(booking, actor), {
-            cancelled_by: actor.id === booking.user_id.toHexString() ? 'owner' : 'admin',
+        const internal = {
+            ...this.trail(booking, actor),
+            ...(await this.staffNotice(booking, actor, notice)),
+        };
+        const byOwner = actor.id === booking.user_id.toHexString();
+        await this.emit(ctx, 'booking.cancelled', moved, internal, {
+            cancelled_by: byOwner ? 'owner' : 'admin',
+            ...(!byOwner && notice.reason ? { reason: notice.reason } : {}),
             previous_status: booking.status,
             ...(late ? { late_cancel: true } : {}),
         });
@@ -1328,6 +1362,23 @@ export class BookingsService implements OnModuleInit {
                   );
 
         if (!accepted) throw ApiError.unprocessable('SLOT_FULL');
+    }
+
+    private async staffNotice(
+        booking: BookingEntity,
+        actor: AuthUser,
+        notice: StaffNotice,
+    ): Promise<Record<string, unknown>> {
+        if (
+            notice.notify === false ||
+            actor.id === booking.user_id.toHexString() ||
+            !this.isAdminOf(booking, actor)
+        )
+            return {};
+
+        const user = await this.users.findById(booking.user_id.toHexString());
+
+        return { notify: true, email: user?.email ?? null };
     }
 
     private trail(booking: BookingEntity, actor: AuthUser): Record<string, unknown> {

@@ -95,9 +95,18 @@ export class ListServiceBookingsQueryDto extends createZodDto(listServiceBooking
 
 export const setBookingStatusSchema = z.object({
     status: z.enum(['confirmed', 'completed', 'no_show', 'cancelled']),
+    notify: z.boolean().optional(),
+    reason: z.string().trim().max(500).optional(),
 });
 export type SetBookingStatusInput = z.infer<typeof setBookingStatusSchema>;
 export class SetBookingStatusDto extends createZodDto(setBookingStatusSchema) {}
+
+export const cancelBookingQuerySchema = z.object({
+    notify: z.stringbool().optional(),
+    reason: z.string().trim().max(500).optional(),
+});
+export type CancelBookingQuery = z.infer<typeof cancelBookingQuerySchema>;
+export class CancelBookingQueryDto extends createZodDto(cancelBookingQuerySchema) {}
 
 export const checkInByCodeSchema = z.object({
     code: z
@@ -116,6 +125,8 @@ export const rescheduleBookingSchema = z.object({
     time: timeOfDaySchema.optional(),
     end_time: timeOfDaySchema.optional(),
     address: z.string().trim().min(1).max(500).optional(),
+    notify: z.boolean().optional(),
+    reason: z.string().trim().max(500).optional(),
 });
 export type RescheduleBookingInput = z.infer<typeof rescheduleBookingSchema>;
 export class RescheduleBookingDto extends createZodDto(rescheduleBookingSchema) {}

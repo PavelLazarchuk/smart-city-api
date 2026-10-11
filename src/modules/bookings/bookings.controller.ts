@@ -41,6 +41,7 @@ import {
     CalendarFeedQueryDto,
     CheckInByCodeDto,
     CalendarTokenResponseDto,
+    CancelBookingQueryDto,
     calendarTokenResponseSchema,
     ExportBookingsQueryDto,
     ListBookingsQueryDto,
@@ -224,7 +225,7 @@ export class BookingsController {
         @Body() body: SetBookingStatusDto,
         @CurrentUser() user: AuthUser,
     ): Promise<BookingResource> {
-        return this.bookings.setStatus(bookingId, body.status, user);
+        return this.bookings.setStatus(bookingId, body.status, user, body);
     }
 
     @Post('bookings/:booking_id/confirm')
@@ -290,8 +291,9 @@ export class BookingsController {
     })
     async cancel(
         @Param('booking_id') bookingId: string,
+        @Query() query: CancelBookingQueryDto,
         @CurrentUser() user: AuthUser,
     ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
-        return this.bookings.cancelById(bookingId, user);
+        return this.bookings.cancelById(bookingId, user, query);
     }
 }

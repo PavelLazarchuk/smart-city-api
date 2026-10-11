@@ -32,6 +32,8 @@ const defaults: Record<string, string> = {
     OTP_LENGTH: '6',
     OTP_TTL_SECONDS: '300',
     OTP_MAX_ATTEMPTS: '3',
+    OTP_RESEND_COOLDOWN_SECONDS: '0',
+    OTP_DAILY_LIMIT_PER_PHONE: '1000',
     PHONE_COUNTRY_CODE: '49',
     THROTTLE_TTL_SECONDS: '60',
     THROTTLE_LIMIT: '1000',

@@ -78,6 +78,16 @@ export const SETTINGS = {
         schema: () => int(1, 10),
         fromConfig: (config) => config.otp.maxAttempts,
     }),
+    'otp.resend_cooldown_seconds': define({
+        description: 'Seconds before another one-time code can be sent to the same phone; 0 turns it off.',
+        schema: () => int(0, 3600),
+        fromConfig: (config) => config.otp.resendCooldownSeconds,
+    }),
+    'otp.daily_limit_per_phone': define({
+        description: 'One-time codes sent to one phone per 24 hours.',
+        schema: () => int(1, 1000),
+        fromConfig: (config) => config.otp.dailyLimitPerPhone,
+    }),
     'throttle.ttl_seconds': define({
         description: 'Rate limit window in seconds.',
         schema: () => int(1, 3600),

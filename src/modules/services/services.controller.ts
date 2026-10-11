@@ -35,6 +35,7 @@ import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { PaginationQueryDto } from '../../common/pagination/pagination.dto';
 import {
+    CancelBookingQueryDto,
     JoinWaitlistDto,
     ListWaitlistQueryDto,
     type WaitlistEntryResource,
@@ -594,9 +595,10 @@ export class ServicesController {
     async cancelBooking(
         @Param('id') id: string,
         @Param('booking_id') bookingId: string,
+        @Query() query: CancelBookingQueryDto,
         @CurrentUser() user: AuthUser,
     ): Promise<{ user_id: string; date?: string; time?: string; child_type: string }> {
-        return this.bookings.cancel(id, bookingId, user);
+        return this.bookings.cancel(id, bookingId, user, query);
     }
 
     @Post(':id/waitlist')

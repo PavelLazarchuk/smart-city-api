@@ -117,6 +117,7 @@ export class AuthService {
             throw ApiError.forbidden('LOGIN_METHOD_DISABLED');
 
         this.phonePolicy.assertSupported(phone);
+        await this.otp.assertCanSend(phone);
 
         const response = { phone, expires_in: this.otp.ttlSeconds };
         const existing = await this.users.findByPhone(phone);

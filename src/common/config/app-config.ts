@@ -79,7 +79,13 @@ export class AppConfig {
         argon2: { memoryCost: number; timeCost: number; parallelism: number };
     };
 
-    readonly otp: { length: number; ttlSeconds: number; maxAttempts: number };
+    readonly otp: {
+        length: number;
+        ttlSeconds: number;
+        maxAttempts: number;
+        resendCooldownSeconds: number;
+        dailyLimitPerPhone: number;
+    };
 
     readonly phone: { countryCode: string };
 
@@ -222,6 +228,8 @@ export class AppConfig {
             length: env.OTP_LENGTH,
             ttlSeconds: env.OTP_TTL_SECONDS,
             maxAttempts: env.OTP_MAX_ATTEMPTS,
+            resendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+            dailyLimitPerPhone: env.OTP_DAILY_LIMIT_PER_PHONE,
         };
         this.phone = { countryCode: env.PHONE_COUNTRY_CODE };
         this.throttle = {

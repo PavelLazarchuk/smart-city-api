@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
+import { InjectThrottlerStorage, type ThrottlerStorage } from '@nestjs/throttler';
 import { randomInt } from 'node:crypto';
 
 import { ApiError } from '../../common/http/api-error';
@@ -11,12 +12,15 @@ import {
     VerificationCodesRepository,
 } from './store/verification-codes.repository';
 
+const DAY_MS = 24 * 3600 * 1000;
+
 @Injectable()
 export class OtpService {
     constructor(
         private readonly codes: VerificationCodesRepository,
         private readonly passwords: PasswordService,
         private readonly settings: SettingsService,
+        @InjectThrottlerStorage() private readonly throttle: ThrottlerStorage,
     ) {}
 
     generateCode(): string {
@@ -36,6 +40,27 @@ export class OtpService {
         await this.codes.issue(phone, await this.passwords.hash(code), expiresAt, scope);
 
         return code;
+    }
+
+    async assertCanSend(phone: string): Promise<void> {
+        const cooldownMs = this.settings.get('otp.resend_cooldown_seconds') * 1000;
+
+        if (cooldownMs > 0) {
+            const cooldown = await this.throttle.increment(
+                `otp-cooldown:${phone}`,
+                cooldownMs,
+                1,
+                cooldownMs,
+                'otp',
+            );
+
+            if (cooldown.isBlocked) throw new ApiError(HttpStatus.TOO_MANY_REQUESTS, 'RATE_LIMITED');
+        }
+
+        const dailyLimit = this.settings.get('otp.daily_limit_per_phone');
+        const daily = await this.throttle.increment(`otp-daily:${phone}`, DAY_MS, dailyLimit, DAY_MS, 'otp');
+
+        if (daily.isBlocked) throw new ApiError(HttpStatus.TOO_MANY_REQUESTS, 'RATE_LIMITED');
     }
 
     /** Same cost as `issue`: the branch that ignores a request must not be measurably faster. */

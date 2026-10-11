@@ -115,6 +115,8 @@ export const envSchema = z
         OTP_LENGTH: z.coerce.number().int().min(4).max(10).default(6),
         OTP_TTL_SECONDS: positiveInt(300),
         OTP_MAX_ATTEMPTS: positiveInt(5),
+        OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(0).max(3600).default(60),
+        OTP_DAILY_LIMIT_PER_PHONE: positiveInt(10),
 
         PHONE_COUNTRY_CODE: z
             .string()

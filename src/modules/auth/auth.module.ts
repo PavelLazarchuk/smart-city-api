@@ -10,10 +10,11 @@ import { OtpService } from './otp.service';
 import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
 import { AuthStoreModule } from './store/auth-store.module';
+import { ThrottleModule } from './throttle.module';
 import { TokenService } from './token.service';
 
 @Module({
-    imports: [AuthStoreModule, UsersModule, SmsModule, JwtModule.register({})],
+    imports: [AuthStoreModule, ThrottleModule, UsersModule, SmsModule, JwtModule.register({})],
     controllers: [AuthController, ProfileController],
     providers: [AuthService, TokenService, OtpService, LoginAttemptsService, ProfileService],
     exports: [AuthService, TokenService],
