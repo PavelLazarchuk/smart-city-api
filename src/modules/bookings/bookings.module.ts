@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { MailModule } from '../../integrations/mail/mail.module';
+import { AuthStoreModule } from '../auth/store/auth-store.module';
 import { ChannelTemplatesModule } from '../channel-templates/channel-templates.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { ServicesModule } from '../services/services.module';
@@ -15,6 +16,7 @@ import { SuspensionsService } from './suspensions.service';
 
 @Module({
     imports: [
+        AuthStoreModule,
         BookingsDataModule,
         ServicesModule,
         SlotsModule,

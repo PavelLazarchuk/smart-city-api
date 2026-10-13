@@ -38,6 +38,19 @@ export class SuspensionsRepository extends BaseRepository<BookingSuspension> {
         );
     }
 
+    findForPerson(
+        userId: string,
+        phoneHash: string | null,
+        serviceId: string,
+        session?: ClientSession,
+    ): Promise<BookingSuspensionEntity[]> {
+        const owners: FilterQuery<BookingSuspension>[] = [{ user_id: new Types.ObjectId(userId) }];
+
+        if (phoneHash) owners.push({ phone_hash: phoneHash });
+
+        return this.findMany({ service_id: new Types.ObjectId(serviceId), $or: owners }, undefined, session);
+    }
+
     touch(subject: SuspensionSubject, now: Date, session?: ClientSession): Promise<BookingSuspensionEntity> {
         return this.model
             .findOneAndUpdate(
@@ -74,8 +87,28 @@ export class SuspensionsRepository extends BaseRepository<BookingSuspension> {
         return this.paginate(filter, pagination);
     }
 
-    deleteByUser(userId: string, session?: ClientSession): Promise<number> {
-        return this.deleteMany({ user_id: new Types.ObjectId(userId) }, session);
+    async detachUser(
+        userId: string,
+        phoneHash: string | null,
+        now: Date,
+        session?: ClientSession,
+    ): Promise<void> {
+        const owner = { user_id: new Types.ObjectId(userId) };
+
+        if (phoneHash)
+            await this.model
+                .updateMany(
+                    { ...owner, suspended: true, $or: [{ until: null }, { until: { $gt: now } }] },
+                    { $set: { phone_hash: phoneHash } },
+                )
+                .session(session ?? null)
+                .exec();
+
+        await this.deleteMany({ ...owner, phone_hash: { $exists: false } }, session);
+    }
+
+    deleteByPublicId(id: string, session?: ClientSession): Promise<number> {
+        return this.deleteMany({ id }, session);
     }
 
     deleteByService(serviceId: string, session?: ClientSession): Promise<number> {

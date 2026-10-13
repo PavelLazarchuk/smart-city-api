@@ -42,6 +42,7 @@ export const ERROR_CODES = {
     SELF_ROLE_CHANGE: 'SELF_ROLE_CHANGE',
     PHONE_CODE_REQUIRED: 'PHONE_CODE_REQUIRED',
     PHONE_CODE_INVALID: 'PHONE_CODE_INVALID',
+    DELETION_CODE_INVALID: 'DELETION_CODE_INVALID',
 
     ORGANIZATION_NOT_FOUND: 'ORGANIZATION_NOT_FOUND',
     CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
@@ -180,6 +181,7 @@ export const errorMessages: Record<ErrorCode, string> = {
     SELF_ROLE_CHANGE: 'You cannot change your own role.',
     PHONE_CODE_REQUIRED: 'Confirm the new phone number with the code sent to it.',
     PHONE_CODE_INVALID: 'The confirmation code is invalid or expired. Request a new one.',
+    DELETION_CODE_INVALID: 'The confirmation code is invalid or expired. Request a new one.',
 
     ORGANIZATION_NOT_FOUND: 'Organization not found.',
     CATEGORY_NOT_FOUND: 'Category not found.',
@@ -281,6 +283,8 @@ const INBOX_CLIENT = '{{#name}}{{name}}{{/name}}{{^name}}A client{{/name}}{{#pho
 export const texts = {
     sms: {
         otp: (code: string): string => `${code} is your Smart City verification code.`,
+        accountDeletion: (code: string): string =>
+            `${code} confirms the deletion of your Smart City account. Ignore this message if you did not ask for it.`,
         test: (code: string): string => `${code} is a Smart City test message.`,
     },
     mail: {

@@ -88,6 +88,14 @@ export function inForce<T extends SuspensionState>(row: T | null, now: Date): ro
     return row !== null && row.suspended && (row.until === null || row.until.getTime() > now.getTime());
 }
 
+export function blockingSuspension<T extends SuspensionState>(rows: T[], now: Date): T | null {
+    const end = (row: T): number => row.until?.getTime() ?? Number.POSITIVE_INFINITY;
+
+    return rows
+        .filter((row) => inForce(row, now))
+        .reduce<T | null>((longest, row) => (longest && end(longest) >= end(row) ? longest : row), null);
+}
+
 export function manualSuspensionEnd(days: number | null | undefined, now: Date): Date | null {
     return days ? new Date(now.getTime() + days * DAY_MS) : null;
 }

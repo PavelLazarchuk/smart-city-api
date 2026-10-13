@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
 
 import { AppConfig } from '../../common/config/app-config';
 import { ApiError } from '../../common/http/api-error';
@@ -17,5 +18,13 @@ export class PhonePolicy {
 
     assertSupported(phone: string): void {
         if (!this.isSupported(phone)) throw ApiError.unprocessable('PHONE_COUNTRY_NOT_SUPPORTED');
+    }
+
+    hash(phone: string): string {
+        return createHmac('sha256', this.config.phone.hashSecret).update(phone).digest('hex');
+    }
+
+    hashOrNull(phone: string | null | undefined): string | null {
+        return phone ? this.hash(phone) : null;
     }
 }

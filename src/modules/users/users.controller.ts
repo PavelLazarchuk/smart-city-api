@@ -92,9 +92,11 @@ export class UsersController {
     }
 
     @Delete(':id')
+    @Roles(ROLES.SUPER_ADMIN)
     @HttpCode(HttpStatus.NO_CONTENT)
-    async remove(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
-        this.assertSelfOrSuperAdmin(id, user);
+    async remove(@Param('id') id: string): Promise<void> {
+        if (!objectIdSchema.safeParse(id).success) throw ApiError.notFound('USER_NOT_FOUND');
+
         await this.users.delete(id);
     }
 

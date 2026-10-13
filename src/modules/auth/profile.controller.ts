@@ -1,13 +1,15 @@
-import { Body, Controller, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { ApiData } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { Serialize } from '../../common/http/serialize.decorator';
 import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { UserResponseDto, userResponseSchema } from '../users/dto/user.schemas';
 import { type UserEntity } from '../users/users.repository';
 import {
+    DeleteAccountDto,
     OtpRequestResponseDto,
     otpRequestResponseSchema,
     PhoneCodeRequestDto,
@@ -45,5 +47,22 @@ export class ProfileController {
         @CurrentUser() user: AuthUser,
     ): Promise<{ phone: string; expires_in: number }> {
         return this.profile.requestPhoneCode(user, body.phone);
+    }
+
+    @Post('deletion/code')
+    @Roles(ROLES.COMMON_USER)
+    @HttpCode(HttpStatus.OK)
+    @ApiData(OtpRequestResponseDto)
+    @Serialize(otpRequestResponseSchema)
+    requestDeletionCode(@CurrentUser() user: AuthUser): Promise<{ phone: string; expires_in: number }> {
+        return this.profile.requestDeletionCode(user);
+    }
+
+    @Delete()
+    @Roles(ROLES.COMMON_USER)
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiErrors('DELETION_CODE_INVALID')
+    async remove(@Body() body: DeleteAccountDto, @CurrentUser() user: AuthUser): Promise<void> {
+        await this.profile.deleteAccount(user, body.code);
     }
 }

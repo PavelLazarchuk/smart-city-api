@@ -130,7 +130,7 @@ describe('booking statuses and policy (e2e)', () => {
             expect(all.body.data).toHaveLength(3);
         });
 
-        it('deleting the account keeps finished rows for the statistics without the person', async () => {
+        it('deleting the account cancels the active booking and keeps every row without the person', async () => {
             const service = await serviceWith({});
             const created = await book(service.id, { option_id: uuid(1), slot_id: uuid(2), time: '10:00' });
             await t.http
@@ -147,9 +147,11 @@ describe('booking statuses and policy (e2e)', () => {
             const rows = await fx
                 .collection<{ status: string; person: string; phone: string }>('Booking')
                 .find({})
+                .sort({ slot_time: 1 })
                 .lean();
-            expect(rows).toHaveLength(1);
+            expect(rows).toHaveLength(2);
             expect(rows[0]).toMatchObject({ status: 'completed', person: '', phone: '' });
+            expect(rows[1]).toMatchObject({ status: 'cancelled', person: '', phone: '' });
         });
     });
 

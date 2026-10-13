@@ -15,7 +15,7 @@ export interface OtpScope {
 export const LOGIN_SCOPE: OtpScope = { purpose: 'login' };
 
 function scopeFilter(phone: string, scope: OtpScope): FilterQuery<VerificationCode> {
-    if (scope.purpose === 'login') return { phone, purpose: { $ne: 'phone_change' } };
+    if (scope.purpose === 'login') return { phone, purpose: { $in: ['login', null] } };
 
     return { phone, purpose: scope.purpose, user_id: new Types.ObjectId(scope.user_id) };
 }

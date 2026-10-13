@@ -379,7 +379,7 @@ describe('bookings (e2e)', () => {
         expect(await fx.collection('Service').countDocuments({ label: 'Renamed' })).toBe(0);
     });
 
-    it('deleting the service or the user removes the bookings on the other side', async () => {
+    it('deleting the user cancels its bookings, deleting the service removes them', async () => {
         const option = fx.bookableOption(5);
         const service = await fx.service(organization.id, { options: [option] });
         const a = await fx.client();
@@ -401,9 +401,18 @@ describe('bookings (e2e)', () => {
             ).status,
         ).toBe(204);
         expect(await timeEntry(service.id)).toMatchObject({ booked_count: 1 });
-        const remaining = await fx.collection<{ user_id: Types.ObjectId }>('Booking').find({}).lean();
-        expect(remaining).toHaveLength(1);
-        expect(remaining[0]!.user_id.toHexString()).toBe(b.id);
+        const remaining = await fx
+            .collection<{ user_id: Types.ObjectId; status: string; person: string }>('Booking')
+            .find({})
+            .lean();
+        expect(remaining).toHaveLength(2);
+        expect(remaining.find((row) => row.user_id.toHexString() === a.id)).toMatchObject({
+            status: 'cancelled',
+            person: '',
+        });
+        expect(remaining.find((row) => row.user_id.toHexString() === b.id)).toMatchObject({
+            status: 'confirmed',
+        });
 
         expect(
             (
@@ -416,7 +425,7 @@ describe('bookings (e2e)', () => {
             (await fx.collection<{ deleted_at: Date | null }>('Service').findById(service.id).lean())
                 ?.deleted_at,
         ).toBeInstanceOf(Date);
-        expect(await fx.collection('Booking').countDocuments({})).toBe(1);
+        expect(await fx.collection('Booking').countDocuments({})).toBe(2);
 
         expect(
             (

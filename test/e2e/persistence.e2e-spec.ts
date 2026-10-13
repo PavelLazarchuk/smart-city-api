@@ -35,6 +35,7 @@ const migrations: Migration[] = [
     channelTemplatesMigration,
     require('../../migrations/20261003000000-notifications.js') as Migration,
     require('../../migrations/20261006000000-check-in-and-viber.js') as Migration,
+    require('../../migrations/20261013000000-deleted-account-trail.js') as Migration,
 ];
 /* eslint-enable @typescript-eslint/no-require-imports */
 

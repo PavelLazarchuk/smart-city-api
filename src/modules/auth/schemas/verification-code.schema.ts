@@ -3,7 +3,7 @@ import { type HydratedDocument, SchemaTypes, type Types } from 'mongoose';
 
 import { baseSchemaOptions } from '../../../common/database/schema-options';
 
-export const OTP_PURPOSES = ['login', 'phone_change'] as const;
+export const OTP_PURPOSES = ['login', 'phone_change', 'account_deletion'] as const;
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
 
 @Schema(baseSchemaOptions('verification_codes'))

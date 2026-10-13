@@ -285,6 +285,7 @@ export class BookingsRepository extends BaseRepository<Booking> {
 
     findWithinInterval(
         userId: Types.ObjectId,
+        phoneHash: string | null,
         scope: IntervalScope,
         window: IntervalWindow,
         excludeId: string | null,
@@ -292,13 +293,19 @@ export class BookingsRepository extends BaseRepository<Booking> {
     ): Promise<BookingEntity | null> {
         return this.model
             .findOne({
-                user_id: userId,
                 ...scope,
                 status: { $ne: 'cancelled' },
                 ...(excludeId ? { id: { $ne: excludeId } } : {}),
-                $or: [
-                    { slot_date: { $gte: window.from, $lte: window.to } },
-                    { slot_date: null, created_at: { $gte: window.since, $lt: window.until } },
+                $and: [
+                    phoneHash
+                        ? { $or: [{ user_id: userId }, { phone_hash: phoneHash }] }
+                        : { user_id: userId },
+                    {
+                        $or: [
+                            { slot_date: { $gte: window.from, $lte: window.to } },
+                            { slot_date: null, created_at: { $gte: window.since, $lt: window.until } },
+                        ],
+                    },
                 ],
             })
             .sort({ slot_date: 1, created_at: 1 })
@@ -432,16 +439,21 @@ export class BookingsRepository extends BaseRepository<Booking> {
         return this.deleteMany({ user_id: new Types.ObjectId(userId) }, session);
     }
 
-    async anonymizeFinishedByUser(userId: string, session?: ClientSession): Promise<number> {
-        const result = await this.model
-            .updateMany(
-                { user_id: new Types.ObjectId(userId), active: false },
-                { $set: { person: '', phone: '', info: '', address: null, fields: {}, documents: [] } },
-            )
+    async anonymizeByUser(userId: string, phoneHash: string | null, session?: ClientSession): Promise<void> {
+        const owner = { user_id: new Types.ObjectId(userId) };
+
+        await this.model
+            .updateMany(owner, {
+                $set: { person: '', phone: '', info: '', address: null, fields: {}, documents: [] },
+            })
             .session(session ?? null)
             .exec();
 
-        return result.modifiedCount;
+        if (phoneHash)
+            await this.model
+                .updateMany({ ...owner, status: { $ne: 'cancelled' } }, { $set: { phone_hash: phoneHash } })
+                .session(session ?? null)
+                .exec();
     }
 
     deleteByService(serviceId: string, session?: ClientSession): Promise<number> {

@@ -52,6 +52,7 @@ describe('env schema', () => {
                 MAIL_PROVIDER: 'smtp',
                 SMTP_HOST: 'mail.example.com',
                 METRICS_TOKEN: 'metrics-token',
+                PHONE_HASH_SECRET: 'p'.repeat(32),
             }),
         ).toMatchObject({ SMS_PROVIDER: 'smpp', MAIL_PROVIDER: 'smtp' });
         expect(validateEnv(base).SMS_PROVIDER).toBe('console');
@@ -81,6 +82,7 @@ describe('env schema', () => {
             MAIL_PROVIDER: 'smtp',
             SMTP_HOST: 'mail.example.com',
             METRICS_TOKEN: 'metrics-token',
+            PHONE_HASH_SECRET: 'p'.repeat(32),
         };
         expect(new AppConfig(validateEnv(production)).http.swaggerEnabled).toBe(false);
         expect(
@@ -98,10 +100,31 @@ describe('env schema', () => {
             SMPP_PASSWORD: 'secret',
             MAIL_PROVIDER: 'smtp',
             SMTP_HOST: 'mail.example.com',
+            PHONE_HASH_SECRET: 'p'.repeat(32),
         };
         expect(() => validateEnv(production)).toThrow(/METRICS_TOKEN/);
         expect(validateEnv({ ...production, METRICS_ENABLED: 'false' }).METRICS_ENABLED).toBe(false);
         expect(validateEnv(base).METRICS_TOKEN).toBeUndefined();
+    });
+
+    it('demands a phone hash secret in production and falls back to a development one elsewhere', () => {
+        const production = {
+            ...base,
+            NODE_ENV: 'production',
+            SMS_PROVIDER: 'smpp',
+            SMPP_URL: 'smpp://host:2775',
+            SMPP_SYSTEM_ID: 'id',
+            SMPP_PASSWORD: 'secret',
+            MAIL_PROVIDER: 'smtp',
+            SMTP_HOST: 'mail.example.com',
+            METRICS_TOKEN: 'metrics-token',
+        };
+        expect(() => validateEnv(production)).toThrow(/PHONE_HASH_SECRET/);
+        expect(() => validateEnv({ ...base, PHONE_HASH_SECRET: 'short' })).toThrow(/PHONE_HASH_SECRET/);
+        expect(
+            new AppConfig(validateEnv({ ...production, PHONE_HASH_SECRET: 'p'.repeat(32) })).phone.hashSecret,
+        ).toBe('p'.repeat(32));
+        expect(new AppConfig(validateEnv(base)).phone.hashSecret.length).toBeGreaterThanOrEqual(32);
     });
 
     it('keeps the lockout window ordered and pins the Mongo connection defaults', () => {

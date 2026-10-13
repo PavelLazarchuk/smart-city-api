@@ -104,3 +104,6 @@ export class UpdateProfileDto extends createZodDto(updateProfileSchema) {}
 
 export const phoneCodeRequestSchema = z.object({ phone: phoneSchema });
 export class PhoneCodeRequestDto extends createZodDto(phoneCodeRequestSchema) {}
+
+export const deleteAccountSchema = z.object({ code: otpCodeSchema });
+export class DeleteAccountDto extends createZodDto(deleteAccountSchema) {}

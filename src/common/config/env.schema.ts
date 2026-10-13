@@ -122,6 +122,7 @@ export const envSchema = z
             .string()
             .regex(/^\d{1,3}$/)
             .default('49'),
+        PHONE_HASH_SECRET: optionalString.pipe(z.string().min(32).optional()),
 
         THROTTLE_TTL_SECONDS: positiveInt(60),
         THROTTLE_LIMIT: positiveInt(10),
@@ -289,6 +290,14 @@ export const envSchema = z
         }
 
         if (env.NODE_ENV === 'production') {
+            if (!env.PHONE_HASH_SECRET) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['PHONE_HASH_SECRET'],
+                    message: 'PHONE_HASH_SECRET is required in production',
+                });
+            }
+
             if (env.METRICS_ENABLED && !env.METRICS_TOKEN) {
                 ctx.addIssue({
                     code: 'custom',

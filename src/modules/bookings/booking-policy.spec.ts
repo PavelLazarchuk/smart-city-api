@@ -6,6 +6,7 @@ import { type BookingPolicy } from '../services/schemas/service.schema';
 import {
     assertBookingWindow,
     assertCancelDeadline,
+    blockingSuspension,
     cancelDeadlinePassed,
     checkInOpen,
     inForce,
@@ -159,6 +160,19 @@ describe('suspension state', () => {
         ['an expired suspension', row({ suspended: true, until: at(-MINUTE) }), false],
     ])('%s is in force: %s', (_, value, expected) => {
         expect(inForce(value, NOW)).toBe(expected);
+    });
+
+    it('blocks with the longest suspension in force across the account and the phone', () => {
+        const lifted = row({ suspended: false, until: null });
+        const short = row({ suspended: true, until: at(DAY_MS) });
+        const long = row({ suspended: true, until: at(3 * DAY_MS) });
+        const indefinite = row({ suspended: true, until: null });
+
+        expect(blockingSuspension([], NOW)).toBeNull();
+        expect(blockingSuspension([lifted], NOW)).toBeNull();
+        expect(blockingSuspension([short, long], NOW)).toBe(long);
+        expect(blockingSuspension([long, short], NOW)).toBe(long);
+        expect(blockingSuspension([short, indefinite, long], NOW)).toBe(indefinite);
     });
 
     it('ends a manual suspension after the given days or never', () => {

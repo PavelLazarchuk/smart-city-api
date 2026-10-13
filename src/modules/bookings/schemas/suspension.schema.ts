@@ -55,6 +55,9 @@ export class BookingSuspension {
 
     @Prop({ type: Date, default: null })
     touched_at!: Date | null;
+
+    @Prop({ type: String })
+    phone_hash?: string;
 }
 
 export type BookingSuspensionDocument = HydratedDocument<BookingSuspension>;
@@ -66,3 +69,7 @@ BookingSuspensionSchema.index(
 );
 BookingSuspensionSchema.index({ service_id: 1 });
 BookingSuspensionSchema.index({ organization_id: 1, suspended_at: -1 });
+BookingSuspensionSchema.index(
+    { phone_hash: 1, service_id: 1 },
+    { name: 'phone_hash_1_service_id_1', partialFilterExpression: { phone_hash: { $type: 'string' } } },
+);

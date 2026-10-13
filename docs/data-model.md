@@ -26,7 +26,7 @@ transaction and its children are removed by the hooks registered in the `Cascade
 | `images`              | Uploaded files                                                 | `organization_id`, storage key, mime, size                                                                                                                                                                                                                                                                                                                                                |
 | `archives`            | Snapshots of finished bookings                                 | `organization_id`, `service_id`, `type`, `payload` (Mixed)                                                                                                                                                                                                                                                                                                                                |
 | `bookings`            | One booking of one slot                                        | `id` (public uuid), `service_id`, `organization_id`, `option_id`, `slot_id`, `slot_date`, `slot_time`, `starts_at`, `user_id`, `person`, `phone`, `info`, `fields`, `documents`, `status`, `active`, `confirmed_at`, `arrived_at`, `finished_at`, `late_cancel`, `checkin_code`, `reminder_sent_at`, `created_by`                                                                         |
-| `booking_suspensions` | No-show and manual suspensions, one row per client and service | `id`, `user_id`, `service_id`, `organization_id`, `suspended`, `until` (`null` = until lifted), `kind` (`no_show` \| `manual`), `reason`, `booking_ids[]`, `counted_from`, `suspended_at`/`_by`, `lifted_at`/`_by`                                                                                                                                                                        |
+| `booking_suspensions` | No-show and manual suspensions, one row per client and service | `id`, `user_id`, `service_id`, `organization_id`, `suspended`, `until` (`null` = until lifted), `kind` (`no_show` \| `manual`), `reason`, `booking_ids[]`, `counted_from`, `suspended_at`/`_by`, `lifted_at`/`_by`, `phone_hash` (only after the account was deleted)                                                                                                                     |
 | `waitlist`            | Clients waiting for a full slot                                | `id`, slot coordinates, `user_id`, `person`, `phone`, `status` (`waiting` \| `notified`), `notified_at`                                                                                                                                                                                                                                                                                   |
 | `outbox_events`       | Transactional outbox                                           | `id`, `type`, `organization_id`, `payload`, `internal`, `status`, `attempts`, `next_attempt_at`, `claimed_until`, `deliveries[]`, `request_id`, `trace`                                                                                                                                                                                                                                   |
 | `webhooks`            | Subscriber URLs                                                | `organization_id` (`null` = platform-wide), `url`, `secret` (select: false), `events[]`, `enabled`, last outcome                                                                                                                                                                                                                                                                          |
@@ -187,8 +187,15 @@ one as `no_show`; a `no_show` checked in on its own day becomes `arrived`.
 the statistics without blocking the client from booking the slot again. Only active rows count against
 capacity, appear in the default listings (`?status=all` lifts the filter) and are grafted into a service for
 its admins. `finished_at` is set on every terminal status and carries the history TTL
-(365 days). Deleting an account deletes its active bookings (capacity released) and
-anonymises the finished ones — the outcome survives, the person does not.
+(365 days). Deleting an account cancels its active bookings like an owner's cancellation — capacity released,
+the waitlist told, `booking.cancelled` emitted with `account_deleted: true` and no name or phone; one past its cancel deadline or its start counts as
+a late cancel toward the no-show limit — and then
+anonymises every row: the outcome survives, the person does not. Rows that are not `cancelled` keep
+`phone_hash`, a keyed HMAC-SHA256 of the phone (`PHONE_HASH_SECRET`), so `min_interval_days` still sees them when
+a new account signs up with the same number. The same hash goes onto the account's suspensions that are still
+in force (the others are deleted): a new account on that phone stays blocked until `until`, when a partial TTL
+index removes the row, or until staff lift it, which deletes it. Staff see such a row with
+`account_deleted: true`, and `GET /suspensions?user_id=` of the new account lists it too. Earlier no-shows of the deleted account do not count toward the next account's limit.
 
 ## Check-in
 
@@ -378,7 +385,8 @@ Shape of the set:
   slot + status + `created_at` (first in line); `outbox_events` by `{ status, next_attempt_at }` (the claim);
   `webhooks` by `{ enabled, events }` (the fan-out); `service_revisions` by `{ service_id, created_at }`;
   `booking_suspensions` is unique on `{ user_id, service_id }` and indexed by `{ service_id }` (cascade) and
-  `{ organization_id, suspended_at }` (the staff listing).
+  `{ organization_id, suspended_at }` (the staff listing), plus `{ phone_hash, service_id }` and a TTL on
+  `until`, both partial on rows kept for a deleted account's phone; `bookings` has a partial `{ phone_hash }`.
 - **Uniqueness** — `users.login`, `users.phone` and `users.calendar_token_hash` are unique with a partial filter
   on `{ $type: 'string' }`, so any number of accounts may have no login, no phone or no calendar token.
 - **Favorites** — `{ user_id, type, target_id }` is unique (adding twice is a no-op), `{ user_id, created_at }`

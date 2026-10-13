@@ -37,7 +37,9 @@ See `.env.example`. Minimum for production: `NODE_ENV=production`, `MONGO_URI`, 
 `JWT_REFRESH_SECRET` (32+ characters each, different values), `CORS_ORIGINS`, provider settings
 (`SMS_PROVIDER=smpp` + `SMPP_*`, `MAIL_PROVIDER=smtp` + `SMTP_*`, `STORAGE_PROVIDER` + its settings,
 `VIBER_PROVIDER=turbosms` + `TURBOSMS_TOKEN` when Viber is wanted, otherwise `none`),
-`REPORT_RECIPIENTS`, `JOBS_TIMEZONE`, and `METRICS_TOKEN` unless `METRICS_ENABLED=false`.
+`REPORT_RECIPIENTS`, `JOBS_TIMEZONE`, `METRICS_TOKEN` unless `METRICS_ENABLED=false`, and
+`PHONE_HASH_SECRET` (32+ characters). The last one keys the phone hashes that outlive a deleted account; changing
+it later makes the kept suspensions and interval history unreachable, so set it once and keep it.
 
 The console providers are **refused** under `NODE_ENV=production`: `ConsoleSmsProvider` writes the message
 body — which carries the one-time code — to the log, so a production process that fell back to the default

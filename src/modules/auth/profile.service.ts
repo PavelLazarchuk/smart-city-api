@@ -17,6 +17,10 @@ function phoneChangeScope(user: AuthUser): OtpScope {
     return { purpose: 'phone_change', user_id: user.id };
 }
 
+function deletionScope(user: AuthUser): OtpScope {
+    return { purpose: 'account_deletion', user_id: user.id };
+}
+
 @Injectable()
 export class ProfileService {
     constructor(
@@ -52,6 +56,32 @@ export class ProfileService {
         }
 
         return response;
+    }
+
+    async requestDeletionCode(user: AuthUser): Promise<{ phone: string; expires_in: number }> {
+        const { phone } = await this.users.getById(user.id);
+
+        if (!phone) throw ApiError.unprocessable('CLIENT_PHONE_REQUIRED');
+
+        await this.otp.assertCanSend(phone);
+        const code = await this.otp.issue(phone, deletionScope(user));
+
+        try {
+            await this.sms.send(phone, texts.sms.accountDeletion(code), 'verification');
+        } catch (error) {
+            this.logger.error({ err: error }, 'account deletion sms delivery failed');
+        }
+
+        return { phone, expires_in: this.otp.ttlSeconds };
+    }
+
+    async deleteAccount(user: AuthUser, code: string): Promise<void> {
+        const { phone } = await this.users.getById(user.id);
+
+        if (!phone || !(await this.otp.confirm(phone, code, deletionScope(user))))
+            throw ApiError.unprocessable('DELETION_CODE_INVALID');
+
+        await this.users.delete(user.id);
     }
 
     async update(user: AuthUser, input: UpdateProfileInput): Promise<UserEntity> {

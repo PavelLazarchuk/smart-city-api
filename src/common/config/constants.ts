@@ -20,6 +20,8 @@ export const REDIS_CONNECTION = {
 export const ARGON2_PARAMS = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
 export const ARGON2_TEST_PARAMS = { memoryCost: 4096, timeCost: 1, parallelism: 1 } as const;
 
+export const DEVELOPMENT_PHONE_HASH_SECRET = 'development-phone-hash-secret-never-in-production';
+
 export const IDEMPOTENCY_TTL_SECONDS = 24 * 3600;
 
 export const SLOT_BULK_MAX_BOOKINGS = 500;

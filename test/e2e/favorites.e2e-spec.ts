@@ -145,7 +145,7 @@ describe('favorites (e2e)', () => {
         expect(await favorites.countDocuments({})).toBe(1);
 
         expect(
-            (await t.http.delete(`${t.prefix}/users/${client.id}`).set('Authorization', bearer)).status,
+            (await t.http.delete(`${t.prefix}/users/${client.id}`).set('Authorization', superAdmin)).status,
         ).toBe(204);
         expect(await favorites.countDocuments({})).toBe(0);
     });

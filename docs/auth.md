@@ -96,6 +96,13 @@ code. A successful change revokes every other session of the account and drops t
 `POST /me/phone/code` sits under the strict `THROTTLE_LIMIT` like `/auth/*`, and `PATCH /me` with a `phone`
 under the per-phone limit.
 
+A client deletes the account in two steps: `POST /me/deletion/code` sends an `account_deletion` code to the
+account's own phone, and `DELETE /me` with `{ "code" }` deletes it (`204`); a wrong, expired or foreign code is
+`422 DELETION_CODE_INVALID`. Codes are bound to their purpose and account: a login code does not delete, and a
+deletion code does not sign in. `DELETE /users/:id` is for the super-admin only, so a stolen access token alone
+cannot delete an account. Both steps sit under the strict `THROTTLE_LIMIT`. What deletion keeps is described in
+[data-model.md](data-model.md#booking-lifecycle).
+
 `PATCH /me` with `{ "reminders": false }` stops the booking reminders that would reach the client by SMS or
 Viber; `true` turns them back on, and accounts start with them on. The reminder still arrives in the app and, for
 an account with an e-mail, by e-mail; cancellations, moves, freed places and suspensions are not reminders and
@@ -151,6 +158,7 @@ freed-place notices go to it instead of by SMS.
 | `PATCH /auth/password`                             | Change own password                            |
 | `PATCH /me`                                        | Change own name, e-mail or (with a code) phone |
 | `POST /me/phone/code`                              | Send a code to the new phone                   |
+| `POST /me/deletion/code` / `DELETE /me`            | Delete own account (clients, with a code)      |
 
 ## How a route is authorised
 

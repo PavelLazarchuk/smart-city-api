@@ -31,6 +31,7 @@ import {
 import { ACTIVE_BOOKING_STATUSES, type Booking, type BookingStatus } from './schemas/booking.schema';
 import { type WaitlistEntry } from './schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from './waitlist.repository';
+import { PhonePolicy } from '../auth/phone.policy';
 import { type OrganizationEntity } from '../organizations/organizations.repository';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
@@ -42,6 +43,7 @@ import { BookingCalendarService } from './booking-calendar.service';
 import {
     assertBookingWindow,
     assertCancelDeadline,
+    cancelDeadlinePassed,
     checkInOpen,
     intervalWindow,
     resolveCancel,
@@ -228,6 +230,7 @@ export class BookingsService implements OnModuleInit {
         private readonly masker: ServicesMasker,
         private readonly calendar: BookingCalendarService,
         private readonly suspensions: SuspensionsService,
+        private readonly phones: PhonePolicy,
         private readonly pagination: PaginationService,
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
@@ -236,17 +239,15 @@ export class BookingsService implements OnModuleInit {
     ) {}
 
     onModuleInit(): void {
-        this.cascade.register('user', 'bookings.delete', async (userId, ctx) => {
-            const active = await this.bookings.findByUser(userId, ctx.session, true);
-
-            for (const booking of active) await this.releaseCapacity(booking, ctx.session);
-
-            await this.bookings.anonymizeFinishedByUser(userId, ctx.session);
-            await this.bookings.deleteMany(
-                { user_id: new Types.ObjectId(userId), active: true },
-                ctx.session,
-            );
+        this.cascade.register('user', 'bookings.withdraw', async (userId, ctx) => {
+            const phoneHash = this.phones.hashOrNull((await this.users.findById(userId))?.phone);
             await this.waitlist.deleteByUser(userId, ctx.session);
+
+            for (const booking of await this.bookings.findByUser(userId, ctx.session, true))
+                await this.withdraw(booking, ctx);
+
+            await this.bookings.anonymizeByUser(userId, phoneHash, ctx.session);
+            await this.suspensions.onAccountDeleted(userId, phoneHash, ctx);
         });
         this.cascade.register('service', 'bookings.delete', async (serviceId, ctx) => {
             await this.bookings.deleteByService(serviceId, ctx.session);
@@ -383,14 +384,14 @@ export class BookingsService implements OnModuleInit {
 
             if (!input.on_behalf) {
                 await this.suspensions.assertNotSuspended(
-                    actor.id,
+                    actor,
                     service._id.toHexString(),
                     createdAt,
                     ctx.session,
                 );
                 this.assertPolicy(bookable, target, actor, createdAt);
                 await this.assertActiveLimits(bookable, actor, ctx.session);
-                await this.assertInterval(bookable, booker.id, target, createdAt, null, ctx.session);
+                await this.assertInterval(bookable, booker, target, createdAt, null, ctx.session);
             }
 
             const { fields, documents } = this.validateForm(service, input);
@@ -837,7 +838,14 @@ export class BookingsService implements OnModuleInit {
 
             if (!admin) {
                 this.assertPolicy(bookable, target, actor, now);
-                await this.assertInterval(bookable, booking.user_id, target, now, booking.id, ctx.session);
+                await this.assertInterval(
+                    bookable,
+                    { id: booking.user_id, phone: actor.phone ?? booking.phone },
+                    target,
+                    now,
+                    booking.id,
+                    ctx.session,
+                );
             }
 
             const address = this.addressFor(target, input.address ?? booking.address ?? undefined);
@@ -940,6 +948,42 @@ export class BookingsService implements OnModuleInit {
         return moved;
     }
 
+    private async withdraw(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
+        const now = new Date();
+        const service = await this.services.findById(booking.service_id.toHexString(), ctx.session);
+        const late =
+            (booking.starts_at !== null && booking.starts_at.getTime() <= now.getTime()) ||
+            cancelDeadlinePassed(service?.booking_policy, booking.starts_at, now);
+        const moved = await this.bookings.transition(
+            booking.id,
+            [...ACTIVE_BOOKING_STATUSES],
+            'cancelled',
+            booking.user_id,
+            now,
+            ctx.session,
+            late ? { late_cancel: true } : {},
+        );
+
+        if (!moved) return;
+
+        if (late) await this.suspensions.onLateCancel(moved, ctx);
+
+        await this.releaseCapacity(booking, ctx.session);
+        await this.notifyWaitlist(booking, ctx);
+        await this.emit(
+            ctx,
+            'booking.cancelled',
+            moved,
+            { actor: { id: booking.user_id.toHexString(), kind: 'client' } },
+            {
+                cancelled_by: 'owner',
+                account_deleted: true,
+                previous_status: booking.status,
+                ...(late ? { late_cancel: true } : {}),
+            },
+        );
+    }
+
     async joinWaitlist(
         serviceId: string,
         input: JoinWaitlistInput,
@@ -950,7 +994,7 @@ export class BookingsService implements OnModuleInit {
             const bookable = await this.loadBookable(serviceId, actor, ctx.session);
             const { service } = bookable;
 
-            await this.suspensions.assertNotSuspended(actor.id, serviceId, now, ctx.session);
+            await this.suspensions.assertNotSuspended(actor, serviceId, now, ctx.session);
 
             const slot = await this.slots.findSlot(serviceId, input.option_id, input.slot_id, ctx.session);
 
@@ -1205,13 +1249,14 @@ export class BookingsService implements OnModuleInit {
 
     private async assertInterval(
         { service, organization, timeZone }: Bookable,
-        userId: Types.ObjectId,
+        client: Pick<Booker, 'id' | 'phone'>,
         target: Target,
         now: Date,
         excludeId: string | null,
         session: ClientSession,
     ): Promise<void> {
         const date = target.slot.value.date ?? dateOnlyIn(now, timeZone);
+        const phoneHash = this.phones.hashOrNull(client.phone);
         const rules: IntervalRule[] = [
             {
                 days: service.booking_policy?.min_interval_days,
@@ -1229,7 +1274,8 @@ export class BookingsService implements OnModuleInit {
             if (!days) continue;
 
             const clash = await this.bookings.findWithinInterval(
-                userId,
+                client.id,
+                phoneHash,
                 scope,
                 intervalWindow(days, date, timeZone),
                 excludeId,

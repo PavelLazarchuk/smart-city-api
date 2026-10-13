@@ -112,6 +112,9 @@ export class Booking {
 
     @Prop({ type: String, default: null })
     checkin_code?: string | null;
+
+    @Prop({ type: String })
+    phone_hash?: string;
 }
 
 export type BookingDocument = HydratedDocument<Booking>;
@@ -141,3 +144,7 @@ BookingSchema.index(
 );
 BookingSchema.index({ checkin_code: 1, created_at: -1 });
 BookingSchema.index({ service_id: 1, status: 1, starts_at: 1 });
+BookingSchema.index(
+    { phone_hash: 1 },
+    { name: 'phone_hash_1', partialFilterExpression: { phone_hash: { $type: 'string' } } },
+);

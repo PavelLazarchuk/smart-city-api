@@ -106,6 +106,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `SELF_ROLE_CHANGE`            | 422    | Nobody changes their own role                                           |
 | `PHONE_CODE_REQUIRED`         | 422    | `PATCH /me` with a new phone but no code from `POST /me/phone/code`     |
 | `PHONE_CODE_INVALID`          | 422    | The phone-change code is wrong, expired, used up or someone else's      |
+| `DELETION_CODE_INVALID`       | 422    | `DELETE /me`: the code from `POST /me/deletion/code` is wrong or stale  |
 | `ADMIN_PASSWORD_REQUIRED`     | 422    | Admins sign in by password, so the account needs a login and a password |
 | `ADMIN_PHONE_REQUIRED`        | 422    | Admins sign in by code, so the account needs a phone                    |
 | `CLIENT_PHONE_REQUIRED`       | 422    | A client account needs a phone                                          |

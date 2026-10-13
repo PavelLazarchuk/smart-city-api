@@ -1,6 +1,7 @@
 import {
     ARGON2_PARAMS,
     ARGON2_TEST_PARAMS,
+    DEVELOPMENT_PHONE_HASH_SECRET,
     HTTP_BODY_LIMIT,
     IDEMPOTENCY_TTL_SECONDS,
     JOB_CASCADE_RECONCILE_LIMIT,
@@ -87,7 +88,7 @@ export class AppConfig {
         dailyLimitPerPhone: number;
     };
 
-    readonly phone: { countryCode: string };
+    readonly phone: { countryCode: string; hashSecret: string };
 
     readonly throttle: {
         ttlSeconds: number;
@@ -231,7 +232,10 @@ export class AppConfig {
             resendCooldownSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
             dailyLimitPerPhone: env.OTP_DAILY_LIMIT_PER_PHONE,
         };
-        this.phone = { countryCode: env.PHONE_COUNTRY_CODE };
+        this.phone = {
+            countryCode: env.PHONE_COUNTRY_CODE,
+            hashSecret: env.PHONE_HASH_SECRET ?? DEVELOPMENT_PHONE_HASH_SECRET,
+        };
         this.throttle = {
             ttlSeconds: env.THROTTLE_TTL_SECONDS,
             limit: env.THROTTLE_LIMIT,

@@ -17,6 +17,7 @@ export const suspensionResourceSchema = z.object({
     organization_id: idOutputSchema,
     service_label: z.string().catch(''),
     active: z.boolean(),
+    account_deleted: z.boolean().catch(false),
     kind: z.enum(SUSPENSION_KINDS).nullable().catch(null),
     reason: z.string().nullable().catch(null),
     until: isoDateTimeSchema.nullable().catch(null),

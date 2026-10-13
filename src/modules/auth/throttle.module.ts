@@ -65,7 +65,12 @@ function storageFor(
                             skipIf: (context) => {
                                 const path = pathOf(context);
 
-                                return !path.includes('/auth/') && !path.endsWith('/me/phone/code');
+                                return (
+                                    !path.includes('/auth/') &&
+                                    !path.endsWith('/me/phone/code') &&
+                                    !path.endsWith('/me/deletion/code') &&
+                                    !(methodOf(context) === 'DELETE' && path.endsWith('/me'))
+                                );
                             },
                         },
                         {

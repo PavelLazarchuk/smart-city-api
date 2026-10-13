@@ -23,6 +23,7 @@ import { type BookingStatus } from './schemas/booking.schema';
 import { type BookingSuspension } from './schemas/suspension.schema';
 import { type BookingSuspensionEntity, SuspensionsRepository } from './suspensions.repository';
 import { WaitlistRepository } from './waitlist.repository';
+import { PhonePolicy } from '../auth/phone.policy';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
 import { SmsService } from '../sms/sms.service';
@@ -30,6 +31,7 @@ import { type UserEntity } from '../users/users.repository';
 import { UsersService } from '../users/users.service';
 import { organizationOf, recipientEmail, text } from './booking-events';
 import {
+    blockingSuspension,
     inForce,
     liftedByCorrection,
     manualSuspensionEnd,
@@ -51,6 +53,7 @@ function toResource(row: BookingSuspensionEntity, now = new Date()): SuspensionR
         organization_id: row.organization_id.toHexString(),
         service_label: row.service_label,
         active: inForce(row, now),
+        account_deleted: Boolean(row.phone_hash),
         kind: row.kind ?? null,
         reason: row.reason ?? null,
         until: row.until ? row.until.toISOString() : null,
@@ -98,15 +101,13 @@ export class SuspensionsService implements OnModuleInit {
         private readonly mail: MailService,
         private readonly sms: SmsService,
         private readonly templates: ChannelTemplatesService,
+        private readonly phones: PhonePolicy,
         private readonly pagination: PaginationService,
         private readonly tx: TransactionRunner,
         private readonly cascade: CascadeRegistry,
     ) {}
 
     onModuleInit(): void {
-        this.cascade.register('user', 'suspensions.delete', async (userId, ctx) => {
-            await this.suspensions.deleteByUser(userId, ctx.session);
-        });
         this.cascade.register('service', 'suspensions.delete', async (serviceId, ctx) => {
             await this.suspensions.deleteByService(serviceId, ctx.session);
         });
@@ -137,15 +138,25 @@ export class SuspensionsService implements OnModuleInit {
         });
     }
 
+    async onAccountDeleted(userId: string, phoneHash: string | null, ctx: TransactionContext): Promise<void> {
+        await this.suspensions.detachUser(userId, phoneHash, new Date(), ctx.session);
+    }
+
     async assertNotSuspended(
-        userId: string,
+        client: { id: string; phone?: string | null },
         serviceId: string,
         now: Date,
         session: ClientSession,
     ): Promise<void> {
-        const row = await this.suspensions.findForClient(userId, serviceId, session);
+        const rows = await this.suspensions.findForPerson(
+            client.id,
+            this.phones.hashOrNull(client.phone),
+            serviceId,
+            session,
+        );
+        const row = blockingSuspension(rows, now);
 
-        if (!inForce(row, now)) return;
+        if (!row) return;
 
         throw ApiError.unprocessable('BOOKING_SUSPENDED', [
             { path: 'until', message: row.until ? row.until.toISOString() : 'until lifted' },
@@ -227,7 +238,14 @@ export class SuspensionsService implements OnModuleInit {
 
         if (query.service_id) filter['service_id'] = new Types.ObjectId(query.service_id);
 
-        if (query.user_id) filter['user_id'] = new Types.ObjectId(query.user_id);
+        if (query.user_id) {
+            const phoneHash = this.phones.hashOrNull((await this.users.findById(query.user_id))?.phone);
+            filter['$and'] = [
+                phoneHash
+                    ? { $or: [{ user_id: new Types.ObjectId(query.user_id) }, { phone_hash: phoneHash }] }
+                    : { user_id: new Types.ObjectId(query.user_id) },
+            ];
+        }
 
         if ((query.status ?? 'active') === 'active') {
             filter['suspended'] = true;
@@ -267,6 +285,18 @@ export class SuspensionsService implements OnModuleInit {
 
         if (!service || !noShowEnabled(policy)) return;
 
+        const client = await this.users.findById(booking.user_id.toHexString());
+
+        if (
+            !client &&
+            !(await this.suspensions.findForClient(
+                booking.user_id.toHexString(),
+                booking.service_id.toHexString(),
+                ctx.session,
+            ))
+        )
+            return;
+
         const now = new Date();
         const row = await this.suspensions.touch(this.subjectOf(service, booking.user_id), now, ctx.session);
         const missed = await this.bookings.findNoShowIds(
@@ -278,8 +308,6 @@ export class SuspensionsService implements OnModuleInit {
         const change = noShowSanction(policy, row, missed, now);
 
         if (!change) return;
-
-        const client = await this.users.findById(booking.user_id.toHexString());
 
         await this.suspend(
             row,
@@ -337,7 +365,11 @@ export class SuspensionsService implements OnModuleInit {
             ctx.session,
         );
 
-        if (updated) await this.emit('booking.suspension_lifted', updated, null, actor, ctx);
+        if (!updated) return;
+
+        await this.emit('booking.suspension_lifted', updated, null, actor, ctx);
+
+        if (updated.phone_hash) await this.suspensions.deleteByPublicId(updated.id, ctx.session);
     }
 
     private async emit(
