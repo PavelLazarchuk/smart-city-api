@@ -48,6 +48,7 @@ jobs:
                     -e MONGO_URI='mongodb://smoke-mongo:27017/smoke?replicaSet=rs0' \
                     -e JWT_ACCESS_SECRET='ci-access-secret-ci-access-secret-000000' \
                     -e JWT_REFRESH_SECRET='ci-refresh-secret-ci-refresh-secret-0000' \
+                    -e PHONE_HASH_SECRET='ci-phone-hash-secret-ci-phone-hash-0000' \
                     -e SMS_PROVIDER=smpp -e SMPP_URL='smpp://localhost:2775' \
                     -e SMPP_SYSTEM_ID=ci -e SMPP_PASSWORD=ci \
                     -e MAIL_PROVIDER=smtp -e SMTP_HOST=localhost \
