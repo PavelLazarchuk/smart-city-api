@@ -86,3 +86,25 @@ export function validateDocuments(required: RequiredDocument[], confirmed: strin
 
     return details;
 }
+
+const MASK = '****';
+
+export function maskValue(value: unknown): string {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+
+    return text.length > 6 ? `${MASK}${text.slice(-2)}` : MASK;
+}
+
+export function maskFields(
+    fields: Record<string, unknown>,
+    sensitive: readonly string[],
+): Record<string, unknown> {
+    if (sensitive.length === 0) return fields;
+
+    return Object.fromEntries(
+        Object.entries(fields).map(([key, value]) => [
+            key,
+            sensitive.includes(key) ? maskValue(value) : value,
+        ]),
+    );
+}

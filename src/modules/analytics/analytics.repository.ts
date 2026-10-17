@@ -16,10 +16,7 @@ export class AnalyticsRepository extends BaseRepository<AnalyticsEvent> {
     /** A deleted account's events are stripped of identity, not deleted: counts stay comparable across periods. */
     async anonymizeUser(userId: string, session?: ClientSession): Promise<number> {
         const result = await this.model
-            .updateMany(
-                { user_id: new Types.ObjectId(userId) },
-                { $unset: { user_id: 1, user_name: 1, user_phone: 1 } },
-            )
+            .updateMany({ user_id: new Types.ObjectId(userId) }, { $unset: { user_id: 1 } })
             .session(session ?? null)
             .exec();
 

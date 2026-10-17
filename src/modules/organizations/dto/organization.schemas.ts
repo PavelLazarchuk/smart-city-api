@@ -179,6 +179,9 @@ export const nearbyOrganizationsQuerySchema = z.object({
 export type NearbyOrganizationsQuery = z.infer<typeof nearbyOrganizationsQuerySchema>;
 export class NearbyOrganizationsQueryDto extends createZodDto(nearbyOrganizationsQuerySchema) {}
 
+export const deleteOrganizationQuerySchema = z.object({ cancel_bookings: z.stringbool().optional() });
+export class DeleteOrganizationQueryDto extends createZodDto(deleteOrganizationQuerySchema) {}
+
 export const reorderSchema = z.object({ ids: idListSchema });
 export type ReorderInput = z.infer<typeof reorderSchema>;
 export class ReorderDto extends createZodDto(reorderSchema) {}

@@ -11,6 +11,7 @@ import { usesCursorMode } from '../../common/pagination/pagination.schema';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { SettingsService } from '../../common/settings/settings.service';
 import { inSpan } from '../../common/tracing/spans';
+import { fitSms } from '../../integrations/sms/sms-segments';
 import { SMS_PROVIDER, type SmsProvider } from '../../integrations/sms/sms.provider';
 import { VIBER_PROVIDER, type ViberProvider } from '../../integrations/viber/viber.provider';
 import { type ListSmsQuery } from './dto/sms.schemas';
@@ -57,7 +58,7 @@ export class SmsService {
                     kind: SpanKind.CLIENT,
                     attributes: { 'sms.provider': this.provider.name, 'sms.purpose': purpose },
                 },
-                () => this.provider.send(phone, text),
+                () => this.provider.send(phone, fitSms(text)),
             );
             await this.record(phone, purpose, 'sent');
 
@@ -101,7 +102,12 @@ export class SmsService {
                         'viber.sms_fallback': fallbackSms !== null,
                     },
                 },
-                () => viber.send({ phone, text, fallbackSms }),
+                () =>
+                    viber.send({
+                        phone,
+                        text,
+                        fallbackSms: fallbackSms === null ? null : fitSms(fallbackSms),
+                    }),
             );
             await this.record(phone, purpose, 'sent', viber.name, channel);
 

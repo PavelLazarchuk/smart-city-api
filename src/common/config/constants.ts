@@ -4,6 +4,7 @@ export const MONGO_CONNECTION = {
     minPoolSize: 0,
     serverSelectionTimeoutMs: 10_000,
     socketTimeoutMs: 45_000,
+    readTimeoutMs: 15_000,
     retryWrites: true,
     writeConcern: 'majority',
     readPreference: 'primary',
@@ -37,6 +38,8 @@ export const CHANNEL_TEMPLATE_LIMITS = {
 
 export const VIBER_TIMEOUT_MS = 10_000;
 
+export const SMS_SEGMENTS = { maxParts: 5 } as const;
+
 export const NOTIFICATIONS = { keepRead: 30, maxUnread: 400, titleMax: 120, bodyMax: 1000 } as const;
 
 export const CALENDAR_FEED = { pastDays: 30, maxEvents: 500, refreshMinutes: 60 } as const;
@@ -59,7 +62,7 @@ export const SEARCH_FACET_LIMIT = 10;
 export const PUBLIC_CACHE_MAX_AGE_SECONDS = 60;
 
 export const UPLOADS_CACHE_MAX_AGE_SECONDS = 3600;
-export const UPLOAD_LIMITS = { maxPixels: 40_000_000, maxDimension: 10_000 } as const;
+export const UPLOAD_LIMITS = { maxPixels: 40_000_000, maxDimension: 10_000, storedSide: 2048 } as const;
 
 export const JOB_CRON = {
     recurrentSlots: '0 3 * * *',

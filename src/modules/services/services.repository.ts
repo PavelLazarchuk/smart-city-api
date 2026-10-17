@@ -74,14 +74,19 @@ export class ServicesRepository extends BaseRepository<Service> {
     reorderDirect(organizationId: string, ids: string[], session?: ClientSession): Promise<void> {
         return reorderSiblings(
             this.model,
-            { organization_id: new Types.ObjectId(organizationId), category_id: null },
+            { organization_id: new Types.ObjectId(organizationId), category_id: null, deleted_at: null },
             ids,
             session,
         );
     }
 
     reorderInCategory(categoryId: string, ids: string[], session?: ClientSession): Promise<void> {
-        return reorderSiblings(this.model, { category_id: new Types.ObjectId(categoryId) }, ids, session);
+        return reorderSiblings(
+            this.model,
+            { category_id: new Types.ObjectId(categoryId), deleted_at: null },
+            ids,
+            session,
+        );
     }
 
     deleteByOrganization(organizationId: string, session?: ClientSession): Promise<number> {
@@ -95,10 +100,6 @@ export class ServicesRepository extends BaseRepository<Service> {
             .lean<{ _id: Types.ObjectId }[]>()
             .exec()
             .then((rows) => rows.map((row) => row._id.toHexString()));
-    }
-
-    findByCategory(categoryId: string, session?: ClientSession): Promise<ServiceEntity[]> {
-        return this.findMany({ category_id: new Types.ObjectId(categoryId) }, { position: 1 }, session);
     }
 
     async searchText(
@@ -277,8 +278,15 @@ export class ServicesRepository extends BaseRepository<Service> {
         return this.findMany({ _id: { $in: ids.map((id) => new Types.ObjectId(id)) } }, { _id: 1 });
     }
 
-    deleteByCategory(categoryId: string, session?: ClientSession): Promise<number> {
-        return this.deleteMany({ category_id: new Types.ObjectId(categoryId) }, session);
+    countLiveInCategory(categoryId: string, session?: ClientSession): Promise<number> {
+        return this.count({ category_id: new Types.ObjectId(categoryId), deleted_at: null }, session);
+    }
+
+    async detachCategory(categoryId: string, session?: ClientSession): Promise<void> {
+        await this.model
+            .updateMany({ category_id: new Types.ObjectId(categoryId) }, { $set: { category_id: null } })
+            .session(session ?? null)
+            .exec();
     }
 
     async pushOption(id: string, option: ServiceOption, session?: ClientSession): Promise<boolean> {
@@ -406,6 +414,25 @@ export class ServicesRepository extends BaseRepository<Service> {
 
         return new Map(
             rows.map((row) => [row._id.toHexString(), row.booking_policy?.cancel_deadline_minutes ?? null]),
+        );
+    }
+
+    async sensitiveFields(ids: string[]): Promise<Map<string, string[]>> {
+        if (ids.length === 0) return new Map();
+
+        const rows = await this.model
+            .find(
+                { _id: { $in: ids.map((id) => new Types.ObjectId(id)) }, 'form_fields.sensitive': true },
+                { 'form_fields.key': 1, 'form_fields.sensitive': 1 },
+            )
+            .lean<{ _id: Types.ObjectId; form_fields: { key: string; sensitive?: boolean }[] }[]>()
+            .exec();
+
+        return new Map(
+            rows.map((row) => [
+                row._id.toHexString(),
+                row.form_fields.filter((field) => field.sensitive).map((field) => field.key),
+            ]),
         );
     }
 

@@ -66,6 +66,17 @@ describe('image uploads by type (e2e)', () => {
         }
     });
 
+    it('shrinks the long side of a large image to 2048 px and keeps the aspect ratio', async () => {
+        const png = await sharp({ create: { width: 4000, height: 1000, channels: 3, background: '#1155aa' } })
+            .png()
+            .toBuffer();
+
+        const res = await upload(png, 'image/png');
+        expect(res.status).toBe(201);
+        const stored = await sharp(join(t.config.storage.local.dir, res.body.data.name as string)).metadata();
+        expect([stored.width, stored.height]).toEqual([2048, 512]);
+    });
+
     it('refuses bytes that do not match the declared type', async () => {
         await allow(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
         const png = await square().png().toBuffer();

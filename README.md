@@ -163,7 +163,8 @@ migration that creates the index, because changing one needs a `collMod` migrati
   reminder flag so the notice matches the new day. Both tell the affected clients by e-mail or SMS unless
   `notify: false`, take a `reason` that travels into the notice and the webhook payload, refuse to touch more
   than 500 rows at once, and accept an `Idempotency-Key` so a retried shift is replayed rather than applied
-  twice.
+  twice. `?dry_run=true` runs the operation and rolls it back, answering how many bookings it would touch, how
+  many waiting clients it would notify or move, and how many notices and SMS it would queue.
 - `GET /organizations/:id` returns the tree with every child list capped at 50 items. Services
   appear as cards — the fields a tile needs plus `options_count`, without `options`, so without slots or
   bookings; the full document comes from `GET /services/:id` or `GET /organizations/:id/services/:slug`,
@@ -249,7 +250,8 @@ migration that creates the index, because changing one needs a `collMod` migrati
 - News have `slug` (`GET /organizations/:id/news/:slug`), `rubric` (`?rubric=`), `publish_at` (hidden from the
   public until then), `?q=` and an RSS 2.0 feed at `GET /news/rss?organization_id=&rubric=`, whose
   `<enclosure>` carries the type and size of the stored image, or the type its extension implies.
-- Organizations carry `status` (`temporarily_closed` refuses new bookings), `working_hours`, `holidays`,
+- Organizations carry `status` (`temporarily_closed` refuses bookings for slots that start before
+  `closed_until`, or all of them without it, and hides those slots from clients), `working_hours`, `holidays`,
   `address` and `location` (`GET /organizations/nearby`).
 - Every response carries the IETF `RateLimit-*` headers; the OpenAPI document lists every error code a route
   can answer with ([docs/errors.md](docs/errors.md#errors-in-the-openapi-document)).

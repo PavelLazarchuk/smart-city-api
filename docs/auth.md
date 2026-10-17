@@ -18,7 +18,14 @@ sees what a `common-admin` of the same organization sees: booking details, draft
 name their roles through the groups in
 [roles.decorator.ts](../src/common/decorators/roles.decorator.ts) — `ADMIN_ROLES`, `STAFF_ROLES`,
 `ORGANIZATION_ROLES` — and a role missing from a route's list is refused, so a new role starts with no access.
-Operators sign in like admins (`AUTH_ADMIN_LOGIN_METHOD`) and only a super-admin creates them.
+Operators sign in like admins (`AUTH_ADMIN_LOGIN_METHOD`). A `common-admin` manages the operators of their own
+organizations through `GET/POST /organizations/:id/operators` and `PATCH/DELETE /organizations/:id/operators/:user_id`;
+deleting removes the organization from the operator and deletes the account only when no organization is left.
+
+A password that someone else set — on `POST /users`, on `POST /organizations/:id/operators`, or on a reset through
+`PATCH` — marks the account `password_change_required`. Sign-in still works and the flag comes back in `user`,
+but every other route answers `403 PASSWORD_CHANGE_REQUIRED` until `PATCH /auth/password` sets the user's own
+password; `/auth/me`, `/auth/sessions` and the logout routes stay open meanwhile.
 
 `/me/notifications` is open to every signed-in account and only ever shows the caller's own rows, plus — for an
 `operator` or `common-admin` — the shared staff rows of the organizations in their current `organization_ids`.

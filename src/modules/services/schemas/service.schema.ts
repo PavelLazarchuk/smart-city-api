@@ -139,6 +139,7 @@ export class FormField {
     @Prop({ type: [String], default: undefined }) options?: string[];
     @Prop({ type: String }) placeholder?: string;
     @Prop({ type: Number, default: null }) max_length!: number | null;
+    @Prop({ type: Boolean, default: false }) sensitive!: boolean;
 }
 export const FormFieldSchema = SchemaFactory.createForClass(FormField);
 

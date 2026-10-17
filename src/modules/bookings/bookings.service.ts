@@ -33,6 +33,7 @@ import { type WaitlistEntry } from './schemas/waitlist.schema';
 import { type WaitlistEntryEntity, WaitlistRepository } from './waitlist.repository';
 import { PhonePolicy } from '../auth/phone.policy';
 import { type OrganizationEntity } from '../organizations/organizations.repository';
+import { isClosedAt } from '../organizations/closure';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type SlotBody } from '../slots/schemas/slot.schema';
 import { ChannelTemplatesService } from '../channel-templates/channel-templates.service';
@@ -59,7 +60,7 @@ import {
     remindersMuted,
     text,
 } from './booking-events';
-import { validateBookingFields, validateDocuments } from './booking-form';
+import { maskFields, validateBookingFields, validateDocuments } from './booking-form';
 import { type BookingCreated, type CreateBookingInput } from './dto/booking.schemas';
 import {
     ADDRESS_SERVICE_TYPES,
@@ -376,6 +377,7 @@ export class BookingsService implements OnModuleInit {
                 createdAt,
                 ctx.session,
             );
+            this.assertOpen(bookable, target, actor, createdAt);
             const booker = await this.bookerOf(input, actor, ctx.session);
             const address = this.addressFor(target, input.address);
 
@@ -481,7 +483,23 @@ export class BookingsService implements OnModuleInit {
     }
 
     export(query: ExportBookingsQuery, actor: AuthUser): AsyncIterable<BookingEntity> {
-        return this.bookings.iterate(scoped(this.filterOf(query, actor), query));
+        return this.masked(this.bookings.iterate(scoped(this.filterOf(query, actor), query)));
+    }
+
+    private async *masked(bookings: AsyncIterable<BookingEntity>): AsyncIterable<BookingEntity> {
+        const sensitive = new Map<string, string[]>();
+
+        for await (const booking of bookings) {
+            const serviceId = booking.service_id.toHexString();
+            let keys = sensitive.get(serviceId);
+
+            if (!keys) {
+                keys = (await this.services.sensitiveFields([serviceId])).get(serviceId) ?? [];
+                sensitive.set(serviceId, keys);
+            }
+
+            yield { ...booking, fields: maskFields(booking.fields ?? {}, keys) };
+        }
     }
 
     private filterOf(query: ExportBookingsQuery, actor: AuthUser): FilterQuery<Booking> {
@@ -561,15 +579,20 @@ export class BookingsService implements OnModuleInit {
             defaultSort: 'created_at',
         });
         const result = await this.bookings.list(scoped(filter, query), pagination);
-        const deadlines = await this.services.cancelDeadlines([
-            ...new Set(result.items.map((booking) => booking.service_id.toHexString())),
+        const serviceIds = [...new Set(result.items.map((booking) => booking.service_id.toHexString()))];
+        const [deadlines, sensitive] = await Promise.all([
+            this.services.cancelDeadlines(serviceIds),
+            this.services.sensitiveFields(serviceIds),
         ]);
 
         return {
             ...result,
-            items: result.items.map((booking) =>
-                toResource(booking, deadlines.get(booking.service_id.toHexString()) ?? null),
-            ),
+            items: result.items.map((booking) => {
+                const serviceId = booking.service_id.toHexString();
+                const resource = toResource(booking, deadlines.get(serviceId) ?? null);
+
+                return { ...resource, fields: maskFields(resource.fields, sensitive.get(serviceId) ?? []) };
+            }),
         };
     }
 
@@ -827,6 +850,7 @@ export class BookingsService implements OnModuleInit {
                 now,
                 ctx.session,
             );
+            this.assertOpen(bookable, target, actor, now);
 
             if (
                 target.option.id === booking.option_id &&
@@ -1009,6 +1033,7 @@ export class BookingsService implements OnModuleInit {
                 now,
                 ctx.session,
             );
+            this.assertOpen(bookable, target, actor, now);
             const booked =
                 target.time === undefined
                     ? (target.slot.value.booked_count ?? 0)
@@ -1087,7 +1112,7 @@ export class BookingsService implements OnModuleInit {
         await this.waitlist.deleteByPublicId(id);
     }
 
-    async notifyWaitlist(booking: BookingEntity, ctx: TransactionContext): Promise<void> {
+    async notifyWaitlist(booking: BookingEntity, ctx: TransactionContext): Promise<boolean> {
         const entry = await this.waitlist.claimNextWaiting(
             booking.service_id,
             booking.option_id,
@@ -1097,7 +1122,7 @@ export class BookingsService implements OnModuleInit {
             ctx.session,
         );
 
-        if (!entry) return;
+        if (!entry) return false;
 
         const user = await this.users.findById(entry.user_id.toHexString());
 
@@ -1120,6 +1145,8 @@ export class BookingsService implements OnModuleInit {
                 session: ctx.session,
             },
         );
+
+        return true;
     }
 
     private async loadBookable(
@@ -1139,13 +1166,20 @@ export class BookingsService implements OnModuleInit {
 
         if (service.status !== 'published') throw ApiError.unprocessable('SERVICE_NOT_PUBLISHED');
 
-        const closedUntil = organization.closed_until?.getTime();
-        const stillClosed = closedUntil === undefined || closedUntil === null || closedUntil > Date.now();
-
-        if (organization.status === 'temporarily_closed' && stillClosed)
-            throw ApiError.unprocessable('ORGANIZATION_CLOSED');
-
         return { service, organization, timeZone };
+    }
+
+    private assertOpen(
+        { service, organization, timeZone }: Bookable,
+        target: Target,
+        actor: AuthUser,
+        now: Date,
+    ): void {
+        if (this.masker.canSeeDetails(actor, service.organization_id.toHexString())) return;
+
+        const startsAt = slotStart(target.slot.value.date, target.time, timeZone) ?? now;
+
+        if (isClosedAt(organization, startsAt)) throw ApiError.unprocessable('ORGANIZATION_CLOSED');
     }
 
     private async resolveTarget(

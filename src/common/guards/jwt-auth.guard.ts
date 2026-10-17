@@ -8,6 +8,7 @@ import { AppConfig } from '../config/app-config';
 import { secretFor } from '../config/jwt-keys';
 import { RequestContext } from '../context/request-context';
 import { type RequestWithUser } from '../decorators/current-user.decorator';
+import { ALLOW_PENDING_PASSWORD_KEY } from '../decorators/pending-password.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ROLE_VALUES } from '../decorators/roles.decorator';
 import { ApiError } from '../http/api-error';
@@ -58,12 +59,24 @@ export class JwtAuthGuard implements CanActivate {
             throw ApiError.unauthorized('SESSION_REVOKED');
         }
 
+        if (user.password_change_required && !isPublic && !this.allowsPendingPassword(context))
+            throw ApiError.forbidden('PASSWORD_CHANGE_REQUIRED');
+
         request.user = user;
         const store = RequestContext.get();
 
         if (store) store.user_id = user.id;
 
         return true;
+    }
+
+    private allowsPendingPassword(context: ExecutionContext): boolean {
+        return (
+            this.reflector.getAllAndOverride<boolean>(ALLOW_PENDING_PASSWORD_KEY, [
+                context.getHandler(),
+                context.getClass(),
+            ]) === true
+        );
     }
 
     private extractToken(request: Request): string | undefined {

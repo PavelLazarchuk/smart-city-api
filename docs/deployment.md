@@ -72,6 +72,12 @@ The Mongo connection is pinned by `MONGO_MAX_POOL_SIZE` and by the fixed timeout
 [src/common/config/constants.ts](../src/common/config/constants.ts), rather than by whatever the URI happens
 to carry, so a copied connection string cannot quietly change the durability of every write.
 
+A text longer than one SMS goes out as concatenated parts (153 GSM-7 or 67 UCS-2 characters each, so any
+Cyrillic text is UCS-2), and a rendered text is cut to five parts with an ellipsis. The budget below counts
+messages, not parts. Every read query carries a server-side `maxTimeMS` of `MONGO_CONNECTION.readTimeoutMs`
+unless it sets its own. Uploaded images are stored with the long side at most `UPLOAD_LIMITS.storedSide`
+(2048 px), the aspect ratio kept.
+
 `SMS_HOURLY_LIMIT` and `SMS_DAILY_LIMIT` cap outgoing messages across every sender and replica: past the
 cap a send is refused with `422 SMS_BUDGET_EXCEEDED`, the attempt is logged in `sms` with status `blocked`,
 and `sms_budget_blocked_total` rises — alert on it, because it means either an attack or an undersized

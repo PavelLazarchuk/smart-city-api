@@ -22,6 +22,7 @@ export const userResponseSchema = z.object({
     phone: z.string().optional(),
     email: z.string().optional(),
     reminders: z.boolean().catch(true),
+    password_change_required: z.boolean().catch(false),
     role: z.enum(ROLE_VALUES),
     organization_ids: z.array(idOutputSchema),
     ...timestampsOutputSchema,
@@ -76,6 +77,20 @@ export const updateUserAdminSchema = z
     .partial();
 export type UpdateUserAdminInput = z.infer<typeof updateUserAdminSchema>;
 export class UpdateUserAdminDto extends createZodDto(updateUserAdminSchema) {}
+
+export const createOperatorSchema = z.object({
+    login: loginSchema.optional(),
+    password: passwordSchema.optional(),
+    phone: phoneSchema.optional(),
+    email: emailSchema.optional(),
+    name: nameSchema,
+});
+export type CreateOperatorInput = z.infer<typeof createOperatorSchema>;
+export class CreateOperatorDto extends createZodDto(createOperatorSchema) {}
+
+export const updateOperatorSchema = updateUserAdminSchema.omit({ role: true });
+export type UpdateOperatorInput = z.infer<typeof updateOperatorSchema>;
+export class UpdateOperatorDto extends createZodDto(updateOperatorSchema) {}
 
 export const setUserOrganizationsSchema = z.object({
     organization_ids: z.array(objectIdSchema).max(100),

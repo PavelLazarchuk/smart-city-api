@@ -16,8 +16,6 @@ import { type ListAnalyticsQuery } from './dto/analytics.schemas';
 export interface EventFields {
     user_id?: string;
     user_role?: string;
-    user_name?: string;
-    user_phone?: string;
     organization_id?: string;
     organization_label?: string;
     service_id?: string;
@@ -57,8 +55,6 @@ export class AnalyticsService implements OnModuleInit {
         if (actor) {
             document['user_id'] = new Types.ObjectId(actor.id);
             document['user_role'] = actor.role;
-            document['user_name'] = actor.name;
-            document['user_phone'] = actor.phone;
         }
 
         for (const [key, value] of Object.entries(fields)) {

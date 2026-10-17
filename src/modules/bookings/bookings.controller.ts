@@ -21,7 +21,7 @@ import { ApiData, ApiPaginated } from '../../common/decorators/api-paginated.dec
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationScope } from '../../common/decorators/organization-scope.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
+import { ROLES, Roles, STAFF_ROLES } from '../../common/decorators/roles.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
 import { texts } from '../../common/i18n/messages';
@@ -96,7 +96,9 @@ export class BookingsController {
         @CurrentUser() user: AuthUser,
         @Res() res: Response,
     ): Promise<void> {
-        const rows = Readable.from(bookingsCsv(this.bookings.export(query, user)));
+        const rows = Readable.from(
+            bookingsCsv(this.bookings.export(query, user), { fields: user.role !== ROLES.OPERATOR }),
+        );
         res.setHeader('Content-Type', texts.bookingsExport.contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${texts.bookingsExport.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-store, max-age=0');

@@ -48,6 +48,9 @@ export class User {
 
     @Prop({ type: String, select: false })
     calendar_token_hash?: string;
+
+    @Prop({ type: Boolean, default: false })
+    password_change_required?: boolean;
 }
 
 export type UserDocument = HydratedDocument<User>;

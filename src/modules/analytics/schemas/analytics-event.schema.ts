@@ -11,8 +11,6 @@ export class AnalyticsEvent {
 
     @Prop({ type: SchemaTypes.ObjectId }) user_id?: Types.ObjectId;
     @Prop({ type: String }) user_role?: string;
-    @Prop({ type: String }) user_name?: string;
-    @Prop({ type: String }) user_phone?: string;
     @Prop({ type: SchemaTypes.ObjectId }) organization_id?: Types.ObjectId;
     @Prop({ type: String }) organization_label?: string;
     @Prop({ type: SchemaTypes.ObjectId }) service_id?: Types.ObjectId;

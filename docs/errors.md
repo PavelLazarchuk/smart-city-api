@@ -78,23 +78,24 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 
 ### Authentication
 
-| Code                              | Status | Meaning                                                                                           |
-| --------------------------------- | ------ | ------------------------------------------------------------------------------------------------- |
-| `INVALID_CREDENTIALS`             | 401    | Wrong identifier or password                                                                      |
-| `TOKEN_INVALID` / `TOKEN_EXPIRED` | 401    | Access token rejected — refresh, then retry; a calendar feed token was rotated or revoked         |
-| `SESSION_REVOKED`                 | 401    | The session was revoked (logout-all, password change, account gone)                               |
-| `REFRESH_TOKEN_REUSED`            | 401    | An already-rotated refresh token was presented; the whole token family is revoked — sign in again |
-| `OTP_INVALID`                     | 401    | Wrong one-time code                                                                               |
-| `OTP_EXPIRED`                     | 401    | Past `OTP_TTL_SECONDS`; request a new one                                                         |
-| `OTP_ATTEMPTS_EXCEEDED`           | 401    | Beyond `OTP_MAX_ATTEMPTS`; request a new one                                                      |
-| `LOGIN_METHOD_DISABLED`           | 403    | This audience signs in the other way (`AUTH_*_LOGIN_METHOD`)                                      |
-| `PASSWORD_TOO_SHORT`              | 422    | Fewer than 8 characters                                                                           |
-| `PASSWORD_TOO_LONG`               | 422    | More than 20 characters                                                                           |
-| `PASSWORD_TOO_WEAK`               | 422    | `details[]` lists the missing character classes                                                   |
-| `PASSWORD_UNCHANGED`              | 422    | The new password equals the current one                                                           |
-| `SESSION_NOT_FOUND`               | 404    | `DELETE /auth/sessions/:sid` — not a session of the calling account                               |
-| `LOGIN_TOO_SHORT`                 | 422    | Fewer than 6 characters                                                                           |
-| `PHONE_COUNTRY_NOT_SUPPORTED`     | 422    | The number does not start with `PHONE_COUNTRY_CODE`                                               |
+| Code                              | Status | Meaning                                                                                               |
+| --------------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| `INVALID_CREDENTIALS`             | 401    | Wrong identifier or password                                                                          |
+| `TOKEN_INVALID` / `TOKEN_EXPIRED` | 401    | Access token rejected — refresh, then retry; a calendar feed token was rotated or revoked             |
+| `SESSION_REVOKED`                 | 401    | The session was revoked (logout-all, password change, account gone)                                   |
+| `REFRESH_TOKEN_REUSED`            | 401    | An already-rotated refresh token was presented; the whole token family is revoked — sign in again     |
+| `OTP_INVALID`                     | 401    | Wrong one-time code                                                                                   |
+| `OTP_EXPIRED`                     | 401    | Past `OTP_TTL_SECONDS`; request a new one                                                             |
+| `OTP_ATTEMPTS_EXCEEDED`           | 401    | Beyond `OTP_MAX_ATTEMPTS`; request a new one                                                          |
+| `LOGIN_METHOD_DISABLED`           | 403    | This audience signs in the other way (`AUTH_*_LOGIN_METHOD`)                                          |
+| `PASSWORD_TOO_SHORT`              | 422    | Fewer than 8 characters                                                                               |
+| `PASSWORD_TOO_LONG`               | 422    | More than 20 characters                                                                               |
+| `PASSWORD_TOO_WEAK`               | 422    | `details[]` lists the missing character classes                                                       |
+| `PASSWORD_UNCHANGED`              | 422    | The new password equals the current one                                                               |
+| `PASSWORD_CHANGE_REQUIRED`        | 403    | The account still has a password someone else issued; only `PATCH /auth/password` and `/auth/me` work |
+| `SESSION_NOT_FOUND`               | 404    | `DELETE /auth/sessions/:sid` — not a session of the calling account                                   |
+| `LOGIN_TOO_SHORT`                 | 422    | Fewer than 6 characters                                                                               |
+| `PHONE_COUNTRY_NOT_SUPPORTED`     | 422    | The number does not start with `PHONE_COUNTRY_CODE`                                                   |
 
 ### Users
 
@@ -114,12 +115,13 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 
 ### Content
 
-| Code                                                                                                                                                   | Status | Meaning                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | -------------------------------------------- |
-| `ORGANIZATION_NOT_FOUND`, `CATEGORY_NOT_FOUND`, `SERVICE_NOT_FOUND`, `NEWS_NOT_FOUND`, `INFOSECTION_NOT_FOUND`, `IMAGE_NOT_FOUND`, `ARCHIVE_NOT_FOUND` | 404    |                                              |
-| `CATEGORY_ORGANIZATION_MISMATCH`                                                                                                                       | 422    | The category belongs to another organization |
-| `ARCHIVE_SERVICE_MISMATCH`                                                                                                                             | 422    | The service belongs to another organization  |
-| `REORDER_MISMATCH`                                                                                                                                     | 422    | A reorder must list every child exactly once |
+| Code                                                                                                                                                   | Status | Meaning                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | --------------------------------------------------- |
+| `ORGANIZATION_NOT_FOUND`, `CATEGORY_NOT_FOUND`, `SERVICE_NOT_FOUND`, `NEWS_NOT_FOUND`, `INFOSECTION_NOT_FOUND`, `IMAGE_NOT_FOUND`, `ARCHIVE_NOT_FOUND` | 404    |                                                     |
+| `CATEGORY_ORGANIZATION_MISMATCH`                                                                                                                       | 422    | The category belongs to another organization        |
+| `ARCHIVE_SERVICE_MISMATCH`                                                                                                                             | 422    | The service belongs to another organization         |
+| `REORDER_MISMATCH`                                                                                                                                     | 422    | A reorder must list every child exactly once        |
+| `CATEGORY_NOT_EMPTY`                                                                                                                                   | 409    | The category still holds services outside the trash |
 
 ### Bookings
 
@@ -131,6 +133,8 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `OPTION_NOT_FOUND`                     | 404    | No option with this id on the service                                                                                   |
 | `OPTION_HAS_BOOKINGS`                  | 409    | The option still holds bookings and cannot be removed                                                                   |
 | `SLOT_HAS_BOOKINGS`                    | 409    | The slot still holds bookings and cannot be removed                                                                     |
+| `SERVICE_HAS_BOOKINGS`                 | 409    | Deleting a service with active bookings needs `?cancel_bookings=true`                                                   |
+| `ORGANIZATION_HAS_BOOKINGS`            | 409    | Deleting an organization with active bookings needs `?cancel_bookings=true`                                             |
 | `SLOT_TIME_BOOKED`                     | 409    | A time entry that already holds bookings cannot be renamed or removed                                                   |
 | `SLOT_DATE_TAKEN`                      | 409    | Another slot of the option already covers the date a day is moved to                                                    |
 | `SLOT_TIME_OUT_OF_RANGE`               | 422    | `shift_minutes` would push a time out of its day                                                                        |
@@ -157,7 +161,7 @@ A valid principal that lacks the role gets **403, not 401** — 401 means "authe
 | `NEWS_SLUG_TAKEN`            | 409    | Another news item of the organization already uses this slug        |
 | `SERVICE_NOT_DELETED`        | 422    | `POST /services/:id/restore` on a service that is not in the trash  |
 | `SERVICE_NOT_PUBLISHED`      | 422    | A client tried to book a draft or archived service                  |
-| `ORGANIZATION_CLOSED`        | 422    | The organization is `temporarily_closed`; no new bookings           |
+| `ORGANIZATION_CLOSED`        | 422    | The slot starts while the organization is `temporarily_closed`      |
 | `FIELDS_NOT_ALLOWED`         | 400    | `?fields=` named a key the response schema does not have            |
 | `WEBHOOK_NOT_FOUND`          | 404    |                                                                     |
 | `CHANNEL_TEMPLATE_NOT_FOUND` | 404    | The key is not one of the e-mails or SMS an organization can reword |

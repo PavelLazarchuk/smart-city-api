@@ -99,6 +99,7 @@ export const formFieldSchema = z
         options: z.array(z.string().trim().min(1).max(100)).min(1).max(50).optional(),
         placeholder: z.string().trim().max(200).optional(),
         max_length: z.number().int().min(1).max(5000).nullable().optional(),
+        sensitive: z.boolean().optional(),
     })
     .refine((field) => field.type !== 'select' || (field.options?.length ?? 0) > 0, {
         message: 'A select field needs options',
@@ -114,6 +115,7 @@ const formFieldOutputSchema = z.object({
     options: z.array(z.string()).optional(),
     placeholder: z.string().optional(),
     max_length: z.number().int().nullable().catch(null),
+    sensitive: z.boolean().catch(false),
 });
 
 export const requiredDocumentSchema = z.object({
@@ -429,7 +431,10 @@ export class CloneServiceDto extends createZodDto(cloneServiceSchema) {}
 export const setServiceStatusSchema = z.object({ status: z.enum(SERVICE_STATUSES) });
 export class SetServiceStatusDto extends createZodDto(setServiceStatusSchema) {}
 
-export const deleteServiceQuerySchema = z.object({ permanent: z.stringbool().optional() });
+export const deleteServiceQuerySchema = z.object({
+    permanent: z.stringbool().optional(),
+    cancel_bookings: z.stringbool().optional(),
+});
 export class DeleteServiceQueryDto extends createZodDto(deleteServiceQuerySchema) {}
 
 export const serviceRevisionResponseSchema = z.object({

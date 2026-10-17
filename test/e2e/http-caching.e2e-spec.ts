@@ -189,6 +189,9 @@ describe('conditional reads of the organization tree (e2e)', () => {
         await changes(() =>
             t.http.post(`${t.prefix}/services/${serviceId}/restore`).set('Authorization', adminBearer),
         );
+        await t.http.patch(`${t.prefix}/services/${serviceId}`).set('Authorization', adminBearer).send({
+            category_id: null,
+        });
         await changes(
             () => t.http.delete(`${t.prefix}/categories/${categoryId}`).set('Authorization', adminBearer),
             204,

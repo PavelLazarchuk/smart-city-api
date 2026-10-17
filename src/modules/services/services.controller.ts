@@ -73,6 +73,7 @@ import {
     type AvailabilityResponse,
     AvailabilityResponseDto,
     availabilityResponseSchema,
+    BulkSlotQueryDto,
     CloseSlotDto,
     CloseSlotResponseDto,
     closeSlotResponseSchema,
@@ -281,7 +282,7 @@ export class ServicesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'service' })
     @HttpCode(HttpStatus.NO_CONTENT)
-    @ApiErrors('SERVICE_NOT_FOUND')
+    @ApiErrors('SERVICE_NOT_FOUND', 'SERVICE_HAS_BOOKINGS')
     async remove(
         @Param('id') id: string,
         @Query() query: DeleteServiceQueryDto,
@@ -289,7 +290,7 @@ export class ServicesController {
     ): Promise<void> {
         if (query.permanent && user.role !== ROLES.SUPER_ADMIN) throw ApiError.forbidden('FORBIDDEN');
 
-        await this.services.delete(id, user, query.permanent === true);
+        await this.services.delete(id, user, query.permanent === true, query.cancel_bookings === true);
     }
 
     @Post(':id/restore')
@@ -491,6 +492,7 @@ export class ServicesController {
         @Param('option_id') optionId: string,
         @Param('slot_id') slotId: string,
         @Body() body: CloseSlotDto,
+        @Query() query: BulkSlotQueryDto,
         @CurrentUser() user: AuthUser,
         @Res({ passthrough: true }) res: Response,
         @Headers('idempotency-key') idempotencyKey?: string,
@@ -498,7 +500,15 @@ export class ServicesController {
         if (body.remove && user.role === ROLES.OPERATOR) throw ApiError.forbidden('FORBIDDEN');
 
         return this.replayable(
-            this.slots.close(id, optionId, slotId, body, user, parseIdempotencyKey(idempotencyKey)),
+            this.slots.close(
+                id,
+                optionId,
+                slotId,
+                body,
+                user,
+                parseIdempotencyKey(idempotencyKey),
+                query.dry_run === true,
+            ),
             res,
         );
     }
@@ -528,12 +538,21 @@ export class ServicesController {
         @Param('option_id') optionId: string,
         @Param('slot_id') slotId: string,
         @Body() body: MoveSlotDto,
+        @Query() query: BulkSlotQueryDto,
         @CurrentUser() user: AuthUser,
         @Res({ passthrough: true }) res: Response,
         @Headers('idempotency-key') idempotencyKey?: string,
     ): Promise<MoveSlotResult> {
         return this.replayable(
-            this.slots.move(id, optionId, slotId, body, user, parseIdempotencyKey(idempotencyKey)),
+            this.slots.move(
+                id,
+                optionId,
+                slotId,
+                body,
+                user,
+                parseIdempotencyKey(idempotencyKey),
+                query.dry_run === true,
+            ),
             res,
         );
     }

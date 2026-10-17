@@ -9,6 +9,7 @@ import { type AuthUser } from '../../common/decorators/current-user.decorator';
 import { type Role, ROLES } from '../../common/decorators/roles.decorator';
 import { ApiError } from '../../common/http/api-error';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
+import { type PaginationQuery } from '../../common/pagination/pagination.schema';
 import { PaginationService } from '../../common/pagination/pagination.service';
 import { type SettingsWarning } from '../../common/settings/dto/settings.schemas';
 import {
@@ -22,8 +23,10 @@ import { PasswordService } from '../auth/password.service';
 import { PhonePolicy } from '../auth/phone.policy';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
+    type CreateOperatorInput,
     type CreateUserInput,
     type ListUsersQuery,
+    type UpdateOperatorInput,
     type UpdateSelfInput,
     type UpdateUserAdminInput,
 } from './dto/user.schemas';
@@ -168,6 +171,7 @@ export class UsersService implements OnModuleInit {
             name: user.name,
             phone: user.phone,
             login: user.login,
+            password_change_required: user.password_change_required === true,
         };
     }
 
@@ -193,7 +197,55 @@ export class UsersService implements OnModuleInit {
         return this.users.list(filter, pagination);
     }
 
-    async create(input: CreateUserInput): Promise<UserEntity> {
+    listOperators(organizationId: string, query: PaginationQuery): Promise<PaginatedResult<UserEntity>> {
+        return this.list({ ...query, role: ROLES.OPERATOR, organization_id: organizationId });
+    }
+
+    createOperator(organizationId: string, input: CreateOperatorInput, actor: AuthUser): Promise<UserEntity> {
+        return this.create({ ...input, role: ROLES.OPERATOR, organization_ids: [organizationId] }, actor);
+    }
+
+    async updateOperator(
+        organizationId: string,
+        id: string,
+        input: UpdateOperatorInput,
+        actor: AuthUser,
+    ): Promise<UserEntity> {
+        await this.operatorOf(organizationId, id);
+
+        return this.updateByAdmin(id, input, actor);
+    }
+
+    async removeOperator(organizationId: string, id: string): Promise<void> {
+        const operator = await this.operatorOf(organizationId, id);
+        const remaining = operator.organization_ids
+            .map((item) => item.toHexString())
+            .filter((item) => item !== organizationId);
+
+        if (remaining.length === 0) {
+            await this.delete(id);
+
+            return;
+        }
+
+        await this.users.setOrganizationIds(id, remaining);
+        await this.authStore.revokeAllSessions(id);
+    }
+
+    private async operatorOf(organizationId: string, id: string): Promise<UserEntity> {
+        const user = Types.ObjectId.isValid(id) ? await this.users.findById(id) : null;
+
+        if (
+            !user ||
+            user.role !== ROLES.OPERATOR ||
+            !user.organization_ids.some((item) => item.toHexString() === organizationId)
+        )
+            throw ApiError.notFound('USER_NOT_FOUND');
+
+        return user;
+    }
+
+    async create(input: CreateUserInput, issuedBy?: AuthUser): Promise<UserEntity> {
         this.assertIdentifiers(input.role, input.login, input.password, input.phone);
 
         if (input.phone) this.phonePolicy.assertSupported(input.phone);
@@ -214,6 +266,7 @@ export class UsersService implements OnModuleInit {
             email: input.email,
             role: input.role,
             organization_ids: (input.organization_ids ?? []).map((id) => new Types.ObjectId(id)),
+            password_change_required: input.password !== undefined && issuedBy !== undefined,
         });
     }
 
@@ -354,6 +407,7 @@ export class UsersService implements OnModuleInit {
         if (input.password !== undefined) {
             this.passwords.assertPolicy(input.password);
             set['password_hash'] = await this.passwords.hash(input.password);
+            set['password_change_required'] = actor?.id !== id;
         }
 
         if (input.role !== undefined) set['role'] = input.role;
@@ -449,7 +503,10 @@ export class UsersService implements OnModuleInit {
             }
         }
 
-        await this.users.updateFields(id, { password_hash: await this.passwords.hash(newPassword) });
+        await this.users.updateFields(id, {
+            password_hash: await this.passwords.hash(newPassword),
+            password_change_required: false,
+        });
         await this.authStore.revokeAllSessions(id, undefined, keepSessionId);
     }
 

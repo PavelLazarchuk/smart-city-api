@@ -198,7 +198,8 @@ skipped, so it cannot hold up the others. Reports `services`, `marked` and `fail
 
 Empties the trash: a service with `deleted_at` older than `SERVICE_TRASH_RETENTION_DAYS` is removed for good
 through the same cascade a permanent delete runs (bookings, waitlist, archives, revisions), one transaction
-per service. Reports `purged`.
+per service. A booking still active on a trashed service is cancelled and announced to the client first.
+Reports `purged`.
 
 ## Running a job by hand
 

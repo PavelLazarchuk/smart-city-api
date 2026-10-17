@@ -1,6 +1,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { type ClientSession, Types } from 'mongoose';
 
+import { CascadeRegistry, type RetireOptions } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
 import { SLOT_BULK_MAX_BOOKINGS } from '../../common/config/constants';
 import { type TransactionContext, TransactionRunner } from '../../common/database/transaction-runner';
@@ -20,7 +21,7 @@ import { SmsService } from '../sms/sms.service';
 import { UsersService } from '../users/users.service';
 import {
     announced,
-    eventActor,
+    eventActorOrNull,
     eventPayload,
     notice,
     organizationOf,
@@ -46,6 +47,8 @@ interface Timed {
 
 type Announcement = { type: EnqueueRequest['type']; payload: EnqueueRequest['payload'] };
 
+class DryRunRollback extends Error {}
+
 function byShift(minutes: number) {
     return (left: Timed, right: Timed): number =>
         minutes > 0
@@ -69,6 +72,7 @@ export class SlotAdminService implements OnModuleInit {
         private readonly idempotency: IdempotencyService,
         private readonly tx: TransactionRunner,
         private readonly organizations: OrganizationsService,
+        private readonly cascade: CascadeRegistry,
         private readonly config: AppConfig,
     ) {}
 
@@ -80,6 +84,12 @@ export class SlotAdminService implements OnModuleInit {
     }
 
     onModuleInit(): void {
+        this.cascade.registerRetire('service', (serviceId, ctx, options) =>
+            this.retire({ service_id: new Types.ObjectId(serviceId) }, ctx, options),
+        );
+        this.cascade.registerRetire('organization', (organizationId, ctx, options) =>
+            this.retire({ organization_id: new Types.ObjectId(organizationId) }, ctx, options),
+        );
         this.outbox.registerHandler('booking.cancelled', 'mail', async (event) => {
             const email = recipientEmail(event);
 
@@ -133,9 +143,13 @@ export class SlotAdminService implements OnModuleInit {
         input: CloseSlotInput,
         actor: AuthUser,
         key?: string,
+        dryRun = false,
     ): Promise<{ result: CloseSlotResult; replayed: boolean }> {
+        if (dryRun)
+            return this.rehearse((ctx) => this.runClose(serviceId, optionId, slotId, input, actor, ctx));
+
         return this.once('slots.close', key, actor, { serviceId, optionId, slotId, input }, () =>
-            this.runClose(serviceId, optionId, slotId, input, actor),
+            this.tx.run((ctx) => this.runClose(serviceId, optionId, slotId, input, actor, ctx)),
         );
     }
 
@@ -146,46 +160,75 @@ export class SlotAdminService implements OnModuleInit {
         input: MoveSlotInput,
         actor: AuthUser,
         key?: string,
+        dryRun = false,
     ): Promise<{ result: MoveSlotResult; replayed: boolean }> {
+        if (dryRun)
+            return this.rehearse((ctx) => this.runMove(serviceId, optionId, slotId, input, actor, ctx));
+
         return this.once('slots.move', key, actor, { serviceId, optionId, slotId, input }, () =>
-            this.runMove(serviceId, optionId, slotId, input, actor),
+            this.tx.run((ctx) => this.runMove(serviceId, optionId, slotId, input, actor, ctx)),
         );
     }
 
-    private runClose(
+    private async rehearse<T extends { dry_run: boolean }>(
+        work: (ctx: TransactionContext) => Promise<T>,
+    ): Promise<{ result: T; replayed: boolean }> {
+        let outcome: T | undefined;
+
+        try {
+            await this.tx.run(async (ctx) => {
+                outcome = await work(ctx);
+                throw new DryRunRollback();
+            });
+        } catch (error) {
+            if (!(error instanceof DryRunRollback)) throw error;
+        }
+
+        return { result: { ...(outcome as T), dry_run: true }, replayed: false };
+    }
+
+    private async runClose(
         serviceId: string,
         optionId: string,
         slotId: string,
         input: CloseSlotInput,
         actor: AuthUser,
+        ctx: TransactionContext,
     ): Promise<CloseSlotResult> {
-        return this.tx.run(async (ctx) => {
-            const before = await this.services.load(serviceId, ctx.session);
-            const slot = slotOf(optionOf(before, optionId), slotId);
+        const before = await this.services.load(serviceId, ctx.session);
+        const slot = slotOf(optionOf(before, optionId), slotId);
 
-            if (!BOOKABLE_SLOT_TYPES.includes(slot.child_type))
-                throw ApiError.unprocessable('SLOT_NOT_BOOKABLE');
+        if (!BOOKABLE_SLOT_TYPES.includes(slot.child_type)) throw ApiError.unprocessable('SLOT_NOT_BOOKABLE');
 
-            const time = this.resolveTime(slot, input.time);
-            const closing = input.remove === true;
-            const bookings = await this.affectedBookings(serviceId, optionId, slotId, time, ctx.session);
-            const cancelled = await this.bookings.cancelMany(
-                bookings.map((booking) => booking.id),
-                new Types.ObjectId(actor.id),
-                new Date(),
-                ctx.session,
-            );
+        const time = this.resolveTime(slot, input.time);
+        const closing = input.remove === true;
+        const bookings = await this.affectedBookings(serviceId, optionId, slotId, time, ctx.session);
+        const cancelled = await this.bookings.cancelMany(
+            bookings.map((booking) => booking.id),
+            new Types.ObjectId(actor.id),
+            new Date(),
+            ctx.session,
+        );
 
-            if (closing) await this.drop(serviceId, optionId, slot, time, ctx.session);
-            else await this.clearCounters(serviceId, optionId, slot, time, ctx.session);
+        if (closing) await this.drop(serviceId, optionId, slot, time, ctx.session);
+        else await this.clearCounters(serviceId, optionId, slot, time, ctx.session);
 
-            const dropped = closing
-                ? await this.waitlist.deleteBySlot(serviceId, optionId, slotId, time, ctx.session)
-                : 0;
+        const dropped = closing
+            ? await this.waitlist.deleteBySlot(serviceId, optionId, slotId, time, ctx.session)
+            : 0;
 
-            if (!closing) for (const booking of bookings) await this.lifecycle.notifyWaitlist(booking, ctx);
+        let waitlistNotified = 0;
 
-            const queued = await this.announce(bookings, input.notify !== false, actor, ctx, (booking) => ({
+        if (!closing)
+            for (const booking of bookings)
+                if (await this.lifecycle.notifyWaitlist(booking, ctx)) waitlistNotified += 1;
+
+        const { queued, sms } = await this.announce(
+            bookings,
+            input.notify !== false,
+            actor,
+            ctx,
+            (booking) => ({
                 type: 'booking.cancelled',
                 payload: eventPayload(booking, {
                     status: 'cancelled',
@@ -193,101 +236,111 @@ export class SlotAdminService implements OnModuleInit {
                     bulk: true,
                     reason: input.reason ?? null,
                 }),
-            }));
+            }),
+        );
 
-            if (closing) await this.services.touch(serviceId, ctx.session);
+        if (closing) await this.services.touch(serviceId, ctx.session);
 
-            const after = await this.services.load(serviceId, ctx.session);
-            const removed = this.gone(after, optionId, slotId, time);
+        const after = await this.services.load(serviceId, ctx.session);
+        const removed = this.gone(after, optionId, slotId, time);
 
-            if (removed) await this.services.recordSlotChange(before, after, actor, ctx.session);
+        if (removed) await this.services.recordSlotChange(before, after, actor, ctx.session);
 
-            return {
-                service_id: serviceId,
-                option_id: optionId,
-                slot_id: slotId,
-                time: time ?? null,
-                cancelled,
-                waitlist_dropped: dropped,
-                notifications_queued: queued,
-                removed,
-            };
-        });
+        return {
+            service_id: serviceId,
+            option_id: optionId,
+            slot_id: slotId,
+            time: time ?? null,
+            cancelled,
+            waitlist_dropped: dropped,
+            waitlist_notified: waitlistNotified,
+            notifications_queued: queued,
+            sms_queued: sms,
+            removed,
+            dry_run: false,
+        };
     }
 
-    private runMove(
+    private async runMove(
         serviceId: string,
         optionId: string,
         slotId: string,
         input: MoveSlotInput,
         actor: AuthUser,
+        ctx: TransactionContext,
     ): Promise<MoveSlotResult> {
-        return this.tx.run(async (ctx) => {
-            const before = await this.services.load(serviceId, ctx.session);
-            const option = optionOf(before, optionId);
-            const slot = slotOf(option, slotId);
+        const before = await this.services.load(serviceId, ctx.session);
+        const option = optionOf(before, optionId);
+        const slot = slotOf(option, slotId);
 
-            if (!DATED_SLOT_TYPES.includes(slot.child_type)) throw ApiError.unprocessable('SLOT_NOT_DATED');
+        if (!DATED_SLOT_TYPES.includes(slot.child_type)) throw ApiError.unprocessable('SLOT_NOT_DATED');
 
-            const timeZone = await this.timeZoneOf(before);
+        const timeZone = await this.timeZoneOf(before);
 
-            if (input.date < dateOnlyIn(new Date(), timeZone)) throw ApiError.unprocessable('SLOT_EXPIRED');
+        if (input.date < dateOnlyIn(new Date(), timeZone)) throw ApiError.unprocessable('SLOT_EXPIRED');
 
-            if (
-                slot.child_type !== 'time_range' &&
-                option.slots.some(
-                    (item) =>
-                        item.id !== slotId &&
-                        item.child_type !== 'time_range' &&
-                        item.value.date === input.date,
-                )
+        if (
+            slot.child_type !== 'time_range' &&
+            option.slots.some(
+                (item) =>
+                    item.id !== slotId && item.child_type !== 'time_range' && item.value.date === input.date,
             )
-                throw ApiError.conflict('SLOT_DATE_TAKEN');
+        )
+            throw ApiError.conflict('SLOT_DATE_TAKEN');
 
-            const previousDate = slot.value.date ?? '';
-            const minutes = input.shift_minutes ?? 0;
-            const shifted = this.shift(slot, minutes);
-            const summary = {
-                service_id: serviceId,
-                option_id: optionId,
-                slot_id: slotId,
-                date: input.date,
-                previous_date: previousDate,
+        const previousDate = slot.value.date ?? '';
+        const minutes = input.shift_minutes ?? 0;
+        const shifted = this.shift(slot, minutes);
+        const summary = {
+            service_id: serviceId,
+            option_id: optionId,
+            slot_id: slotId,
+            date: input.date,
+            previous_date: previousDate,
+        };
+
+        if (previousDate === input.date && minutes === 0)
+            return {
+                ...summary,
+                moved: 0,
+                waitlist_moved: 0,
+                notifications_queued: 0,
+                sms_queued: 0,
+                dry_run: false,
             };
 
-            if (previousDate === input.date && minutes === 0)
-                return { ...summary, moved: 0, notifications_queued: 0 };
+        const bookings = await this.affectedBookings(serviceId, optionId, slotId, undefined, ctx.session);
+        const waiting = await this.affectedWaiting(serviceId, optionId, slotId, ctx.session);
 
-            const bookings = await this.affectedBookings(serviceId, optionId, slotId, undefined, ctx.session);
-            const waiting = await this.affectedWaiting(serviceId, optionId, slotId, ctx.session);
-
-            if (previousDate !== input.date)
-                await this.slots.setFields(
-                    serviceId,
-                    optionId,
-                    slotId,
-                    { 'value.date': input.date },
-                    ctx.session,
-                );
-
-            await this.slots.renameTimes(
+        if (previousDate !== input.date)
+            await this.slots.setFields(
                 serviceId,
                 optionId,
                 slotId,
-                this.renameOrder(shifted, minutes),
-                ctx.session,
-            );
-            await this.shiftEnds(serviceId, optionId, slot, minutes, ctx.session);
-            const moved = await this.bookings.moveMany(
-                this.destinations(bookings, input.date, minutes, timeZone),
-                ctx.session,
-            );
-            await this.waitlist.moveMany(
-                this.destinations(waiting, input.date, minutes, timeZone),
+                { 'value.date': input.date },
                 ctx.session,
             );
 
-            const queued = await this.announce(bookings, input.notify !== false, actor, ctx, (booking) => ({
+        await this.slots.renameTimes(
+            serviceId,
+            optionId,
+            slotId,
+            this.renameOrder(shifted, minutes),
+            ctx.session,
+        );
+        await this.shiftEnds(serviceId, optionId, slot, minutes, ctx.session);
+        const moved = await this.bookings.moveMany(
+            this.destinations(bookings, input.date, minutes, timeZone),
+            ctx.session,
+        );
+        await this.waitlist.moveMany(this.destinations(waiting, input.date, minutes, timeZone), ctx.session);
+
+        const { queued, sms } = await this.announce(
+            bookings,
+            input.notify !== false,
+            actor,
+            ctx,
+            (booking) => ({
                 type: 'booking.rescheduled',
                 payload: eventPayload(booking, {
                     date: input.date,
@@ -303,13 +356,57 @@ export class SlotAdminService implements OnModuleInit {
                         end_time: booking.slot_end ?? null,
                     },
                 }),
-            }));
-            await this.services.touch(serviceId, ctx.session);
-            const after = await this.services.load(serviceId, ctx.session);
-            await this.services.recordSlotChange(before, after, actor, ctx.session);
+            }),
+        );
+        await this.services.touch(serviceId, ctx.session);
+        const after = await this.services.load(serviceId, ctx.session);
+        await this.services.recordSlotChange(before, after, actor, ctx.session);
 
-            return { ...summary, moved, notifications_queued: queued };
-        });
+        return {
+            ...summary,
+            moved,
+            waitlist_moved: waiting.length,
+            notifications_queued: queued,
+            sms_queued: sms,
+            dry_run: false,
+        };
+    }
+
+    private async retire(
+        parent: { service_id: Types.ObjectId } | { organization_id: Types.ObjectId },
+        ctx: TransactionContext,
+        { actor, cancelBookings }: RetireOptions,
+    ): Promise<void> {
+        const bookings = await this.bookings.findActiveOf(parent, ctx.session);
+
+        if (bookings.length === 0) return;
+
+        if (!cancelBookings)
+            throw ApiError.conflict(
+                'service_id' in parent ? 'SERVICE_HAS_BOOKINGS' : 'ORGANIZATION_HAS_BOOKINGS',
+            );
+
+        await this.bookings.cancelMany(
+            bookings.map((booking) => booking.id),
+            actor ? new Types.ObjectId(actor.id) : null,
+            new Date(),
+            ctx.session,
+        );
+
+        if ('service_id' in parent) {
+            await this.waitlist.deleteByService(parent.service_id.toHexString(), ctx.session);
+            await this.slots.clearCountsOfService(parent.service_id.toHexString(), ctx.session);
+        } else await this.waitlist.deleteByOrganization(parent.organization_id.toHexString(), ctx.session);
+
+        await this.announce(bookings, true, actor, ctx, (booking) => ({
+            type: 'booking.cancelled',
+            payload: eventPayload(booking, {
+                status: 'cancelled',
+                cancelled_by: 'admin',
+                bulk: true,
+                reason: null,
+            }),
+        }));
     }
 
     private async once<T extends object>(
@@ -529,11 +626,11 @@ export class SlotAdminService implements OnModuleInit {
     private async announce(
         bookings: BookingEntity[],
         notify: boolean,
-        actor: AuthUser,
+        actor: AuthUser | null,
         ctx: TransactionContext,
         describe: (booking: BookingEntity) => Announcement,
-    ): Promise<number> {
-        if (bookings.length === 0) return 0;
+    ): Promise<{ queued: number; sms: number }> {
+        if (bookings.length === 0) return { queued: 0, sms: 0 };
 
         const emails = notify
             ? await this.users.findEmailsByIds(bookings.map((booking) => booking.user_id.toHexString()))
@@ -544,7 +641,7 @@ export class SlotAdminService implements OnModuleInit {
                 ...describe(booking),
                 organizationId: booking.organization_id,
                 internal: {
-                    actor: eventActor(actor, booking),
+                    actor: eventActorOrNull(actor, booking),
                     ...(notify
                         ? {
                               notify: true,
@@ -558,7 +655,13 @@ export class SlotAdminService implements OnModuleInit {
         );
         ctx.afterCommit(() => this.outbox.poke());
 
-        return notify ? bookings.length : 0;
+        if (!notify) return { queued: 0, sms: 0 };
+
+        return {
+            queued: bookings.length,
+            sms: bookings.filter((booking) => booking.phone && !emails.has(booking.user_id.toHexString()))
+                .length,
+        };
     }
 
     private resolveTime(slot: SlotBody, time: string | undefined): string | undefined {

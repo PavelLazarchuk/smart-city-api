@@ -1,8 +1,8 @@
-import { validateBookingFields, validateDocuments } from './booking-form';
+import { maskFields, maskValue, validateBookingFields, validateDocuments } from './booking-form';
 import { type FormField } from '../services/schemas/service.schema';
 
 function field(overrides: Partial<FormField> & Pick<FormField, 'key' | 'type'>): FormField {
-    return { label: overrides.key, required: false, max_length: null, ...overrides };
+    return { label: overrides.key, required: false, max_length: null, sensitive: false, ...overrides };
 }
 
 describe('validateBookingFields', () => {
@@ -159,5 +159,24 @@ describe('validateDocuments', () => {
 
     it('passes without any documents declared', () => {
         expect(validateDocuments([], [])).toEqual([]);
+    });
+});
+
+describe('maskFields', () => {
+    it('masks only the sensitive answers and keeps the last two characters of long ones', () => {
+        expect(
+            maskFields({ tax_id: '3012345678', pin: '1234', city: 'Kyiv', flags: [1, 2, 3] }, [
+                'tax_id',
+                'pin',
+                'flags',
+            ]),
+        ).toEqual({ tax_id: '****78', pin: '****', city: 'Kyiv', flags: '****3]' });
+    });
+
+    it('returns the same object when nothing is sensitive', () => {
+        const fields = { city: 'Kyiv' };
+
+        expect(maskFields(fields, [])).toBe(fields);
+        expect(maskValue(42)).toBe('****');
     });
 });

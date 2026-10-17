@@ -174,7 +174,24 @@ export class BookingsRepository extends BaseRepository<Booking> {
         );
     }
 
-    async cancelMany(ids: string[], by: Types.ObjectId, now: Date, session?: ClientSession): Promise<number> {
+    findActiveOf(
+        parent: { service_id: Types.ObjectId } | { organization_id: Types.ObjectId },
+        session?: ClientSession,
+    ): Promise<BookingEntity[]> {
+        return this.model
+            .find({ ...parent, active: true })
+            .sort({ created_at: 1, _id: 1 })
+            .session(session ?? null)
+            .lean<BookingEntity[]>()
+            .exec();
+    }
+
+    async cancelMany(
+        ids: string[],
+        by: Types.ObjectId | null,
+        now: Date,
+        session?: ClientSession,
+    ): Promise<number> {
         if (ids.length === 0) return 0;
 
         const result = await this.model
@@ -544,7 +561,13 @@ export class BookingsRepository extends BaseRepository<Booking> {
         const pattern = search ? new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
         const [result] = await this.aggregate<{ items: OrganizationClientRow[]; total: { count: number }[] }>(
             [
-                { $match: { organization_id: new Types.ObjectId(organizationId) } },
+                {
+                    $match: {
+                        organization_id: new Types.ObjectId(organizationId),
+                        $nor: [{ person: '', phone: '' }],
+                        ...(pattern ? { $or: [{ person: pattern }, { phone: pattern }] } : {}),
+                    },
+                },
                 { $sort: { created_at: -1 } },
                 {
                     $group: {
@@ -555,29 +578,36 @@ export class BookingsRepository extends BaseRepository<Booking> {
                         last_booking_at: { $first: '$created_at' },
                     },
                 },
+                { $sort: { last_booking_at: -1, _id: -1 } },
                 {
-                    $lookup: {
-                        from: 'users',
-                        localField: '_id',
-                        foreignField: '_id',
-                        pipeline: [{ $project: { name: 1, phone: 1 } }],
-                        as: 'user',
+                    $facet: {
+                        items: [
+                            { $skip: skip },
+                            { $limit: limit },
+                            {
+                                $lookup: {
+                                    from: 'users',
+                                    localField: '_id',
+                                    foreignField: '_id',
+                                    pipeline: [{ $project: { name: 1, phone: 1 } }],
+                                    as: 'user',
+                                },
+                            },
+                            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+                            {
+                                $project: {
+                                    _id: 0,
+                                    user_id: '$_id',
+                                    name: { $ifNull: ['$user.name', '$person'] },
+                                    phone: { $ifNull: ['$user.phone', '$phone'] },
+                                    bookings: 1,
+                                    last_booking_at: 1,
+                                },
+                            },
+                        ],
+                        total: [{ $count: 'count' }],
                     },
                 },
-                { $unwind: '$user' },
-                {
-                    $project: {
-                        _id: 0,
-                        user_id: '$_id',
-                        name: { $ifNull: ['$user.name', '$person'] },
-                        phone: { $ifNull: ['$user.phone', '$phone'] },
-                        bookings: 1,
-                        last_booking_at: 1,
-                    },
-                },
-                ...(pattern ? [{ $match: { $or: [{ name: pattern }, { phone: pattern }] } }] : []),
-                { $sort: { last_booking_at: -1, user_id: -1 } },
-                { $facet: { items: [{ $skip: skip }, { $limit: limit }], total: [{ $count: 'count' }] } },
             ],
         );
 

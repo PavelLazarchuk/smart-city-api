@@ -176,7 +176,7 @@ export class ImagesService implements OnModuleInit {
         buffer: Buffer,
         type: { format: ImageFormat; animated?: boolean },
     ): Promise<Buffer> {
-        const { maxPixels, maxDimension } = this.config.upload;
+        const { maxPixels, maxDimension, storedSide } = this.config.upload;
         const animated = type.animated ?? false;
         let width = 0;
         let height = 0;
@@ -200,6 +200,7 @@ export class ImagesService implements OnModuleInit {
 
         try {
             output = await (type.format === 'jpeg' ? pipeline.rotate() : pipeline)
+                .resize({ width: storedSide, height: storedSide, fit: 'inside', withoutEnlargement: true })
                 .toFormat(type.format)
                 .toBuffer();
         } catch (error) {

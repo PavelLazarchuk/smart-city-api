@@ -4,6 +4,7 @@ import { type OpenAPIObject } from '@nestjs/swagger';
 
 import { ERROR_STATUS, ALL_ERROR_CODES } from '../http/error-status';
 import { type ErrorCode, errorMessages } from '../i18n/messages';
+import { ALLOW_PENDING_PASSWORD_KEY } from '../decorators/pending-password.decorator';
 import { API_ERRORS_KEY } from './api-errors.decorator';
 
 const ERROR_ENVELOPE = 'ErrorEnvelope';
@@ -50,7 +51,7 @@ function responseFor(codes: ErrorCode[]): Record<string, unknown> {
 }
 
 export function documentErrorResponses(app: INestApplication, document: OpenAPIObject): OpenAPIObject {
-    const declared = collectDeclared(app);
+    const { declared, pendingPasswordAllowed } = collectDeclared(app);
     const components = (document.components ??= {});
     const schemas = (components.schemas ??= {});
     schemas[ERROR_ENVELOPE] = {
@@ -104,6 +105,9 @@ export function documentErrorResponses(app: INestApplication, document: OpenAPIO
 
             if (operation.security && operation.security.length > 0) {
                 for (const [status, codes] of Object.entries(GENERIC_AUTH)) add(Number(status), codes);
+
+                if (!pendingPasswordAllowed.has(operation.operationId ?? ''))
+                    add(ERROR_STATUS.PASSWORD_CHANGE_REQUIRED, ['PASSWORD_CHANGE_REQUIRED']);
             }
 
             if (path.includes('{')) add(404, ['NOT_FOUND']);
@@ -124,11 +128,15 @@ export function documentErrorResponses(app: INestApplication, document: OpenAPIO
     return document;
 }
 
-function collectDeclared(app: INestApplication): Map<string, ErrorCode[]> {
+function collectDeclared(app: INestApplication): {
+    declared: Map<string, ErrorCode[]>;
+    pendingPasswordAllowed: Set<string>;
+} {
     const discovery = app.get(DiscoveryService);
     const scanner = app.get(MetadataScanner);
     const reflector = app.get(Reflector);
     const declared = new Map<string, ErrorCode[]>();
+    const pendingPasswordAllowed = new Set<string>();
 
     for (const wrapper of discovery.getControllers()) {
         const instance: unknown = wrapper.instance;
@@ -146,8 +154,16 @@ function collectDeclared(app: INestApplication): Map<string, ErrorCode[]> {
             const codes = reflector.get<ErrorCode[] | undefined>(API_ERRORS_KEY, handler);
 
             if (codes && codes.length > 0) declared.set(`${metatype.name}_${name}`, codes);
+
+            if (
+                reflector.getAllAndOverride<boolean>(ALLOW_PENDING_PASSWORD_KEY, [
+                    handler as (...args: unknown[]) => unknown,
+                    wrapper.metatype as (...args: unknown[]) => unknown,
+                ])
+            )
+                pendingPasswordAllowed.add(`${metatype.name}_${name}`);
         }
     }
 
-    return declared;
+    return { declared, pendingPasswordAllowed };
 }

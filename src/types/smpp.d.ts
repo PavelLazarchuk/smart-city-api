@@ -5,7 +5,12 @@ declare module 'smpp' {
     }
     interface Session {
         bind_transceiver(params: Record<string, unknown>, callback: (pdu: Pdu) => void): void;
-        submit_sm(params: Record<string, unknown>, callback: (pdu: Pdu) => void): void;
+        submit_sm(
+            params: Record<string, unknown>,
+            callback: (pdu: Pdu) => void,
+            sendCallback?: (pdu: Pdu) => void,
+            failureCallback?: (pdu: Pdu) => void,
+        ): void;
         unbind(): void;
         close(): void;
         on(event: 'error', listener: (error: Error) => void): void;

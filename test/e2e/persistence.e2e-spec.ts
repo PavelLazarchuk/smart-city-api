@@ -147,6 +147,23 @@ describe('persistence (e2e)', () => {
         });
     });
 
+    describe('read timeout', () => {
+        it('gives every read a server-side time limit unless the query sets its own', async () => {
+            const organizations = t.app.get<Model<unknown>>(getModelToken('Organization'));
+            const find = organizations.find({});
+            const own = organizations.find({}).maxTimeMS(500);
+            const aggregate = organizations.aggregate([{ $match: {} }]);
+            const write = organizations.updateMany({}, { $set: { main_label: 'x' } });
+
+            await Promise.all([find.exec(), own.exec(), aggregate.exec(), write.exec()]);
+
+            expect(find.getOptions().maxTimeMS).toBe(t.config.mongo.readTimeoutMs);
+            expect(own.getOptions().maxTimeMS).toBe(500);
+            expect(aggregate.options.maxTimeMS).toBe(t.config.mongo.readTimeoutMs);
+            expect(write.getOptions().maxTimeMS).toBeUndefined();
+        });
+    });
+
     describe('indexes', () => {
         it('the migration creates every index the schemas declare, and down removes them all', async () => {
             const db = t.connection.db!;

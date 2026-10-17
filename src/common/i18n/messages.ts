@@ -27,6 +27,7 @@ export const ERROR_CODES = {
     PASSWORD_TOO_LONG: 'PASSWORD_TOO_LONG',
     PASSWORD_TOO_WEAK: 'PASSWORD_TOO_WEAK',
     PASSWORD_UNCHANGED: 'PASSWORD_UNCHANGED',
+    PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
     LOGIN_TOO_SHORT: 'LOGIN_TOO_SHORT',
     ACCOUNT_HAS_NO_PASSWORD: 'ACCOUNT_HAS_NO_PASSWORD',
 
@@ -52,6 +53,7 @@ export const ERROR_CODES = {
     IMAGE_NOT_FOUND: 'IMAGE_NOT_FOUND',
     ARCHIVE_NOT_FOUND: 'ARCHIVE_NOT_FOUND',
     CATEGORY_ORGANIZATION_MISMATCH: 'CATEGORY_ORGANIZATION_MISMATCH',
+    CATEGORY_NOT_EMPTY: 'CATEGORY_NOT_EMPTY',
     REORDER_MISMATCH: 'REORDER_MISMATCH',
     INCLUDE_NOT_ALLOWED: 'INCLUDE_NOT_ALLOWED',
 
@@ -59,6 +61,8 @@ export const ERROR_CODES = {
     OPTION_HAS_BOOKINGS: 'OPTION_HAS_BOOKINGS',
     SLOT_NOT_FOUND: 'SLOT_NOT_FOUND',
     SLOT_HAS_BOOKINGS: 'SLOT_HAS_BOOKINGS',
+    SERVICE_HAS_BOOKINGS: 'SERVICE_HAS_BOOKINGS',
+    ORGANIZATION_HAS_BOOKINGS: 'ORGANIZATION_HAS_BOOKINGS',
     SLOT_NOT_DATED: 'SLOT_NOT_DATED',
     SLOT_NOT_LIMITED: 'SLOT_NOT_LIMITED',
     SLOT_NOT_TIMED: 'SLOT_NOT_TIMED',
@@ -166,6 +170,7 @@ export const errorMessages: Record<ErrorCode, string> = {
     PASSWORD_TOO_WEAK:
         'The password must contain a lowercase letter, an uppercase letter, a digit and a special character.',
     PASSWORD_UNCHANGED: 'The new password must differ from the current one.',
+    PASSWORD_CHANGE_REQUIRED: 'Change the password you were given before using the API.',
     LOGIN_TOO_SHORT: 'The login is too short.',
     ACCOUNT_HAS_NO_PASSWORD: 'This account has no password. Use the one-time code login.',
 
@@ -191,6 +196,7 @@ export const errorMessages: Record<ErrorCode, string> = {
     IMAGE_NOT_FOUND: 'Image not found.',
     ARCHIVE_NOT_FOUND: 'Archive entry not found.',
     CATEGORY_ORGANIZATION_MISMATCH: 'The category belongs to a different organization.',
+    CATEGORY_NOT_EMPTY: 'The category still has services. Move or delete them first.',
     REORDER_MISMATCH: 'The list of ids must contain every child exactly once.',
     INCLUDE_NOT_ALLOWED: 'One of the requested includes is not supported.',
 
@@ -198,6 +204,10 @@ export const errorMessages: Record<ErrorCode, string> = {
     OPTION_HAS_BOOKINGS: 'This option still has bookings. Cancel them before removing it.',
     SLOT_NOT_FOUND: 'The requested slot does not exist.',
     SLOT_HAS_BOOKINGS: 'This slot still has bookings. Cancel them before removing it.',
+    SERVICE_HAS_BOOKINGS:
+        'The service still has active bookings. Pass cancel_bookings=true to cancel them and notify the clients.',
+    ORGANIZATION_HAS_BOOKINGS:
+        'The organization still has active bookings. Pass cancel_bookings=true to cancel them and notify the clients.',
     SLOT_NOT_DATED: 'This slot type has no date.',
     SLOT_NOT_LIMITED: 'This slot type has no capacity limit.',
     SLOT_NOT_TIMED: 'This slot type has no time entries.',

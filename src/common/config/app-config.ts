@@ -55,6 +55,7 @@ export class AppConfig {
         minPoolSize: number;
         serverSelectionTimeoutMs: number;
         socketTimeoutMs: number;
+        readTimeoutMs: number;
         retryWrites: boolean;
         writeConcern: typeof MONGO_CONNECTION.writeConcern;
         readPreference: typeof MONGO_CONNECTION.readPreference;
@@ -154,7 +155,13 @@ export class AppConfig {
         };
     };
 
-    readonly upload: { maxBytes: number; maxPixels: number; maxDimension: number; allowedMime: string[] };
+    readonly upload: {
+        maxBytes: number;
+        maxPixels: number;
+        maxDimension: number;
+        storedSide: number;
+        allowedMime: string[];
+    };
 
     readonly retention: { serviceTrashDays: number; recurrentHorizonDays: number };
 
@@ -204,6 +211,7 @@ export class AppConfig {
             minPoolSize: MONGO_CONNECTION.minPoolSize,
             serverSelectionTimeoutMs: MONGO_CONNECTION.serverSelectionTimeoutMs,
             socketTimeoutMs: MONGO_CONNECTION.socketTimeoutMs,
+            readTimeoutMs: MONGO_CONNECTION.readTimeoutMs,
             retryWrites: MONGO_CONNECTION.retryWrites,
             writeConcern: MONGO_CONNECTION.writeConcern,
             readPreference: MONGO_CONNECTION.readPreference,
@@ -308,6 +316,7 @@ export class AppConfig {
             maxBytes: env.UPLOAD_MAX_BYTES,
             maxPixels: UPLOAD_LIMITS.maxPixels,
             maxDimension: UPLOAD_LIMITS.maxDimension,
+            storedSide: UPLOAD_LIMITS.storedSide,
             allowedMime: env.UPLOAD_ALLOWED_MIME,
         };
         this.retention = {

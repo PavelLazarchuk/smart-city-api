@@ -60,7 +60,9 @@ describe('AnalyticsService', () => {
         expect(document['organization_id']).toBeInstanceOf(Types.ObjectId);
         expect(String(document['organization_id'])).toBe(organizationId);
         expect(document['user_id']).toBeInstanceOf(Types.ObjectId);
-        expect(document).toMatchObject({ user_role: 'common-user', user_name: 'Anna', user_phone: '49152' });
+        expect(document['user_role']).toBe('common-user');
+        expect('user_name' in document).toBe(false);
+        expect('user_phone' in document).toBe(false);
         expect(document['organization_label']).toBe('Clinic');
         expect('service_id' in document).toBe(false);
         expect('date' in document).toBe(false);

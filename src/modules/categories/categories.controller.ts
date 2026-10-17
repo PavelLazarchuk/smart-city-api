@@ -20,6 +20,7 @@ import { type AuthUser, CurrentUser } from '../../common/decorators/current-user
 import { Public } from '../../common/decorators/public.decorator';
 import { ROLES, Roles } from '../../common/decorators/roles.decorator';
 import { Serialize, SerializePaginated } from '../../common/http/serialize.decorator';
+import { ApiErrors } from '../../common/openapi/api-errors.decorator';
 import { type PaginatedResult } from '../../common/pagination/paginated-result';
 import { ReorderDto } from '../organizations/dto/organization.schemas';
 import { ServicesService } from '../services/services.service';
@@ -91,6 +92,7 @@ export class CategoriesController {
     @Roles(ROLES.COMMON_ADMIN, ROLES.SUPER_ADMIN)
     @OrganizationScope({ from: 'entity', entity: 'category' })
     @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiErrors('CATEGORY_NOT_FOUND', 'CATEGORY_NOT_EMPTY')
     async remove(@Param('id') id: string): Promise<void> {
         await this.categories.delete(id);
     }

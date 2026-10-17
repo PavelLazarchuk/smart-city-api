@@ -147,10 +147,15 @@ entries in one statement.
   sees published services only; an organization's admins also see their drafts, archive and trash.
 - **`slug`** is unique per organization (partial unique index on `{ organization_id, slug }`), generated from
   the label by transliteration when not supplied, and served by `GET /organizations/:id/services/:slug`.
-- **Soft delete.** `DELETE /services/:id` sets `deleted_at`; every read filters `deleted_at: null`, bookings stay
-  untouched, `POST /services/:id/restore` brings it back, and `trash_purge` runs the real cascade after
-  `SERVICE_TRASH_RETENTION_DAYS`. `?permanent=true` (super-admin) skips the trash. The scope resolver sees the
-  trash on purpose, so restoring needs the same right as editing.
+- **Soft delete.** `DELETE /services/:id` sets `deleted_at`; every read filters `deleted_at: null`,
+  `POST /services/:id/restore` brings it back at the end of its list, and `trash_purge` runs the real cascade
+  after `SERVICE_TRASH_RETENTION_DAYS`. `?permanent=true` (super-admin) skips the trash. A service with active
+  bookings is refused with `409 SERVICE_HAS_BOOKINGS` unless the call carries `?cancel_bookings=true`: then the
+  bookings are cancelled as a bulk staff cancellation (clients notified, waiting list dropped) in the same
+  transaction. `DELETE /organizations/:id` follows the same rule (`ORGANIZATION_HAS_BOOKINGS`). A category can
+  only be deleted once no live service is in it (`409 CATEGORY_NOT_EMPTY`); trashed services lose the category
+  and come back uncategorised. Reorders ignore trashed services. The scope resolver sees the trash on purpose, so
+  restoring needs the same right as editing.
 - **History.** Every write appends a `service_revisions` row with the actor and a diff of the top-level fields
   that changed; occupancy counters are stripped before comparing, because a booking is not an edit.
 - **Working hours, duration and holidays** feed the recurrence: a `recurrent_dates` weekday with an empty `time`
@@ -169,7 +174,11 @@ entries in one statement.
   `GET /services/:id/slots` renders it with the organization's offset.
 - **`form_fields` and `required_documents`** describe what a booking must carry: answers arrive as `fields`
   (validated per type, unknown keys refused) and `documents` (keys the client confirms); both are stored on
-  the booking row.
+  the booking row. A field with `sensitive: true` (a tax number, a passport number, a diagnosis — better not
+  asked at all unless the service needs it) is masked to `****` plus its last two characters in every booking
+  list and in the CSV export, and shown in full only by `GET /bookings/:id`. The flag is read from the service
+  at answer time, so marking a field later masks the answers already stored. Operators get the export without
+  the `fields` column.
 
 ## Booking lifecycle
 
@@ -400,11 +409,11 @@ Shape of the set:
 - **Text** — `organizations.main_label` for search.
 - **TTL** — `sessions.expires_at`, `verification_codes.expires_at`, `rate_limits.expires_at` (all
   `expireAfterSeconds: 0`), plus `sms_counters.expires_at` and `idempotency_keys.expires_at`; `archives.created_at` at
-  30 days; `analytics_events.created_at` and `sms.created_at` at 365 days, because those rows carry client
-  phone numbers and names; `bookings.finished_at` at 365 days (a live booking has no `finished_at`, so it never
+  30 days; `analytics_events.created_at` and `sms.created_at` at 365 days (analytics events carry only
+  `user_id` and `user_role`, never a name or a phone; SMS rows keep the phone); `bookings.finished_at` at 365 days (a live booking has no `finished_at`, so it never
   expires) and `outbox_events.created_at` at 30 days; `notifications.created_at` at 30 days. Each window is a constant in the migration that creates
   the index.
-  Deleting an account also strips `user_id`, `user_name` and `user_phone` from its analytics events, so the
+  Deleting an account also strips `user_id` from its analytics events, so the
   statistics survive the account without pointing at a person.
 
 TTL windows live in the migration only, never in the schema, so development and production cannot drift.

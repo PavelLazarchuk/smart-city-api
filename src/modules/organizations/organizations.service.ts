@@ -273,9 +273,10 @@ export class OrganizationsService {
         return `W/"${digest}"`;
     }
 
-    async delete(id: string): Promise<void> {
+    async delete(id: string, actor: AuthUser | null = null, cancelBookings = false): Promise<void> {
         await this.getById(id);
         await this.tx.run(async (ctx) => {
+            await this.cascade.retire('organization', id, ctx, { actor, cancelBookings });
             await this.cascade.run('organization', id, ctx);
             await this.organizations.deleteById(id, ctx.session);
         });

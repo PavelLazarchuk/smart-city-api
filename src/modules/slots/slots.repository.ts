@@ -204,6 +204,25 @@ export class SlotsRepository extends BaseRepository<Slot> {
         );
     }
 
+    async clearCountsOfService(serviceId: string, session?: ClientSession): Promise<void> {
+        const service = { service_id: new Types.ObjectId(serviceId) };
+
+        await this.model
+            .updateMany(
+                { ...service, 'value.time.0': { $exists: true } },
+                { $set: { 'value.time.$[].booked_count': 0 } },
+            )
+            .session(session ?? null)
+            .exec();
+        await this.model
+            .updateMany(
+                { ...service, 'value.booked_count': { $gt: 0 } },
+                { $set: { 'value.booked_count': 0 } },
+            )
+            .session(session ?? null)
+            .exec();
+    }
+
     clearTimeCounts(
         serviceId: string,
         optionId: string,

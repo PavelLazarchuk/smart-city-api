@@ -4,6 +4,7 @@ import { type Request } from 'express';
 
 import { ApiData } from '../../common/decorators/api-paginated.decorator';
 import { type AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AllowPendingPassword } from '../../common/decorators/pending-password.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { EVENT_TYPES, TrackEvent } from '../../common/decorators/track-event.decorator';
 import { Serialize, SerializeList } from '../../common/http/serialize.decorator';
@@ -88,6 +89,7 @@ export class AuthController {
 
     @Get('sessions')
     @ApiBearerAuth()
+    @AllowPendingPassword()
     @ApiData(SessionResponseDto)
     @SerializeList(sessionResponseSchema)
     sessions(@CurrentUser() user: AuthUser): Promise<SessionResponse[]> {
@@ -96,6 +98,7 @@ export class AuthController {
 
     @Delete('sessions/:sid')
     @ApiBearerAuth()
+    @AllowPendingPassword()
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiNoContentResponse({ description: 'Session revoked' })
     async revokeSession(@CurrentUser() user: AuthUser, @Param('sid') sid: string): Promise<void> {
@@ -104,6 +107,7 @@ export class AuthController {
 
     @Post('logout')
     @ApiBearerAuth()
+    @AllowPendingPassword()
     @HttpCode(HttpStatus.NO_CONTENT)
     async logout(@CurrentUser() user: AuthUser): Promise<void> {
         await this.auth.logout(user);
@@ -111,6 +115,7 @@ export class AuthController {
 
     @Post('logout-all')
     @ApiBearerAuth()
+    @AllowPendingPassword()
     @HttpCode(HttpStatus.NO_CONTENT)
     async logoutAll(@CurrentUser() user: AuthUser): Promise<void> {
         await this.auth.logoutAll(user);
@@ -118,6 +123,7 @@ export class AuthController {
 
     @Get('me')
     @ApiBearerAuth()
+    @AllowPendingPassword()
     @ApiData(UserResponseDto)
     @Serialize(userResponseSchema)
     me(@CurrentUser() user: AuthUser): Promise<UserEntity> {
@@ -126,6 +132,7 @@ export class AuthController {
 
     @Patch('password')
     @ApiBearerAuth()
+    @AllowPendingPassword()
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiNoContentResponse({ description: 'Password changed' })
     async changePassword(@CurrentUser() user: AuthUser, @Body() body: ChangePasswordDto): Promise<void> {

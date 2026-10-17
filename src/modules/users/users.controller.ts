@@ -57,9 +57,10 @@ export class UsersController {
     @Serialize(userResponseSchema)
     async create(
         @Body() body: CreateUserDto,
+        @CurrentUser() actor: AuthUser,
         @Res({ passthrough: true }) res: Response,
     ): Promise<UserEntity> {
-        const user = await this.users.create(body);
+        const user = await this.users.create(body, actor);
         res.setHeader('Location', `/users/${user._id.toHexString()}`);
 
         return user;

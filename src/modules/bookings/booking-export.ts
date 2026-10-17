@@ -1,7 +1,7 @@
 import { CSV_BOM, csvLine, type CsvValue } from '../../common/csv';
 import { type BookingEntity } from './bookings.repository';
 
-const COLUMNS: readonly [string, (booking: BookingEntity) => CsvValue][] = [
+const COLUMNS: readonly [string, (booking: BookingEntity, options: CsvOptions) => CsvValue][] = [
     ['id', (booking) => booking.id],
     ['status', (booking) => booking.status],
     ['service_id', (booking) => booking.service_id.toHexString()],
@@ -20,15 +20,26 @@ const COLUMNS: readonly [string, (booking: BookingEntity) => CsvValue][] = [
     ['phone', (booking) => booking.phone],
     ['address', (booking) => booking.address],
     ['info', (booking) => booking.info],
-    ['fields', (booking) => (Object.keys(booking.fields ?? {}).length ? booking.fields : null)],
+    [
+        'fields',
+        (booking, options) =>
+            options.fields && Object.keys(booking.fields ?? {}).length ? booking.fields : null,
+    ],
     ['documents', (booking) => (booking.documents ?? []).join('; ')],
     ['created_at', (booking) => booking.created_at],
     ['confirmed_at', (booking) => booking.confirmed_at],
     ['finished_at', (booking) => booking.finished_at],
 ];
 
-export async function* bookingsCsv(bookings: AsyncIterable<BookingEntity>): AsyncGenerator<string> {
+export interface CsvOptions {
+    fields: boolean;
+}
+
+export async function* bookingsCsv(
+    bookings: AsyncIterable<BookingEntity>,
+    options: CsvOptions = { fields: true },
+): AsyncGenerator<string> {
     yield CSV_BOM + csvLine(COLUMNS.map(([name]) => name));
 
-    for await (const booking of bookings) yield csvLine(COLUMNS.map(([, value]) => value(booking)));
+    for await (const booking of bookings) yield csvLine(COLUMNS.map(([, value]) => value(booking, options)));
 }

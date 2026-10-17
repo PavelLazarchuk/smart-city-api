@@ -10,6 +10,7 @@ export interface AuthUser {
     name?: string;
     phone?: string;
     login?: string;
+    password_change_required?: boolean;
 }
 
 export interface RequestWithUser {

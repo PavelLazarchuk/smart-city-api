@@ -22,6 +22,13 @@ export function eventActor(actor: AuthUser, booking: { user_id: Types.ObjectId }
     return { id: actor.id, kind: actor.id === booking.user_id.toHexString() ? 'client' : 'staff' };
 }
 
+export function eventActorOrNull(
+    actor: AuthUser | null,
+    booking: { user_id: Types.ObjectId },
+): EventActor | undefined {
+    return actor ? eventActor(actor, booking) : undefined;
+}
+
 export function eventPayload(
     booking: BookingEntity | Booking,
     extra: Record<string, unknown> = {},

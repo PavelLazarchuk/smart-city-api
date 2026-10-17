@@ -420,12 +420,19 @@ describe('bookings (e2e)', () => {
                     .delete(`${t.prefix}/services/${service.id}`)
                     .set('Authorization', await fx.bearer(admin))
             ).status,
+        ).toBe(409);
+        expect(
+            (
+                await t.http
+                    .delete(`${t.prefix}/services/${service.id}?cancel_bookings=true`)
+                    .set('Authorization', await fx.bearer(admin))
+            ).status,
         ).toBe(204);
         expect(
             (await fx.collection<{ deleted_at: Date | null }>('Service').findById(service.id).lean())
                 ?.deleted_at,
         ).toBeInstanceOf(Date);
-        expect(await fx.collection('Booking').countDocuments({})).toBe(2);
+        expect(await fx.collection('Booking').countDocuments({ status: 'cancelled' })).toBe(2);
 
         expect(
             (

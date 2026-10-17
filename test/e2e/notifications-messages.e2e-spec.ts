@@ -288,6 +288,9 @@ describe('notifications: messages and privacy (e2e)', () => {
             const gone = await fx.client({ name: 'Gone' });
             await asClient(gone);
             await fx.collection('User').deleteOne({ _id: new Types.ObjectId(gone.id) });
+            await fx
+                .collection('Booking')
+                .updateMany({ user_id: new Types.ObjectId(gone.id) }, { $set: { person: '', phone: '' } });
             const elsewhere = await fx.organization();
             await fx.booking({
                 service_id: (await fx.service(elsewhere.id, { options: [twoTimes()] })).id,

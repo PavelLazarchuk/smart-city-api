@@ -11,14 +11,11 @@ import {
     timestampsOutputSchema,
 } from '../../../common/zod/primitives';
 
-/** Rows carrying `user_phone` / `user_name` are super-admin-only, which the route enforces. */
 export const analyticsEventResponseSchema = z.object({
     id: idOutputSchema,
     type: z.enum(EVENT_TYPE_VALUES),
     user_id: idOutputSchema.optional(),
     user_role: z.string().optional(),
-    user_name: z.string().optional(),
-    user_phone: z.string().optional(),
     organization_id: idOutputSchema.optional(),
     organization_label: z.string().optional(),
     service_id: idOutputSchema.optional(),

@@ -50,6 +50,7 @@ import {
 import { ServicesService } from '../services/services.service';
 import {
     CreateOrganizationDto,
+    DeleteOrganizationQueryDto,
     ListOrganizationsQueryDto,
     MaskedOrganizationListItemDto,
     maskedOrganizationListItemSchema,
@@ -151,8 +152,13 @@ export class OrganizationsController {
     @ApiBearerAuth()
     @Roles(ROLES.SUPER_ADMIN)
     @HttpCode(HttpStatus.NO_CONTENT)
-    async remove(@Param('id') id: string): Promise<void> {
-        await this.organizations.delete(id);
+    @ApiErrors('ORGANIZATION_NOT_FOUND', 'ORGANIZATION_HAS_BOOKINGS')
+    async remove(
+        @Param('id') id: string,
+        @Query() query: DeleteOrganizationQueryDto,
+        @CurrentUser() user: AuthUser,
+    ): Promise<void> {
+        await this.organizations.delete(id, user, query.cancel_bookings === true);
     }
 
     @Get(':id/news')

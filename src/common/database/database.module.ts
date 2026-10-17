@@ -1,7 +1,9 @@
 import { Global, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { type Connection } from 'mongoose';
 
 import { AppConfig } from '../config/app-config';
+import { readTimeout } from './read-timeout';
 import { TransactionRunner } from './transaction-runner';
 
 /** Indexes come from migrations; pool, retries and write concern are pinned so a bare URI cannot change durability. */
@@ -22,6 +24,8 @@ import { TransactionRunner } from './transaction-runner';
                 retryReads: true,
                 writeConcern: { w: config.mongo.writeConcern },
                 readPreference: config.mongo.readPreference,
+                connectionFactory: (connection: Connection) =>
+                    connection.plugin(readTimeout(config.mongo.readTimeoutMs)),
             }),
         }),
     ],

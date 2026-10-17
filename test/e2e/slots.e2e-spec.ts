@@ -255,6 +255,79 @@ describe('service options and slots (e2e)', () => {
             });
         });
 
+        it('previews a cancel and a move with dry_run without changing or sending anything', async () => {
+            const slot = day(dateOnly(1), ['10:00', '11:00']);
+            const option = optionWith([slot]);
+            const service = await fx.service(organization.id, { options: [option] });
+            const bySms = await fx.client();
+            const byMail = await fx.client({ email: 'anna@example.com' });
+            const waiting = await fx.client();
+            await book(service.id, { option_id: option.id, slot_id: slot.id, time: '10:00' }, bySms);
+            await book(service.id, { option_id: option.id, slot_id: slot.id, time: '11:00' }, byMail);
+            await t.http
+                .post(`${t.prefix}/services/${service.id}/waitlist`)
+                .set('Authorization', await fx.bearer(waiting))
+                .send({ option_id: option.id, slot_id: slot.id, time: '10:00' });
+            const path = `${t.prefix}/services/${service.id}/options/${option.id}/slots/${slot.id}`;
+            const snapshot = async () => ({
+                bookings: await fx.collection('Booking').find({}, { _id: 0, status: 1, slot_date: 1 }).lean(),
+                slots: await fx.storedSlots(service.id),
+                waitlist: await fx.collection('WaitlistEntry').find({}, { _id: 0, status: 1 }).lean(),
+                events: await fx.collection('OutboxEvent').countDocuments({}),
+                revisions: await fx.collection('ServiceRevision').countDocuments({}),
+            });
+            const before = await snapshot();
+
+            const close = await t.http
+                .post(`${path}/cancel?dry_run=true`)
+                .set('Authorization', bearer)
+                .set('Idempotency-Key', randomUUID())
+                .send({});
+            expect(close.status).toBe(200);
+            expect(close.body.data).toMatchObject({
+                dry_run: true,
+                cancelled: 2,
+                waitlist_notified: 1,
+                notifications_queued: 2,
+                sms_queued: 1,
+                removed: false,
+            });
+
+            const remove = await t.http
+                .post(`${path}/cancel?dry_run=true`)
+                .set('Authorization', bearer)
+                .send({ remove: true, notify: false });
+            expect(remove.body.data).toMatchObject({
+                dry_run: true,
+                cancelled: 2,
+                waitlist_dropped: 1,
+                notifications_queued: 0,
+                sms_queued: 0,
+                removed: true,
+            });
+
+            const move = await t.http
+                .post(`${path}/move?dry_run=true`)
+                .set('Authorization', bearer)
+                .send({ date: dateOnly(4) });
+            expect(move.body.data).toMatchObject({
+                dry_run: true,
+                moved: 2,
+                waitlist_moved: 1,
+                notifications_queued: 2,
+                sms_queued: 1,
+            });
+
+            expect(await snapshot()).toEqual(before);
+            expect(await fx.collection('IdempotencyKey').countDocuments({})).toBe(0);
+
+            const real = await t.http
+                .post(`${path}/move`)
+                .set('Authorization', bearer)
+                .send({ date: dateOnly(4) });
+            expect(real.body.data).toMatchObject({ dry_run: false, moved: 2, sms_queued: 1 });
+        });
+
         it('closes a single time of a slot and leaves the neighbouring one booked', async () => {
             const slot = day(dateOnly(1), ['10:00', '11:00']);
             const option = optionWith([slot]);

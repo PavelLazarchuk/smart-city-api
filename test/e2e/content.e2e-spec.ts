@@ -187,7 +187,7 @@ describe('content resources (e2e)', () => {
     });
 
     describe('categories → services', () => {
-        it('validates category ownership, reorders inside a category and cascades on delete', async () => {
+        it('validates category ownership, reorders inside a category and refuses to delete a full one', async () => {
             const category = await fx.category(organization.id);
             const foreignCategory = await fx.category(foreignOrganization.id);
             const mismatch = await t.http
@@ -220,19 +220,29 @@ describe('content resources (e2e)', () => {
                 .send({ category_id: null });
             expect(moved.body.data.category_id).toBeNull();
 
+            const removeCategory = () =>
+                t.http
+                    .delete(`${t.prefix}/categories/${category.id}`)
+                    .set('Authorization', bearers['admin']!);
+            expectError(await removeCategory(), 409, 'CATEGORY_NOT_EMPTY');
             expect(
-                (
-                    await t.http
-                        .delete(`${t.prefix}/categories/${category.id}`)
-                        .set('Authorization', bearers['admin']!)
-                ).status,
+                (await t.http.delete(`${t.prefix}/services/${s2.id}`).set('Authorization', bearers['admin']!))
+                    .status,
             ).toBe(204);
+
+            expect((await removeCategory()).status).toBe(204);
             expect(
                 await fx
                     .collection('Service')
                     .countDocuments({ category_id: new Types.ObjectId(category.id) }),
             ).toBe(0);
             expect(await fx.collection('Service').countDocuments({ _id: new Types.ObjectId(s1.id) })).toBe(1);
+            const trashed = await fx
+                .collection<{ category_id: unknown; deleted_at: Date | null }>('Service')
+                .findById(s2.id)
+                .lean();
+            expect(trashed).toMatchObject({ category_id: null });
+            expect(trashed!.deleted_at).toBeInstanceOf(Date);
         });
     });
 

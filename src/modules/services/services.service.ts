@@ -2,7 +2,7 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { type ClientSession, type FilterQuery, type ProjectionType, Types } from 'mongoose';
 
-import { CascadeRegistry } from '../../common/cascade/cascade.registry';
+import { CascadeRegistry, type RetireOptions } from '../../common/cascade/cascade.registry';
 import { AppConfig } from '../../common/config/app-config';
 import { SettingsService } from '../../common/settings/settings.service';
 import { TransactionRunner } from '../../common/database/transaction-runner';
@@ -18,6 +18,7 @@ import { LABEL_MAX_LENGTH } from '../../common/zod/primitives';
 import { dateOnlyIn, instantIn, isoAtIn, isoIn, shiftDateOnly, timeOfDayIn } from '../../common/time/zone';
 import { BookingsRepository } from '../bookings/bookings.repository';
 import { CategoriesService } from '../categories/categories.service';
+import { isClosedAt } from '../organizations/closure';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { type RecurrenceInput, type ServiceOptionInput, type UpdateOptionInput } from './dto/option.schemas';
 import {
@@ -178,12 +179,11 @@ export class ServicesService implements OnModuleInit {
             await this.slots.deleteByOrganization(organizationId, ctx.session);
             await this.services.deleteByOrganization(organizationId, ctx.session);
         });
-        this.cascade.register('category', 'services.delete', async (categoryId, ctx) => {
-            const services = await this.services.findByCategory(categoryId, ctx.session);
+        this.cascade.register('category', 'services.detach', async (categoryId, ctx) => {
+            if (await this.services.countLiveInCategory(categoryId, ctx.session))
+                throw ApiError.conflict('CATEGORY_NOT_EMPTY');
 
-            for (const service of services) await this.cascade.run('service', service._id.toHexString(), ctx);
-
-            await this.services.deleteByCategory(categoryId, ctx.session);
+            await this.services.detachCategory(categoryId, ctx.session);
         });
         this.cascade.register('service', 'revisions.delete', async (serviceId, ctx) => {
             await this.revisions.deleteByService(serviceId, ctx.session);
@@ -349,7 +349,7 @@ export class ServicesService implements OnModuleInit {
         )
             throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        const timeZone = await this.timeZoneOf(service.organization_id.toHexString());
+        const { timeZone, closed } = await this.closureFor(service, viewer);
         const { from, to } = this.horizon(query, timeZone);
         const free = (limit: number | null | undefined, booked: number): number | null =>
             limit === null || limit === undefined ? null : Math.max(0, limit - booked);
@@ -368,8 +368,15 @@ export class ServicesService implements OnModuleInit {
 
                         return typeof date !== 'string' || (date >= from && date <= to);
                     })
+                    .filter(
+                        (slot) =>
+                            TIMED_SLOT_TYPES.includes(slot.child_type) ||
+                            slot.child_type === 'time_range' ||
+                            !closed(slot.value.date ?? null, null),
+                    )
                     .map((slot) => {
                         const booked = slot.value.booked_count ?? 0;
+                        const date = slot.value.date ?? null;
 
                         return {
                             id: slot.id,
@@ -381,25 +388,30 @@ export class ServicesService implements OnModuleInit {
                             available: free(slot.value.limit, booked),
                             ...(slot.value.time
                                 ? {
-                                      time: slot.value.time.map((entry) => ({
-                                          time: entry.time,
-                                          ...(entry.to ? { to: entry.to } : {}),
-                                          limit: entry.limit,
-                                          booked_count: entry.booked_count,
-                                          available: free(entry.limit, entry.booked_count),
-                                      })),
+                                      time: slot.value.time
+                                          .filter((entry) => !closed(date, entry.time))
+                                          .map((entry) => ({
+                                              time: entry.time,
+                                              ...(entry.to ? { to: entry.to } : {}),
+                                              limit: entry.limit,
+                                              booked_count: entry.booked_count,
+                                              available: free(entry.limit, entry.booked_count),
+                                          })),
                                   }
                                 : {}),
                             ...(slot.child_type === 'time_range'
                                 ? {
                                       range: {
                                           ...rangeOf(slot),
-                                          free: openings.get(`${option.id}|${slot.id}`) ?? [],
+                                          free: (openings.get(`${option.id}|${slot.id}`) ?? []).filter(
+                                              (opening) => !closed(date, opening.from),
+                                          ),
                                       },
                                   }
                                 : {}),
                         };
-                    }),
+                    })
+                    .filter((slot) => !slot.time || slot.time.length > 0),
             }))
             .filter((option) => option.slots.length > 0);
 
@@ -412,8 +424,21 @@ export class ServicesService implements OnModuleInit {
         };
     }
 
-    private async timeZoneOf(organizationId: string): Promise<string> {
-        return (await this.organizations.timezoneOf(organizationId)) ?? this.config.jobs.timezone;
+    private async closureFor(
+        service: ServiceTreeEntity,
+        viewer?: AuthUser,
+    ): Promise<{ timeZone: string; closed: (date: string | null, time: string | null) => boolean }> {
+        const organizationId = service.organization_id.toHexString();
+        const organization = await this.organizations.getById(organizationId);
+        const timeZone = organization.timezone ?? this.config.jobs.timezone;
+
+        if (this.masker.canSeeDetails(viewer, organizationId)) return { timeZone, closed: () => false };
+
+        return {
+            timeZone,
+            closed: (date, time) =>
+                isClosedAt(organization, date ? instantIn(date, time, timeZone) : new Date()),
+        };
     }
 
     private horizon(query: { from?: string; to?: string }, timeZone: string): { from: string; to: string } {
@@ -434,7 +459,7 @@ export class ServicesService implements OnModuleInit {
         )
             throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        const timeZone = await this.timeZoneOf(service.organization_id.toHexString());
+        const { timeZone, closed } = await this.closureFor(service, viewer);
         const { from, to } = this.horizon(query, timeZone);
         const now = new Date();
         const today = dateOnlyIn(now, timeZone);
@@ -476,6 +501,8 @@ export class ServicesService implements OnModuleInit {
                     if (startsAt && entry.time !== null && startsAt.getTime() <= now.getTime()) continue;
 
                     if (windowed && !startsAt) continue;
+
+                    if (closed(date, entry.time)) continue;
 
                     if (after && startsAt && startsAt.getTime() < after.getTime()) continue;
 
@@ -775,24 +802,31 @@ export class ServicesService implements OnModuleInit {
         return this.update(id, { status }, viewer);
     }
 
-    async delete(id: string, viewer?: AuthUser, permanent = false): Promise<void> {
+    async delete(id: string, viewer?: AuthUser, permanent = false, cancelBookings = false): Promise<void> {
         const existing = await this.services.findById(id);
 
         if (!existing) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
         if (permanent) {
-            await this.purge(id);
+            await this.purge(id, { actor: viewer ?? null, cancelBookings });
 
             return;
         }
 
         if (existing.deleted_at) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        const deleted = await this.services.updateById(id, { $set: { deleted_at: new Date() } });
+        await this.tx.run(async (ctx) => {
+            await this.cascade.retire('service', id, ctx, { actor: viewer ?? null, cancelBookings });
+            const deleted = await this.services.updateById(
+                id,
+                { $set: { deleted_at: new Date() } },
+                ctx.session,
+            );
 
-        if (!deleted) throw ApiError.notFound('SERVICE_NOT_FOUND');
+            if (!deleted) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
-        await this.record(deleted, 'delete', existing, deleted, viewer);
+            await this.record(deleted, 'delete', existing, deleted, viewer, ctx.session);
+        });
     }
 
     async restore(id: string, viewer?: AuthUser): Promise<ServiceTreeEntity> {
@@ -802,7 +836,15 @@ export class ServicesService implements OnModuleInit {
 
         if (!existing.deleted_at) throw ApiError.unprocessable('SERVICE_NOT_DELETED');
 
-        const restored = await this.services.updateById(id, { $set: { deleted_at: null } });
+        const restored = await this.services.updateById(id, {
+            $set: {
+                deleted_at: null,
+                position: await this.services.nextPosition(
+                    existing.organization_id.toHexString(),
+                    existing.category_id?.toHexString() ?? null,
+                ),
+            },
+        });
 
         if (!restored) throw ApiError.notFound('SERVICE_NOT_FOUND');
 
@@ -811,9 +853,10 @@ export class ServicesService implements OnModuleInit {
         return this.presented(await this.tree(restored), viewer);
     }
 
-    async purge(id: string): Promise<void> {
+    async purge(id: string, options: RetireOptions = { actor: null, cancelBookings: true }): Promise<void> {
         await this.tx.run(async (ctx) => {
             const service = await this.services.findById(id, ctx.session, { organization_id: 1 });
+            await this.cascade.retire('service', id, ctx, options);
             await this.cascade.run('service', id, ctx);
             await this.services.deleteById(id, ctx.session);
 
@@ -952,6 +995,7 @@ export class ServicesService implements OnModuleInit {
                 options: field.options,
                 placeholder: field.placeholder,
                 max_length: field.max_length ?? null,
+                sensitive: field.sensitive ?? false,
             }));
         }
 
@@ -1417,6 +1461,10 @@ export class ServicesService implements OnModuleInit {
 
     cancelDeadlines(ids: string[]): Promise<Map<string, number | null>> {
         return this.services.cancelDeadlines(ids);
+    }
+
+    sensitiveFields(ids: string[]): Promise<Map<string, string[]>> {
+        return this.services.sensitiveFields(ids);
     }
 
     findCalendarDetails(

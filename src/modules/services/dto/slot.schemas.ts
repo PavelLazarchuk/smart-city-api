@@ -274,6 +274,9 @@ export const closeSlotSchema = z.object({
     notify: z.boolean().optional(),
 });
 export type CloseSlotInput = z.infer<typeof closeSlotSchema>;
+
+export const bulkSlotQuerySchema = z.object({ dry_run: z.stringbool().optional() });
+export class BulkSlotQueryDto extends createZodDto(bulkSlotQuerySchema) {}
 export class CloseSlotDto extends createZodDto(closeSlotSchema) {}
 
 export const closeSlotResponseSchema = z.object({
@@ -283,8 +286,11 @@ export const closeSlotResponseSchema = z.object({
     time: outputText.nullable(),
     cancelled: z.number().int().min(0),
     waitlist_dropped: z.number().int().min(0),
+    waitlist_notified: z.number().int().min(0).default(0),
     notifications_queued: z.number().int().min(0),
+    sms_queued: z.number().int().min(0).default(0),
     removed: z.boolean(),
+    dry_run: z.boolean().default(false),
 });
 export type CloseSlotResult = z.infer<typeof closeSlotResponseSchema>;
 export class CloseSlotResponseDto extends createZodDto(closeSlotResponseSchema) {}
@@ -310,7 +316,10 @@ export const moveSlotResponseSchema = z.object({
     date: outputText,
     previous_date: outputText,
     moved: z.number().int().min(0),
+    waitlist_moved: z.number().int().min(0).default(0),
     notifications_queued: z.number().int().min(0),
+    sms_queued: z.number().int().min(0).default(0),
+    dry_run: z.boolean().default(false),
 });
 export type MoveSlotResult = z.infer<typeof moveSlotResponseSchema>;
 export class MoveSlotResponseDto extends createZodDto(moveSlotResponseSchema) {}

@@ -55,4 +55,22 @@ describe('bookingsCsv', () => {
         expect(line).toContain('2026-10-03T10:00:00.000Z');
         expect(line.endsWith('\r\n')).toBe(true);
     });
+
+    it('leaves the answers column empty when the reader may not see form answers', async () => {
+        const booking = {
+            id: 'b2',
+            status: 'confirmed',
+            service_id: new ObjectId(),
+            organization_id: new ObjectId(),
+            user_id: new ObjectId(),
+            fields: { city: 'Kyiv' },
+            created_at: new Date('2026-10-03T10:00:00.000Z'),
+        } as unknown as BookingEntity;
+
+        const [, withFields] = await collect(bookingsCsv(from([booking])));
+        const [, withoutFields] = await collect(bookingsCsv(from([booking]), { fields: false }));
+
+        expect(withFields).toContain('Kyiv');
+        expect(withoutFields).not.toContain('Kyiv');
+    });
 });

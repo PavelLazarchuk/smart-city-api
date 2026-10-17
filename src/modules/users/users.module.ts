@@ -5,6 +5,7 @@ import { AUTH_USER_RESOLVER } from '../../common/guards/auth-user.resolver';
 import { AuthStoreModule } from '../auth/store/auth-store.module';
 import { BookingsDataModule } from '../bookings/bookings-data.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { OrganizationOperatorsController } from './organization-operators.controller';
 import { User, UserSchema } from './schemas/user.schema';
 import { UsersController } from './users.controller';
 import { UsersRepository } from './users.repository';
@@ -17,7 +18,7 @@ import { UsersService } from './users.service';
         BookingsDataModule,
         OrganizationsModule,
     ],
-    controllers: [UsersController],
+    controllers: [UsersController, OrganizationOperatorsController],
     providers: [
         UsersRepository,
         UsersService,
